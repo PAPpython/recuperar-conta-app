@@ -1,25 +1,13 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Resultado</title>
-    <link rel="stylesheet" href="/static/style.css">
+  <title>Mensagem</title>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-
-<div class="container">
-    {% if status == "ok" %}
-        <h1 style="color:green;">✅ Sucesso</h1>
-    {% else %}
-        <h1 style="color:red;">❌ Erro</h1>
-    {% endif %}
-
-    <p>{{ text }}</p>
-
-    <a href="/">
-        <button>Voltar ao início</button>
-    </a>
-</div>
-
+  <div class="card">
+    <h1>{{ msg }}</h1>
+    <a href="/"><button>Voltar</button></a>
+  </div>
 </body>
 </html>
