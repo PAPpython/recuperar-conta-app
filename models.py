@@ -1,4 +1,6 @@
-from app import db
+from flask_sqlalchemy import SQLAlchemy
+
+db = SQLAlchemy()
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -8,5 +10,5 @@ class User(db.Model):
 
 class RecoveryCode(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120))
-    code = db.Column(db.String(6))
+    email = db.Column(db.String(120), nullable=False)
+    code = db.Column(db.String(6), nullable=False)
