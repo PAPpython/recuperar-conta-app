@@ -1,16 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt">
 <head>
     <meta charset="UTF-8">
     <title>Resultado</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+
+<div class="container">
     {% if status == "ok" %}
-        <h2 style="color:green;">✅ {{ text }}</h2>
+        <h1 style="color:green;">✅ Sucesso</h1>
     {% else %}
-        <h2 style="color:red;">❌ {{ text }}</h2>
+        <h1 style="color:red;">❌ Erro</h1>
     {% endif %}
 
-    <a href="/">Voltar ao início</a>
+    <p>{{ text }}</p>
+
+    <a href="/">
+        <button>Voltar ao início</button>
+    </a>
+</div>
+
 </body>
 </html>
