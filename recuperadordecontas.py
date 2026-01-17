@@ -64,31 +64,30 @@ def gerar_codigo():
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ================= ROTAS HTML =================
-@app.route("/")
+# ================= PÁGINAS (GET) =================
+@app.route("/", methods=["GET"])
 def home():
     return render_template("index.html")
 
-# ================= ROTAS API =================
-@app.route("/api/status")
-def status():
-    return jsonify({
-        "service": "Recuperador de Contas Online",
-        "status": "ok"
-    })
+@app.route("/recover-username", methods=["GET"])
+def recover_username_page():
+    return render_template("recover_username.html")
 
-# -------- RECUPERAR USERNAME --------
+@app.route("/recover-password", methods=["GET"])
+def recover_password_page():
+    return render_template("recover_password.html")
+
+# ================= AÇÕES (POST) =================
 @app.route("/recover/username", methods=["POST"])
 def recover_username():
-    data = request.get_json(silent=True) or {}
-    email = data.get("email")
+    email = request.form.get("email")
 
     if not email:
-        return jsonify({"error": "Email é obrigatório"}), 400
+        return render_template("message.html", status="error", text="Email é obrigatório")
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify({"error": "Email não encontrado"}), 404
+        return render_template("message.html", status="error", text="Email não encontrado")
 
     enviar_email(
         email,
@@ -96,20 +95,22 @@ def recover_username():
         f"O seu nome de utilizador é: {user.username}"
     )
 
-    return jsonify({"msg": "Utilizador enviado para o email"})
+    return render_template(
+        "message.html",
+        status="ok",
+        text="O nome de utilizador foi enviado para o teu email"
+    )
 
-# -------- PEDIR CÓDIGO --------
 @app.route("/recover/password/request", methods=["POST"])
 def request_code():
-    data = request.get_json(silent=True) or {}
-    email = data.get("email")
+    email = request.form.get("email")
 
     if not email:
-        return jsonify({"error": "Email é obrigatório"}), 400
+        return render_template("message.html", status="error", text="Email é obrigatório")
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify({"error": "Email não encontrado"}), 404
+        return render_template("message.html", status="error", text="Email não encontrado")
 
     RecoveryCode.query.filter_by(email=email).delete()
 
@@ -123,34 +124,38 @@ def request_code():
         f"O seu código de recuperação é: {code}"
     )
 
-    return jsonify({"msg": "Código enviado para o email"})
+    return render_template(
+        "message.html",
+        status="ok",
+        text="Código enviado para o email"
+    )
 
-# -------- CONFIRMAR NOVA PASSWORD --------
 @app.route("/recover/password/confirm", methods=["POST"])
 def confirm_password():
-    data = request.get_json(silent=True) or {}
-
-    email = data.get("email")
-    code = data.get("code")
-    new_password = data.get("new_password")
+    email = request.form.get("email")
+    code = request.form.get("code")
+    new_password = request.form.get("new_password")
 
     if not all([email, code, new_password]):
-        return jsonify({"error": "Dados incompletos"}), 400
+        return render_template("message.html", status="error", text="Dados incompletos")
 
     rec = RecoveryCode.query.filter_by(email=email, code=code).first()
     if not rec:
-        return jsonify({"error": "Código inválido"}), 400
+        return render_template("message.html", status="error", text="Código inválido")
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify({"error": "Utilizador não encontrado"}), 404
+        return render_template("message.html", status="error", text="Utilizador não encontrado")
 
     user.password = hash_password(new_password)
-
     db.session.delete(rec)
     db.session.commit()
 
-    return jsonify({"msg": "Password alterada com sucesso"})
+    return render_template(
+        "message.html",
+        status="ok",
+        text="Password alterada com sucesso"
+    )
 
 # ================= INIT DB =================
 with app.app_context():
