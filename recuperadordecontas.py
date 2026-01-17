@@ -13,12 +13,9 @@ app = Flask(__name__)
 CORS(app)
 
 # ================= DATABASE =================
-DATABASE_URL = os.environ.get("SQLALCHEMY_DATABASE_URI")
-
-if not DATABASE_URL:
-    raise RuntimeError("SQLALCHEMY_DATABASE_URI não está definido")
-
-app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "SQLALCHEMY_DATABASE_URI", "sqlite:///fallback.db"
+)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
@@ -38,10 +35,10 @@ class RecoveryCode(db.Model):
     code = db.Column(db.String(6), nullable=False)
 
 # ================= EMAIL =================
-EMAIL_REMETENTE = os.environ.get("EMAIL_USER")
-EMAIL_SENHA = os.environ.get("EMAIL_PASS")
-
 def enviar_email(dest, assunto, texto):
+    EMAIL_REMETENTE = os.environ.get("EMAIL_USER")
+    EMAIL_SENHA = os.environ.get("EMAIL_PASS")
+
     if not EMAIL_REMETENTE or not EMAIL_SENHA:
         raise RuntimeError("EMAIL_USER ou EMAIL_PASS não definidos")
 
@@ -71,7 +68,6 @@ def status():
         "status": "ok"
     })
 
-# -------- RECUPERAR USERNAME --------
 @app.route("/recover/username", methods=["POST"])
 def recover_username():
     data = request.get_json(silent=True) or {}
@@ -92,7 +88,6 @@ def recover_username():
 
     return jsonify({"msg": "Utilizador enviado para o email"})
 
-# -------- PEDIR CÓDIGO --------
 @app.route("/recover/password/request", methods=["POST"])
 def request_code():
     data = request.get_json(silent=True) or {}
@@ -119,7 +114,6 @@ def request_code():
 
     return jsonify({"msg": "Código enviado para o email"})
 
-# -------- CONFIRMAR NOVA PASSWORD --------
 @app.route("/recover/password/confirm", methods=["POST"])
 def confirm_password():
     data = request.get_json(silent=True) or {}
@@ -136,9 +130,6 @@ def confirm_password():
         return jsonify({"error": "Código inválido"}), 400
 
     user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "Utilizador não encontrado"}), 404
-
     user.password = hash_password(new_password)
 
     db.session.delete(rec)
