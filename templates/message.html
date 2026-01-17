@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Resultado</title>
+</head>
+<body>
+    {% if status == "ok" %}
+        <h2 style="color:green;">✅ {{ text }}</h2>
+    {% else %}
+        <h2 style="color:red;">❌ {{ text }}</h2>
+    {% endif %}
+
+    <a href="/">Voltar ao início</a>
+</body>
+</html>
