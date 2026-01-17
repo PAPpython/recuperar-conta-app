@@ -8,13 +8,14 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 
+# ================= APP =================
 app = Flask(__name__)
 CORS(app)
 
 # ================= DATABASE =================
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
-app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "SQLALCHEMY_DATABASE_URI"
+)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
@@ -23,14 +24,15 @@ db = SQLAlchemy(app)
 class User(db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String, unique=True)
-    email = db.Column(db.String, unique=True)
-    password = db.Column(db.String)
+    username = db.Column(db.String(150), unique=True, nullable=False)
+    email = db.Column(db.String(150), unique=True, nullable=False)
+    password = db.Column(db.String(256), nullable=False)
 
 class RecoveryCode(db.Model):
+    __tablename__ = "recovery_codes"
     id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String)
-    code = db.Column(db.String)
+    email = db.Column(db.String(150), nullable=False)
+    code = db.Column(db.String(6), nullable=False)
 
 # ================= EMAIL =================
 EMAIL_REMETENTE = os.environ.get("EMAIL_USER")
@@ -42,18 +44,18 @@ def enviar_email(dest, assunto, texto):
     msg["To"] = dest
     msg["Subject"] = assunto
 
-    s = smtplib.SMTP("smtp.gmail.com", 587)
-    s.starttls()
-    s.login(EMAIL_REMETENTE, EMAIL_SENHA)
-    s.send_message(msg)
-    s.quit()
+    smtp = smtplib.SMTP("smtp.gmail.com", 587)
+    smtp.starttls()
+    smtp.login(EMAIL_REMETENTE, EMAIL_SENHA)
+    smtp.send_message(msg)
+    smtp.quit()
 
 # ================= UTILS =================
 def gerar_codigo():
     return "".join(random.choices(string.digits, k=6))
 
-def hash_password(p):
-    return hashlib.sha256(p.encode()).hexdigest()
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
 # ================= ROUTES =================
 @app.route("/")
@@ -63,7 +65,7 @@ def status():
         "status": "ok"
     })
 
-# -------- RECUPERAR UTILIZADOR --------
+# -------- RECUPERAR USERNAME --------
 @app.route("/recover/username", methods=["POST"])
 def recover_username():
     email = request.json.get("email")
@@ -78,8 +80,7 @@ def recover_username():
         f"O seu nome de utilizador é: {user.username}"
     )
 
-    return jsonify({"msg": "Utilizador enviado"})
-
+    return jsonify({"msg": "Utilizador enviado para o email"})
 
 # -------- PEDIR CÓDIGO --------
 @app.route("/recover/password/request", methods=["POST"])
@@ -99,13 +100,12 @@ def request_code():
     enviar_email(
         email,
         "Código de Recuperação",
-        f"O seu código é: {code}"
+        f"O seu código de recuperação é: {code}"
     )
 
-    return jsonify({"msg": "Código enviado"})
+    return jsonify({"msg": "Código enviado para o email"})
 
-
-# -------- CONFIRMAR PASSWORD --------
+# -------- CONFIRMAR NOVA PASSWORD --------
 @app.route("/recover/password/confirm", methods=["POST"])
 def confirm_password():
     email = request.json.get("email")
@@ -124,6 +124,10 @@ def confirm_password():
 
     return jsonify({"msg": "Password alterada com sucesso"})
 
+# ================= INIT DB =================
+with app.app_context():
+    db.create_all()
+
 # ================= START =================
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=5000)
