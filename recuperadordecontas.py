@@ -1,93 +1,85 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
-import os, random, string, hashlib
+from werkzeug.security import generate_password_hash
+from datetime import datetime, timedelta
+import os, uuid
 
+# ================= APP =================
 app = Flask(__name__)
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-# 🔗 DATABASE (Render usa DATABASE_URL automaticamente)
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL",
-    "sqlite:///local.db"
-)
+app.config["SECRET_KEY"] = "recover-site-secret"
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "recover.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-# ⬇️ IMPORT MODELS DEPOIS DO db
-from models import User, RecoveryCode
+# ================= MODEL =================
+class Account(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200))
 
-# =========================
-# HOME
-# =========================
+    recovery_code = db.Column(db.String(64))
+    recovery_expires = db.Column(db.DateTime)
+
+# ================= HOME =================
 @app.route("/")
-def index():
-    return render_template("index.html")
+def home():
+    return "Site de recuperação online ✅"
 
-# =========================
-# RECOVER USERNAME
-# =========================
-@app.route("/recover-username", methods=["GET", "POST"])
-def recover_username():
-    if request.method == "POST":
-        email = request.form.get("email")
+# ================= PEDIR RECUPERAÇÃO =================
+@app.route("/recover", methods=["POST"])
+def recover():
+    email = request.json.get("email")
 
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            return jsonify({"status": "error", "msg": "Email não encontrado"})
+    if not email:
+        return jsonify(status="error", message="Email obrigatório")
 
-        # Aqui normalmente enviavas email
-        return jsonify({
-            "status": "ok",
-            "msg": f"O nome de utilizador foi enviado para o email ({user.username})"
-        })
+    account = Account.query.filter_by(email=email).first()
+    if not account:
+        return jsonify(status="error", message="Email não encontrado")
 
-    return render_template("recover_username.html")
+    code = uuid.uuid4().hex
+    account.recovery_code = code
+    account.recovery_expires = datetime.utcnow() + timedelta(minutes=10)
 
-# =========================
-# RECOVER PASSWORD
-# =========================
-@app.route("/recover-password", methods=["GET", "POST"])
-def recover_password():
+    db.session.commit()
 
-    if request.method == "POST":
-        step = request.form.get("step")
-        email = request.form.get("email")
+    return jsonify(
+        status="ok",
+        message="Código gerado",
+        code=code
+    )
 
-        # 🔹 PASSO 1 — ENVIAR CÓDIGO
-        if step == "email":
-            user = User.query.filter_by(email=email).first()
-            if not user:
-                return jsonify({"status": "error", "msg": "Email não encontrado"})
+# ================= RESET PASSWORD =================
+@app.route("/reset", methods=["POST"])
+def reset():
+    code = request.json.get("code")
+    password = request.json.get("password")
 
-            code = "".join(random.choices(string.digits, k=6))
+    if not code or not password:
+        return jsonify(status="error", message="Dados em falta")
 
-            RecoveryCode.query.filter_by(email=email).delete()
-            db.session.add(RecoveryCode(email=email, code=code))
-            db.session.commit()
+    account = Account.query.filter_by(recovery_code=code).first()
+    if not account:
+        return jsonify(status="error", message="Código inválido")
 
-            print("CÓDIGO GERADO:", code)  # DEBUG (Render logs)
+    if account.recovery_expires < datetime.utcnow():
+        return jsonify(status="error", message="Código expirado")
 
-            return jsonify({"status": "ok", "msg": "Código enviado para o email"})
+    account.password_hash = generate_password_hash(password)
+    account.recovery_code = None
+    account.recovery_expires = None
 
-        # 🔹 PASSO 2 — CONFIRMAR CÓDIGO
-        if step == "confirm":
-            code = request.form.get("code")
-            password = request.form.get("password")
+    db.session.commit()
 
-            rec = RecoveryCode.query.filter_by(email=email, code=code).first()
-            if not rec:
-                return jsonify({"status": "error", "msg": "Código inválido"})
+    return jsonify(status="ok", message="Password alterada")
 
-            user = User.query.filter_by(email=email).first()
-            user.password = hashlib.sha256(password.encode()).hexdigest()
-
-            db.session.delete(rec)
-            db.session.commit()
-
-            return jsonify({"status": "ok", "msg": "Password alterada com sucesso"})
-
-    return render_template("recover_password.html")
-
-
+# ================= START =================
 if __name__ == "__main__":
-    app.run(debug=True)
+    with app.app_context():
+        db.create_all()
+
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
