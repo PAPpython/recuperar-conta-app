@@ -1,13 +1,12 @@
 from flask import Flask, render_template, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
 import random, hashlib
+
+from models import db, User, RecoveryCode
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 app.config["SECRET_KEY"] = "secret"
-db = SQLAlchemy(app)
-
-from models import User, RecoveryCode
+db.init_app(app)
 
 @app.route("/")
 def index():
@@ -34,7 +33,6 @@ def recover_password():
     if request.method == "POST":
         step = request.form.get("step")
 
-        # PASSO 1 — validar email
         if step == "email":
             email = request.form.get("email")
             user = User.query.filter_by(email=email).first()
@@ -49,7 +47,6 @@ def recover_password():
 
             return jsonify({"status": "ok", "msg": "Código enviado para o email"})
 
-        # PASSO 2 — confirmar código
         if step == "confirm":
             email = request.form.get("email")
             code = request.form.get("code")
@@ -70,4 +67,6 @@ def recover_password():
     return render_template("recover_password.html")
 
 if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
     app.run(debug=True)
