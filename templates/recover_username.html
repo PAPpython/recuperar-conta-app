@@ -1,17 +1,21 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt">
 <head>
     <meta charset="UTF-8">
-    <title>Recuperar Nome de Utilizador</title>
+    <title>Recuperar Utilizador</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h1>Recuperar Nome de Utilizador</h1>
+
+<div class="container">
+    <h1>Recuperar Utilizador</h1>
     <p>Introduz o email associado à conta</p>
 
     <form method="POST" action="/recover/username">
         <input type="email" name="email" placeholder="Email" required>
-        <br><br>
         <button type="submit">Enviar</button>
     </form>
+</div>
+
 </body>
 </html>
