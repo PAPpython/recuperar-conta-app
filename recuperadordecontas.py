@@ -13,9 +13,12 @@ app = Flask(__name__)
 CORS(app)
 
 # ================= DATABASE =================
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "SQLALCHEMY_DATABASE_URI"
-)
+DATABASE_URL = os.environ.get("SQLALCHEMY_DATABASE_URI")
+
+if not DATABASE_URL:
+    raise RuntimeError("SQLALCHEMY_DATABASE_URI não está definido")
+
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
@@ -39,6 +42,9 @@ EMAIL_REMETENTE = os.environ.get("EMAIL_USER")
 EMAIL_SENHA = os.environ.get("EMAIL_PASS")
 
 def enviar_email(dest, assunto, texto):
+    if not EMAIL_REMETENTE or not EMAIL_SENHA:
+        raise RuntimeError("EMAIL_USER ou EMAIL_PASS não definidos")
+
     msg = MIMEText(texto)
     msg["From"] = EMAIL_REMETENTE
     msg["To"] = dest
@@ -68,7 +74,11 @@ def status():
 # -------- RECUPERAR USERNAME --------
 @app.route("/recover/username", methods=["POST"])
 def recover_username():
-    email = request.json.get("email")
+    data = request.get_json(silent=True) or {}
+    email = data.get("email")
+
+    if not email:
+        return jsonify({"error": "Email obrigatório"}), 400
 
     user = User.query.filter_by(email=email).first()
     if not user:
@@ -85,7 +95,11 @@ def recover_username():
 # -------- PEDIR CÓDIGO --------
 @app.route("/recover/password/request", methods=["POST"])
 def request_code():
-    email = request.json.get("email")
+    data = request.get_json(silent=True) or {}
+    email = data.get("email")
+
+    if not email:
+        return jsonify({"error": "Email obrigatório"}), 400
 
     user = User.query.filter_by(email=email).first()
     if not user:
@@ -108,15 +122,23 @@ def request_code():
 # -------- CONFIRMAR NOVA PASSWORD --------
 @app.route("/recover/password/confirm", methods=["POST"])
 def confirm_password():
-    email = request.json.get("email")
-    code = request.json.get("code")
-    new_password = request.json.get("new_password")
+    data = request.get_json(silent=True) or {}
+
+    email = data.get("email")
+    code = data.get("code")
+    new_password = data.get("new_password")
+
+    if not all([email, code, new_password]):
+        return jsonify({"error": "Dados incompletos"}), 400
 
     rec = RecoveryCode.query.filter_by(email=email, code=code).first()
     if not rec:
         return jsonify({"error": "Código inválido"}), 400
 
     user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error": "Utilizador não encontrado"}), 404
+
     user.password = hash_password(new_password)
 
     db.session.delete(rec)
