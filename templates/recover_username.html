@@ -5,14 +5,24 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="card">
-    <h1>Recuperar Nome</h1>
-    <p>Introduz o email associado à conta</p>
+<div class="card">
+  <h1>Recuperar Nome</h1>
+  <p id="msg"></p>
 
-    <form method="POST">
-      <input type="email" name="email" placeholder="Email" required>
-      <button>Enviar</button>
-    </form>
-  </div>
+  <input id="email" placeholder="Email">
+  <button onclick="send()">Enviar</button>
+</div>
+
+<script>
+function send() {
+  fetch("/recover-username", {
+    method: "POST",
+    headers: {"Content-Type": "application/x-www-form-urlencoded"},
+    body: "email=" + email.value
+  })
+  .then(r => r.json())
+  .then(d => msg.innerText = d.msg);
+}
+</script>
 </body>
 </html>
