@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 import random
@@ -64,8 +64,13 @@ def gerar_codigo():
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ================= ROUTES =================
+# ================= ROTAS HTML =================
 @app.route("/")
+def home():
+    return render_template("index.html")
+
+# ================= ROTAS API =================
+@app.route("/api/status")
 def status():
     return jsonify({
         "service": "Recuperador de Contas Online",
