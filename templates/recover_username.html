@@ -1,47 +1,23 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Recuperar Password</title>
+  <title>Recuperar Utilizador</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <div class="card">
-  <h2>Recuperar Password</h2>
-
+  <h2>Recuperar Nome de Utilizador</h2>
   <input id="email" placeholder="Email">
-  <button onclick="sendEmail()">Enviar Código</button>
-
-  <div id="step2" style="display:none;">
-    <input id="code" placeholder="Código">
-    <input id="password" placeholder="Nova password" type="password">
-    <button onclick="confirm()">Alterar Password</button>
-  </div>
-
+  <button onclick="send()">Enviar</button>
   <p id="msg"></p>
 </div>
 
 <script>
-function sendEmail(){
-  fetch("/api/recover-password", {
+function send(){
+  fetch("/api/recover-username", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({step:"email", email:email.value})
-  }).then(r=>r.json()).then(d=>{
-    msg.innerText = d.msg;
-    if(d.status==="ok") step2.style.display="block";
-  });
-}
-
-function confirm(){
-  fetch("/api/recover-password", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      step:"confirm",
-      email:email.value,
-      code:code.value,
-      password:password.value
-    })
+    body:JSON.stringify({email:email.value})
   }).then(r=>r.json()).then(d=>{
     msg.innerText = d.msg;
   });
