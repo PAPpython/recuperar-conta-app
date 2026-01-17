@@ -1,6 +1,10 @@
 Flask
+Flask-Cors
 Flask-SQLAlchemy
-psycopg2-binary
+Flask-Mail
+Authlib
+requests
 python-dotenv
-itsdangerous
+gunicorn
 Werkzeug
+psycopg2-binary
