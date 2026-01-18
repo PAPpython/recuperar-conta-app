@@ -1,9 +1,10 @@
 from flask import Flask, render_template, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 import os
 import time
-import hmac
 import hashlib
+import hmac
 import base64
 import json
 
@@ -11,49 +12,56 @@ import json
 app = Flask(__name__)
 CORS(app)
 
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
 # ================= CONFIG =================
-SECRET_TOKEN = b"recuperacao-super-secreta"
+app.config["SECRET_KEY"] = "recuperar-secret"
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# ================= DB =================
+db = SQLAlchemy(app)
+
+# ================= MODELO USER =================
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True)
+    email = db.Column(db.String(120), unique=True)
+    password = db.Column(db.String(128))
+
+# ================= CONFIG CÓDIGOS =================
+SIGN_SECRET = b"recuperacao-super-secreta"
 CODE_EXPIRATION = 300  # 5 minutos
 
 # ================= UTILS =================
-def gerar_token(tipo):
+def hash_password(p):
+    return hashlib.sha256(p.encode()).hexdigest()
+
+def generate_code(tipo):
     payload = {
         "type": tipo,
         "exp": int(time.time()) + CODE_EXPIRATION
     }
 
-    payload_bytes = json.dumps(payload).encode()
-    assinatura = hmac.new(
-        SECRET_TOKEN,
-        payload_bytes,
-        hashlib.sha256
-    ).digest()
+    data = json.dumps(payload).encode()
+    sig = hmac.new(SIGN_SECRET, data, hashlib.sha256).digest()
 
-    token = base64.urlsafe_b64encode(
-        payload_bytes + b"." + assinatura
-    ).decode()
-
+    token = base64.urlsafe_b64encode(data + b"." + sig).decode()
     return token
 
-
-def validar_token(token, tipo_esperado):
+def validate_code(token, tipo_esperado):
     try:
         raw = base64.urlsafe_b64decode(token.encode())
-        payload_bytes, assinatura = raw.rsplit(b".", 1)
+        data, sig = raw.rsplit(b".", 1)
 
-        assinatura_esperada = hmac.new(
-            SECRET_TOKEN,
-            payload_bytes,
-            hashlib.sha256
-        ).digest()
-
-        if not hmac.compare_digest(assinatura, assinatura_esperada):
+        expected = hmac.new(SIGN_SECRET, data, hashlib.sha256).digest()
+        if not hmac.compare_digest(sig, expected):
             return False, "Assinatura inválida"
 
-        payload = json.loads(payload_bytes.decode())
+        payload = json.loads(data.decode())
 
         if payload.get("type") != tipo_esperado:
-            return False, "Tipo inválido"
+            return False, "Tipo incorreto"
 
         if time.time() > payload.get("exp", 0):
             return False, "Código expirado"
@@ -63,68 +71,91 @@ def validar_token(token, tipo_esperado):
     except Exception:
         return False, "Código inválido"
 
-
-# ================= PÁGINAS =================
+# ================= ROTAS PÁGINAS =================
 @app.route("/")
-def index():
-    return "Servidor de recuperação ativo"
-
+def home():
+    return render_template("index.html")
 
 @app.route("/recover-password")
 def recover_password():
     return render_template("recover_password.html")
 
-
 @app.route("/recover-username")
 def recover_username():
     return render_template("recover_username.html")
 
-
 # ================= API GERAR CÓDIGOS =================
-@app.route("/api/generate-password-code")
+@app.route("/api/generate-password-code", methods=["GET"])
 def generate_password_code():
-    return jsonify(
-        status="ok",
-        token=gerar_token("password"),
-        expires=CODE_EXPIRATION
-    )
+    token = generate_code("password")
+    return jsonify(status="ok", token=token, expires=CODE_EXPIRATION)
 
-
-@app.route("/api/generate-username-code")
+@app.route("/api/generate-username-code", methods=["GET"])
 def generate_username_code():
-    return jsonify(
-        status="ok",
-        token=gerar_token("username"),
-        expires=CODE_EXPIRATION
-    )
+    token = generate_code("username")
+    return jsonify(status="ok", token=token, expires=CODE_EXPIRATION)
 
-
-# ================= API VALIDAR =================
+# ================= API VALIDAR CÓDIGOS =================
 @app.route("/api/validate-password-code", methods=["POST"])
 def validate_password_code():
-    data = request.get_json(force=True)
-    token = data.get("token", "")
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
 
-    ok, msg = validar_token(token, "password")
+    ok, msg = validate_code(code, "password")
     if not ok:
         return jsonify(status="error", msg=msg)
 
     return jsonify(status="ok")
-
 
 @app.route("/api/validate-username-code", methods=["POST"])
 def validate_username_code():
-    data = request.get_json(force=True)
-    token = data.get("token", "")
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
 
-    ok, msg = validar_token(token, "username")
+    ok, msg = validate_code(code, "username")
     if not ok:
         return jsonify(status="error", msg=msg)
 
     return jsonify(status="ok")
 
+# ================= API ALTERAR PASSWORD =================
+@app.route("/api/change-password", methods=["POST"])
+def change_password():
+    data = request.get_json(silent=True) or {}
+    username = data.get("username")
+    new_password = data.get("password")
+
+    if not username or not new_password:
+        return jsonify(status="error", msg="Dados inválidos")
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify(status="error", msg="Utilizador não encontrado")
+
+    user.password = hash_password(new_password)
+    db.session.commit()
+
+    return jsonify(status="ok", msg="Password alterada com sucesso")
+
+# ================= API OBTER USERNAME =================
+@app.route("/api/get-username", methods=["POST"])
+def get_username():
+    data = request.get_json(silent=True) or {}
+    email = data.get("email")
+
+    if not email:
+        return jsonify(status="error", msg="Email inválido")
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify(status="error", msg="Email não encontrado")
+
+    return jsonify(status="ok", username=user.username)
 
 # ================= START =================
 if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
+
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
