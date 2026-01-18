@@ -1,136 +1,147 @@
-<!DOCTYPE html>
-<html lang="pt">
-<head>
-<meta charset="UTF-8">
-<title>Recuperação de Utilizador</title>
+from flask import Flask, render_template, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
+import os
+import time
+import hashlib
+import secrets
 
-<style>
-body {
-  margin: 0;
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #020617, #1e293b);
-  font-family: Arial, Helvetica, sans-serif;
-  color: white;
-}
+# ================= APP =================
+app = Flask(__name__)
+CORS(app)
 
-.box {
-  background: #020617;
-  padding: 50px;
-  border-radius: 16px;
-  max-width: 750px;
-  width: 90%;
-  text-align: center;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.7);
-}
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-h1 {
-  font-size: 32px;
-}
+# ================= CONFIG =================
+app.config["SECRET_KEY"] = "recuperar-secret"
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-p {
-  font-size: 18px;
-  margin-bottom: 25px;
-}
+# ================= DB =================
+db = SQLAlchemy(app)
 
-/* TABELA IGUAL À DO GOOGLE */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 30px 0;
-  font-size: 18px;
-  background: white;
-  color: black;
-  border-radius: 12px;
-  overflow: hidden;
-}
+# ================= MODELO USER =================
+class User(db.Model):
+    __tablename__ = "user"
 
-th, td {
-  padding: 14px;
-  border-bottom: 1px solid #e5e7eb;
-}
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True)
+    email = db.Column(db.String(120), unique=True)
+    password = db.Column(db.String(128))
 
-th {
-  background: #f1f5f9;
-  color: #0f172a;
-  font-weight: bold;
-}
+# ================= MODELO CÓDIGOS =================
+class RecoveryCode(db.Model):
+    __tablename__ = "recovery_code"
 
-.code {
-  margin-top: 20px;
-  font-size: 22px;
-  font-weight: bold;
-  padding: 18px;
-  border-radius: 10px;
-  border: 2px dashed #38bdf8;
-  background: #020617;
-  color: #38bdf8;
-  word-break: break-all;
-}
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(64), unique=True, nullable=False)
+    type = db.Column(db.String(20))
+    expires = db.Column(db.Integer)
 
-.timer {
-  margin-top: 15px;
-  font-size: 18px;
-  color: #f87171;
-}
-</style>
-</head>
+CODE_EXPIRATION = 300  # 5 minutos
 
-<body>
-<div class="box">
-  <h1>Recuperação de Utilizador</h1>
-  <p>Segue os passos abaixo</p>
+# ================= UTILS =================
+def hash_password(p):
+    return hashlib.sha256(p.encode()).hexdigest()
 
-  <table>
-    <tr>
-      <th>O que fazer</th>
-      <th>O que acontece</th>
-    </tr>
-    <tr>
-      <td>Copiar o código</td>
-      <td>Usar no aplicativo</td>
-    </tr>
-    <tr>
-      <td>Colar no app</td>
-      <td>Utilizador recuperado</td>
-    </tr>
-    <tr>
-      <td>Esperar 5 minutos</td>
-      <td>Código expira</td>
-    </tr>
-    <tr>
-      <td>Tentar reutilizar</td>
-      <td>Não funciona</td>
-    </tr>
-  </table>
+def generate_code():
+    return secrets.token_hex(16)
 
-  <div id="code" class="code">Código: a gerar…</div>
-  <div id="timer" class="timer"></div>
-</div>
+# ================= INIT DB (SEM APAGAR NADA) =================
+with app.app_context():
+    db.create_all()   # <- cria recovery_code se não existir
 
-<script>
-function gerarCodigo() {
-  return [...crypto.getRandomValues(new Uint8Array(16))]
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+# ================= ROTAS =================
+@app.route("/")
+def index():
+    return render_template("index.html")
 
-let codigo = gerarCodigo();
-document.getElementById("code").innerText = "Código: " + codigo;
+@app.route("/recover-password")
+def recover_password():
+    return render_template("recover_password.html")
 
-let tempo = 300;
-function atualizar() {
-  let m = Math.floor(tempo / 60);
-  let s = tempo % 60;
-  document.getElementById("timer").innerText =
-    "⏱️ Código válido por " + m + ":" + s.toString().padStart(2, "0") + " minutos";
+@app.route("/recover-username")
+def recover_username():
+    return render_template("recover_username.html")
 
-  tempo--;
-  if (tempo >= 0) setTimeout(atualizar, 1000);
-}
-atualizar();
-</script>
-</body>
-</html>
+# ================= GERAR CÓDIGOS =================
+@app.route("/api/generate-password-code", methods=["GET"])
+def generate_password_code():
+    try:
+        code = generate_code()
+        expires = int(time.time() + CODE_EXPIRATION)
+
+        db.session.add(RecoveryCode(code=code, type="password", expires=expires))
+        db.session.commit()
+
+        return jsonify(status="ok", code=code, expires=CODE_EXPIRATION)
+
+    except Exception as e:
+        return jsonify(status="error", msg="Erro interno"), 200
+
+@app.route("/api/generate-username-code", methods=["GET"])
+def generate_username_code():
+    try:
+        code = generate_code()
+        expires = int(time.time() + CODE_EXPIRATION)
+
+        db.session.add(RecoveryCode(code=code, type="username", expires=expires))
+        db.session.commit()
+
+        return jsonify(status="ok", code=code, expires=CODE_EXPIRATION)
+
+    except Exception:
+        return jsonify(status="error", msg="Erro interno"), 200
+
+# ================= VALIDAR PASSWORD =================
+@app.route("/api/validate-password-code", methods=["POST"])
+def validate_password_code():
+    try:
+        data = request.get_json(force=True)
+        code = (data.get("code") or "").strip()
+
+        if not code:
+            return jsonify(status="error", msg="Código vazio")
+
+        rec = RecoveryCode.query.filter_by(code=code, type="password").first()
+        if not rec:
+            return jsonify(status="error", msg="Código inválido")
+
+        if time.time() > rec.expires:
+            db.session.delete(rec)
+            db.session.commit()
+            return jsonify(status="error", msg="Código expirado")
+
+        return jsonify(status="ok")
+
+    except Exception:
+        return jsonify(status="error", msg="Erro interno"), 200
+
+# ================= VALIDAR USERNAME =================
+@app.route("/api/validate-username-code", methods=["POST"])
+def validate_username_code():
+    try:
+        data = request.get_json(force=True)
+        code = (data.get("code") or "").strip()
+
+        if not code:
+            return jsonify(status="error", msg="Código vazio")
+
+        rec = RecoveryCode.query.filter_by(code=code, type="username").first()
+        if not rec:
+            return jsonify(status="error", msg="Código inválido")
+
+        if time.time() > rec.expires:
+            db.session.delete(rec)
+            db.session.commit()
+            return jsonify(status="error", msg="Código expirado")
+
+        return jsonify(status="ok")
+
+    except Exception:
+        return jsonify(status="error", msg="Erro interno"), 200
+
+# ================= START =================
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
