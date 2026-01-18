@@ -17,14 +17,21 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 # ================= DB =================
 db = SQLAlchemy(app)
 
-# ================= MODELO =================
+# ================= MODELO USER =================
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True)
     email = db.Column(db.String(120), unique=True)
     password = db.Column(db.String(128))
 
-# ================= MEMÓRIA TEMP =================
+# ================= MODELO CÓDIGOS RECUPERAÇÃO =================
+class RecoveryCode(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(64), unique=True, nullable=False)
+    type = db.Column(db.String(20))  # password | username
+    expires = db.Column(db.Integer)
+
+# ================= MEMÓRIA TEMP (MANTIDA POR REGRA) =================
 password_codes = {}
 username_codes = {}
 
@@ -35,7 +42,7 @@ def hash_password(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
 def generate_code():
-    # 32 caracteres hex (igual ao Google)
+    # 32 caracteres hex
     return secrets.token_hex(16)
 
 # ================= ROTAS PÁGINAS =================
@@ -55,10 +62,16 @@ def recover_username():
 @app.route("/api/generate-password-code", methods=["GET"])
 def generate_password_code():
     code = generate_code()
+    expires = int(time.time() + CODE_EXPIRATION)
 
-    password_codes[code] = {
-        "expires": time.time() + CODE_EXPIRATION
-    }
+    db.session.add(
+        RecoveryCode(
+            code=code,
+            type="password",
+            expires=expires
+        )
+    )
+    db.session.commit()
 
     print(f"[PASSWORD CODE] {code}")
 
@@ -72,10 +85,16 @@ def generate_password_code():
 @app.route("/api/generate-username-code", methods=["GET"])
 def generate_username_code():
     code = generate_code()
+    expires = int(time.time() + CODE_EXPIRATION)
 
-    username_codes[code] = {
-        "expires": time.time() + CODE_EXPIRATION
-    }
+    db.session.add(
+        RecoveryCode(
+            code=code,
+            type="username",
+            expires=expires
+        )
+    )
+    db.session.commit()
 
     print(f"[USERNAME CODE] {code}")
 
@@ -85,41 +104,49 @@ def generate_username_code():
         expires=CODE_EXPIRATION
     )
 
-# ================= API VALIDAR CÓDIGO PASSWORD (APP) =================
+# ================= API VALIDAR CÓDIGO PASSWORD =================
 @app.route("/api/validate-password-code", methods=["POST"])
 def validate_password_code():
     data = request.get_json()
     code = data.get("code")
 
-    saved = password_codes.get(code)
+    rec = RecoveryCode.query.filter_by(
+        code=code,
+        type="password"
+    ).first()
 
-    if not saved:
+    if not rec:
         return jsonify(status="error", msg="Código inválido")
 
-    if time.time() > saved["expires"]:
-        del password_codes[code]
+    if time.time() > rec.expires:
+        db.session.delete(rec)
+        db.session.commit()
         return jsonify(status="error", msg="Código expirado")
 
     return jsonify(status="ok", msg="Código válido")
 
-# ================= API VALIDAR CÓDIGO USERNAME (APP) =================
+# ================= API VALIDAR CÓDIGO USERNAME =================
 @app.route("/api/validate-username-code", methods=["POST"])
 def validate_username_code():
     data = request.get_json()
     code = data.get("code")
 
-    saved = username_codes.get(code)
+    rec = RecoveryCode.query.filter_by(
+        code=code,
+        type="username"
+    ).first()
 
-    if not saved:
+    if not rec:
         return jsonify(status="error", msg="Código inválido")
 
-    if time.time() > saved["expires"]:
-        del username_codes[code]
+    if time.time() > rec.expires:
+        db.session.delete(rec)
+        db.session.commit()
         return jsonify(status="error", msg="Código expirado")
 
     return jsonify(status="ok", msg="Código válido")
 
-# ================= API ALTERAR PASSWORD (APP) =================
+# ================= API ALTERAR PASSWORD =================
 @app.route("/api/change-password", methods=["POST"])
 def change_password():
     data = request.get_json()
@@ -135,7 +162,7 @@ def change_password():
 
     return jsonify(status="ok", msg="Password alterada com sucesso")
 
-# ================= API ENVIAR USERNAME POR EMAIL (FUTURO) =================
+# ================= API OBTER USERNAME =================
 @app.route("/api/get-username", methods=["POST"])
 def get_username():
     data = request.get_json()
