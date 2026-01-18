@@ -8,7 +8,7 @@ import secrets
 
 # ================= APP =================
 app = Flask(__name__)
-CORS(app)  # <<< ADICIONADO (CRÍTICO)
+CORS(app)  # <<< CRÍTICO (browser + tkinter)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -41,7 +41,7 @@ def hash_password(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
 def generate_code():
-    return secrets.token_hex(16)  # 32 chars hex
+    return secrets.token_hex(16)  # 32 caracteres hex
 
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
@@ -59,35 +59,54 @@ def recover_username():
 # ================= API GERAR CÓDIGOS =================
 @app.route("/api/generate-password-code", methods=["GET"])
 def generate_password_code():
-    code = generate_code()
-    expires = int(time.time() + CODE_EXPIRATION)
+    try:
+        code = generate_code()
+        expires = int(time.time() + CODE_EXPIRATION)
 
-    db.session.add(RecoveryCode(code=code, type="password", expires=expires))
-    db.session.commit()
+        db.session.add(
+            RecoveryCode(code=code, type="password", expires=expires)
+        )
+        db.session.commit()
 
-    return jsonify(status="ok", code=code, expires=CODE_EXPIRATION)
+        return jsonify(status="ok", code=code, expires=CODE_EXPIRATION)
+
+    except Exception:
+        db.session.rollback()
+        return jsonify(status="error", msg="Erro interno"), 200
+
 
 @app.route("/api/generate-username-code", methods=["GET"])
 def generate_username_code():
-    code = generate_code()
-    expires = int(time.time() + CODE_EXPIRATION)
+    try:
+        code = generate_code()
+        expires = int(time.time() + CODE_EXPIRATION)
 
-    db.session.add(RecoveryCode(code=code, type="username", expires=expires))
-    db.session.commit()
+        db.session.add(
+            RecoveryCode(code=code, type="username", expires=expires)
+        )
+        db.session.commit()
 
-    return jsonify(status="ok", code=code, expires=CODE_EXPIRATION)
+        return jsonify(status="ok", code=code, expires=CODE_EXPIRATION)
+
+    except Exception:
+        db.session.rollback()
+        return jsonify(status="error", msg="Erro interno"), 200
 
 # ================= API VALIDAR PASSWORD =================
 @app.route("/api/validate-password-code", methods=["POST"])
 def validate_password_code():
     try:
-        data = request.get_json(force=True)
+        data = request.get_json(force=True) or {}
         code = (data.get("code") or "").strip()
 
         if not code:
             return jsonify(status="error", msg="Código vazio")
 
-        rec = RecoveryCode.query.filter_by(code=code, type="password").first()
+        rec = RecoveryCode.query.filter_by(
+            code=code,
+            type="password"
+        ).first()
+
         if not rec:
             return jsonify(status="error", msg="Código inválido")
 
@@ -105,13 +124,17 @@ def validate_password_code():
 @app.route("/api/validate-username-code", methods=["POST"])
 def validate_username_code():
     try:
-        data = request.get_json(force=True)
+        data = request.get_json(force=True) or {}
         code = (data.get("code") or "").strip()
 
         if not code:
             return jsonify(status="error", msg="Código vazio")
 
-        rec = RecoveryCode.query.filter_by(code=code, type="username").first()
+        rec = RecoveryCode.query.filter_by(
+            code=code,
+            type="username"
+        ).first()
+
         if not rec:
             return jsonify(status="error", msg="Código inválido")
 
@@ -128,35 +151,50 @@ def validate_username_code():
 # ================= API ALTERAR PASSWORD =================
 @app.route("/api/change-password", methods=["POST"])
 def change_password():
-    data = request.get_json(force=True)
-    username = data.get("username")
-    new_password = data.get("password")
+    try:
+        data = request.get_json(force=True) or {}
+        username = data.get("username")
+        new_password = data.get("password")
 
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        return jsonify(status="error", msg="Utilizador não encontrado")
+        if not username or not new_password:
+            return jsonify(status="error", msg="Dados incompletos")
 
-    user.password = hash_password(new_password)
-    db.session.commit()
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            return jsonify(status="error", msg="Utilizador não encontrado")
 
-    return jsonify(status="ok", msg="Password alterada com sucesso")
+        user.password = hash_password(new_password)
+        db.session.commit()
+
+        return jsonify(status="ok", msg="Password alterada com sucesso")
+
+    except Exception:
+        db.session.rollback()
+        return jsonify(status="error", msg="Erro interno"), 200
 
 # ================= API OBTER USERNAME =================
 @app.route("/api/get-username", methods=["POST"])
 def get_username():
-    data = request.get_json(force=True)
-    email = data.get("email")
+    try:
+        data = request.get_json(force=True) or {}
+        email = data.get("email")
 
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify(status="error", msg="Email não encontrado")
+        if not email:
+            return jsonify(status="error", msg="Email vazio")
 
-    return jsonify(status="ok", username=user.username)
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify(status="error", msg="Email não encontrado")
+
+        return jsonify(status="ok", username=user.username)
+
+    except Exception:
+        return jsonify(status="error", msg="Erro interno"), 200
 
 # ================= START =================
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
+        db.create_all()  # NÃO apaga a BD existente
 
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
