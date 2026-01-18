@@ -1,27 +1,76 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt">
 <head>
+  <meta charset="UTF-8">
   <title>Recuperar Utilizador</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+
 <div class="card">
-  <h2>Recuperar Nome de Utilizador</h2>
-  <input id="email" placeholder="Email">
-  <button onclick="send()">Enviar</button>
-  <p id="msg"></p>
+  <h2>Recuperação de Utilizador</h2>
+  <p>Segue os passos abaixo</p>
+
+  <table class="info-table">
+    <tr>
+      <th>O que fazer</th>
+      <th>O que acontece</th>
+    </tr>
+    <tr>
+      <td>Copiar o código</td>
+      <td>Usar no aplicativo</td>
+    </tr>
+    <tr>
+      <td>Colar no app</td>
+      <td>Validação da conta</td>
+    </tr>
+    <tr>
+      <td>Esperar 5 minutos</td>
+      <td>Código expira</td>
+    </tr>
+    <tr>
+      <td>Tentar reutilizar</td>
+      <td>Não funciona</td>
+    </tr>
+  </table>
+
+  <div class="code-box">
+    <strong>Código:</strong>
+    <span id="code">A gerar...</span>
+  </div>
+
+  <p id="timer" class="timer"></p>
 </div>
 
 <script>
-function send(){
-  fetch("/api/recover-username", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({email:email.value})
-  }).then(r=>r.json()).then(d=>{
-    msg.innerText = d.msg;
-  });
+let seconds = 300;
+
+function gerarCodigo() {
+  fetch("/api/generate-username-code")
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById("code").innerText = d.code;
+    });
 }
+
+function startTimer() {
+  const timer = document.getElementById("timer");
+  const interval = setInterval(() => {
+    let min = Math.floor(seconds / 60);
+    let sec = seconds % 60;
+    timer.innerText = `⏱ Código válido por ${min}:${sec.toString().padStart(2, "0")} minutos`;
+    seconds--;
+
+    if (seconds < 0) {
+      clearInterval(interval);
+      timer.innerText = "❌ Código expirado";
+    }
+  }, 1000);
+}
+
+gerarCodigo();
+startTimer();
 </script>
+
 </body>
 </html>
