@@ -1,200 +1,130 @@
 from flask import Flask, render_template, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 import os
 import time
+import hmac
 import hashlib
-import secrets
+import base64
+import json
 
 # ================= APP =================
 app = Flask(__name__)
-CORS(app)  # <<< CRÍTICO (browser + tkinter)
-
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+CORS(app)
 
 # ================= CONFIG =================
-app.config["SECRET_KEY"] = "recuperar-secret"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-# ================= DB =================
-db = SQLAlchemy(app)
-
-# ================= MODELO USER =================
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True)
-    email = db.Column(db.String(120), unique=True)
-    password = db.Column(db.String(128))
-
-# ================= MODELO CÓDIGOS RECUPERAÇÃO =================
-class RecoveryCode(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(64), unique=True, nullable=False)
-    type = db.Column(db.String(20))  # password | username
-    expires = db.Column(db.Integer)
-
+SECRET_TOKEN = b"recuperacao-super-secreta"
 CODE_EXPIRATION = 300  # 5 minutos
 
 # ================= UTILS =================
-def hash_password(p):
-    return hashlib.sha256(p.encode()).hexdigest()
+def gerar_token(tipo):
+    payload = {
+        "type": tipo,
+        "exp": int(time.time()) + CODE_EXPIRATION
+    }
 
-def generate_code():
-    return secrets.token_hex(16)  # 32 caracteres hex
+    payload_bytes = json.dumps(payload).encode()
+    assinatura = hmac.new(
+        SECRET_TOKEN,
+        payload_bytes,
+        hashlib.sha256
+    ).digest()
 
-# ================= ROTAS PÁGINAS =================
+    token = base64.urlsafe_b64encode(
+        payload_bytes + b"." + assinatura
+    ).decode()
+
+    return token
+
+
+def validar_token(token, tipo_esperado):
+    try:
+        raw = base64.urlsafe_b64decode(token.encode())
+        payload_bytes, assinatura = raw.rsplit(b".", 1)
+
+        assinatura_esperada = hmac.new(
+            SECRET_TOKEN,
+            payload_bytes,
+            hashlib.sha256
+        ).digest()
+
+        if not hmac.compare_digest(assinatura, assinatura_esperada):
+            return False, "Assinatura inválida"
+
+        payload = json.loads(payload_bytes.decode())
+
+        if payload.get("type") != tipo_esperado:
+            return False, "Tipo inválido"
+
+        if time.time() > payload.get("exp", 0):
+            return False, "Código expirado"
+
+        return True, "OK"
+
+    except Exception:
+        return False, "Código inválido"
+
+
+# ================= PÁGINAS =================
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return "Servidor de recuperação ativo"
+
 
 @app.route("/recover-password")
 def recover_password():
     return render_template("recover_password.html")
 
+
 @app.route("/recover-username")
 def recover_username():
     return render_template("recover_username.html")
 
+
 # ================= API GERAR CÓDIGOS =================
-@app.route("/api/generate-password-code", methods=["GET"])
+@app.route("/api/generate-password-code")
 def generate_password_code():
-    try:
-        code = generate_code()
-        expires = int(time.time() + CODE_EXPIRATION)
-
-        db.session.add(
-            RecoveryCode(code=code, type="password", expires=expires)
-        )
-        db.session.commit()
-
-        return jsonify(status="ok", code=code, expires=CODE_EXPIRATION)
-
-    except Exception:
-        db.session.rollback()
-        return jsonify(status="error", msg="Erro interno"), 200
+    return jsonify(
+        status="ok",
+        token=gerar_token("password"),
+        expires=CODE_EXPIRATION
+    )
 
 
-@app.route("/api/generate-username-code", methods=["GET"])
+@app.route("/api/generate-username-code")
 def generate_username_code():
-    try:
-        code = generate_code()
-        expires = int(time.time() + CODE_EXPIRATION)
+    return jsonify(
+        status="ok",
+        token=gerar_token("username"),
+        expires=CODE_EXPIRATION
+    )
 
-        db.session.add(
-            RecoveryCode(code=code, type="username", expires=expires)
-        )
-        db.session.commit()
 
-        return jsonify(status="ok", code=code, expires=CODE_EXPIRATION)
-
-    except Exception:
-        db.session.rollback()
-        return jsonify(status="error", msg="Erro interno"), 200
-
-# ================= API VALIDAR PASSWORD =================
+# ================= API VALIDAR =================
 @app.route("/api/validate-password-code", methods=["POST"])
 def validate_password_code():
-    try:
-        data = request.get_json(force=True) or {}
-        code = (data.get("code") or "").strip()
+    data = request.get_json(force=True)
+    token = data.get("token", "")
 
-        if not code:
-            return jsonify(status="error", msg="Código vazio")
+    ok, msg = validar_token(token, "password")
+    if not ok:
+        return jsonify(status="error", msg=msg)
 
-        rec = RecoveryCode.query.filter_by(
-            code=code,
-            type="password"
-        ).first()
+    return jsonify(status="ok")
 
-        if not rec:
-            return jsonify(status="error", msg="Código inválido")
 
-        if time.time() > rec.expires:
-            db.session.delete(rec)
-            db.session.commit()
-            return jsonify(status="error", msg="Código expirado")
-
-        return jsonify(status="ok")
-
-    except Exception:
-        return jsonify(status="error", msg="Erro interno"), 200
-
-# ================= API VALIDAR USERNAME =================
 @app.route("/api/validate-username-code", methods=["POST"])
 def validate_username_code():
-    try:
-        data = request.get_json(force=True) or {}
-        code = (data.get("code") or "").strip()
+    data = request.get_json(force=True)
+    token = data.get("token", "")
 
-        if not code:
-            return jsonify(status="error", msg="Código vazio")
+    ok, msg = validar_token(token, "username")
+    if not ok:
+        return jsonify(status="error", msg=msg)
 
-        rec = RecoveryCode.query.filter_by(
-            code=code,
-            type="username"
-        ).first()
+    return jsonify(status="ok")
 
-        if not rec:
-            return jsonify(status="error", msg="Código inválido")
-
-        if time.time() > rec.expires:
-            db.session.delete(rec)
-            db.session.commit()
-            return jsonify(status="error", msg="Código expirado")
-
-        return jsonify(status="ok")
-
-    except Exception:
-        return jsonify(status="error", msg="Erro interno"), 200
-
-# ================= API ALTERAR PASSWORD =================
-@app.route("/api/change-password", methods=["POST"])
-def change_password():
-    try:
-        data = request.get_json(force=True) or {}
-        username = data.get("username")
-        new_password = data.get("password")
-
-        if not username or not new_password:
-            return jsonify(status="error", msg="Dados incompletos")
-
-        user = User.query.filter_by(username=username).first()
-        if not user:
-            return jsonify(status="error", msg="Utilizador não encontrado")
-
-        user.password = hash_password(new_password)
-        db.session.commit()
-
-        return jsonify(status="ok", msg="Password alterada com sucesso")
-
-    except Exception:
-        db.session.rollback()
-        return jsonify(status="error", msg="Erro interno"), 200
-
-# ================= API OBTER USERNAME =================
-@app.route("/api/get-username", methods=["POST"])
-def get_username():
-    try:
-        data = request.get_json(force=True) or {}
-        email = data.get("email")
-
-        if not email:
-            return jsonify(status="error", msg="Email vazio")
-
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            return jsonify(status="error", msg="Email não encontrado")
-
-        return jsonify(status="ok", username=user.username)
-
-    except Exception:
-        return jsonify(status="error", msg="Erro interno"), 200
 
 # ================= START =================
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()  # NÃO apaga a BD existente
-
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
