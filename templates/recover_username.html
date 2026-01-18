@@ -52,7 +52,10 @@ def generate_code(tipo):
 
 def validate_code(token, tipo_esperado):
     try:
-        raw = base64.urlsafe_b64decode(token.encode())
+        # corrigir padding do base64
+        padding = '=' * (-len(token) % 4)
+        raw = base64.urlsafe_b64decode((token + padding).encode())
+
         data, sig = raw.rsplit(b".", 1)
 
         expected = hmac.new(SIGN_SECRET, data, hashlib.sha256).digest()
@@ -69,7 +72,8 @@ def validate_code(token, tipo_esperado):
 
         return True, "OK"
 
-    except Exception:
+    except Exception as e:
+        print("ERRO VALIDACAO:", e)
         return False, "Código inválido"
 
 # ================= ROTAS PÁGINAS =================
