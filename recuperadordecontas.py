@@ -152,6 +152,28 @@ def get_username():
 
     return jsonify(status="ok", username=user.username)
 
+@app.route("/check-username", methods=["POST"])
+def check_username():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+
+    if not username:
+        return jsonify(exists=False)
+
+    existe = User.query.filter_by(username=username).first() is not None
+    return jsonify(exists=existe)
+
+@app.route("/check-email", methods=["POST"])
+def check_email():
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip()
+
+    if not email:
+        return jsonify(exists=False)
+
+    existe = User.query.filter_by(email=email).first() is not None
+    return jsonify(exists=existe)
+
 # ================= START =================
 if __name__ == "__main__":
     with app.app_context():
