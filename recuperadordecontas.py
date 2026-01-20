@@ -28,7 +28,9 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True)
     email = db.Column(db.String(120), unique=True)
     password = db.Column(db.String(128))
-
+# ================= CRIAR TABELAS =================
+with app.app_context():
+    db.create_all()
 # ================= CONFIG CÓDIGOS =================
 SIGN_SECRET = b"recuperacao-super-secreta"
 CODE_EXPIRATION = 300  # 5 minutos
@@ -152,6 +154,7 @@ def get_username():
 
     return jsonify(status="ok", username=user.username)
 
+# ================= CHECK USERNAME =================
 @app.route("/check-username", methods=["POST"])
 def check_username():
     data = request.get_json(silent=True) or {}
@@ -160,9 +163,11 @@ def check_username():
     if not username:
         return jsonify(exists=False)
 
-    existe = User.query.filter_by(username=username).first() is not None
-    return jsonify(exists=existe)
+    return jsonify(
+        exists=User.query.filter_by(username=username).first() is not None
+    )
 
+# ================= CHECK EMAIL =================
 @app.route("/check-email", methods=["POST"])
 def check_email():
     data = request.get_json(silent=True) or {}
@@ -171,8 +176,9 @@ def check_email():
     if not email:
         return jsonify(exists=False)
 
-    existe = User.query.filter_by(email=email).first() is not None
-    return jsonify(exists=existe)
+    return jsonify(
+        exists=User.query.filter_by(email=email).first() is not None
+    )
 
 # ================= START =================
 if __name__ == "__main__":
