@@ -44,15 +44,15 @@ def generate_code(tipo):
     return os.urandom(16).hex()
 
 def validate_code(token, tipo_esperado):
-    # valida apenas formato
     if (
         not token
-        or len(token) != 
+        or len(token) != 32
         or not all(c in "0123456789abcdef" for c in token.lower())
     ):
         return False, "Código inválido"
 
     return True, "OK"
+
 
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
