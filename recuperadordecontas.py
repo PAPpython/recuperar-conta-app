@@ -41,13 +41,13 @@ def hash_password(p):
 
 def generate_code(tipo):
     # 16 caracteres hex (compatível com o app)
-    return os.urandom(8).hex()
+    return os.urandom(16).hex()
 
 def validate_code(token, tipo_esperado):
     # valida apenas formato
     if (
         not token
-        or len(token) != 32
+        or len(token) != 
         or not all(c in "0123456789abcdef" for c in token.lower())
     ):
         return False, "Código inválido"
