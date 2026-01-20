@@ -40,38 +40,19 @@ def hash_password(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
 def generate_code(tipo):
-    payload = {
-        "type": tipo,
-        "exp": int(time.time()) + CODE_EXPIRATION
-    }
-
-    data = json.dumps(payload).encode()
-    sig = hmac.new(SIGN_SECRET, data, hashlib.sha256).digest()
-
-    token = base64.urlsafe_b64encode(data + b"." + sig).decode()
-    return token
+    # 16 caracteres hex (compatível com o app)
+    return os.urandom(8).hex()
 
 def validate_code(token, tipo_esperado):
-    try:
-        raw = base64.urlsafe_b64decode(token.encode())
-        data, sig = raw.rsplit(b".", 1)
-
-        expected = hmac.new(SIGN_SECRET, data, hashlib.sha256).digest()
-        if not hmac.compare_digest(sig, expected):
-            return False, "Assinatura inválida"
-
-        payload = json.loads(data.decode())
-
-        if payload.get("type") != tipo_esperado:
-            return False, "Tipo incorreto"
-
-        if time.time() > payload.get("exp", 0):
-            return False, "Código expirado"
-
-        return True, "OK"
-
-    except Exception:
+    # valida apenas formato
+    if (
+        not token
+        or len(token) != 16
+        or not all(c in "0123456789abcdef" for c in token.lower())
+    ):
         return False, "Código inválido"
+
+    return True, "OK"
 
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
