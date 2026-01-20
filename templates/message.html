@@ -6,8 +6,29 @@
 </head>
 <body>
   <div class="card">
-    <h1>{{ msg }}</h1>
+
+    <h1>Mensagem</h1>
+
+    <!-- Caixa de código + copiar -->
+    <div class="code-box">
+      <span id="codigo">{{ msg }}</span>
+      <button class="copy-btn" onclick="copiarCodigo()">Copiar</button>
+    </div>
+
+    <br>
+
     <a href="/"><button>Voltar</button></a>
+
   </div>
+
+  <script>
+    function copiarCodigo() {
+      const texto = document.getElementById("codigo").innerText;
+
+      navigator.clipboard.writeText(texto).then(() => {
+        alert("Código copiado!");
+      });
+    }
+  </script>
 </body>
 </html>
