@@ -8,9 +8,6 @@ import hmac
 import base64
 import json
 
-# ================= POSTS (MEMÓRIA) =================
-posts = []
-
 # ================= APP =================
 app = Flask(__name__)
 CORS(app)
@@ -163,98 +160,6 @@ def check_email():
     return jsonify(
         exists=User.query.filter_by(email=email).first() is not None
     )
-
-
-# ================= POSTS =================
-@app.route("/posts", methods=["GET"])
-def listar_posts():
-    return jsonify(posts)
-
-@app.route("/posts", methods=["POST"])
-def criar_post():
-    post = request.get_json()
-    if not post:
-        return jsonify({"status": "error"}), 400
-
-    # garante estrutura correta
-    post.setdefault("id", str(uuid.uuid4()))
-    post.setdefault("comments", [])
-    post.setdefault("likes", [])
-    post.setdefault("reposts", [])
-    post.setdefault("shares", [])
-
-    posts.insert(0, post)
-    return jsonify({"status": "ok"})
-
-@app.route("/posts/<post_id>", methods=["DELETE"])
-def apagar_post(post_id):
-    global posts
-    posts = [p for p in posts if p.get("id") != post_id]
-    return jsonify({"status": "ok"})
-
-# ================= COMMENTS =================
-@app.route("/posts/<post_id>/comments", methods=["POST"])
-def adicionar_comentario(post_id):
-    data = request.get_json()
-    if not data:
-        return jsonify({"status": "error"}), 400
-
-    data.setdefault("id", str(uuid.uuid4()))
-
-    for p in posts:
-        if p.get("id") == post_id:
-            p["comments"].append(data)
-            return jsonify({"status": "ok"})
-
-    return jsonify({"status": "error", "msg": "Post não encontrado"}), 404
-
-@app.route("/posts/<post_id>/comments/<comment_id>", methods=["DELETE"])
-def apagar_comentario(post_id, comment_id):
-    for p in posts:
-        if p.get("id") == post_id:
-            p["comments"] = [
-                c for c in p.get("comments", [])
-                if c.get("id") != comment_id
-            ]
-            return jsonify({"status": "ok"})
-
-    return jsonify({"status": "error"}), 404
-
-# ================= LIKES / REPOSTS / SHARES =================
-def toggle_lista(post_id, campo, user_id):
-    for p in posts:
-        if p.get("id") == post_id:
-            p.setdefault(campo, [])
-            if user_id in p[campo]:
-                p[campo].remove(user_id)
-            else:
-                p[campo].append(user_id)
-            return len(p[campo])
-    return None
-
-@app.route("/posts/<post_id>/like", methods=["POST"])
-def like_post(post_id):
-    user_id = request.json.get("user_id")
-    total = toggle_lista(post_id, "likes", user_id)
-    if total is None:
-        return jsonify({"status": "error"}), 404
-    return jsonify({"likes": total})
-
-@app.route("/posts/<post_id>/repost", methods=["POST"])
-def repost_post(post_id):
-    user_id = request.json.get("user_id")
-    total = toggle_lista(post_id, "reposts", user_id)
-    if total is None:
-        return jsonify({"status": "error"}), 404
-    return jsonify({"reposts": total})
-
-@app.route("/posts/<post_id>/share", methods=["POST"])
-def share_post(post_id):
-    user_id = request.json.get("user_id")
-    total = toggle_lista(post_id, "shares", user_id)
-    if total is None:
-        return jsonify({"status": "error"}), 404
-    return jsonify({"shares": total})
 
 # ================= START =================
 if __name__ == "__main__":
