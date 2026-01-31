@@ -1,1 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reativação de Conta</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1d3c6e;
+            color: white;
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .container h1 {
+            font-size: 32px;
+        }
+        .table {
+            margin-top: 20px;
+            width: 80%;
+            border-collapse: collapse;
+        }
+        .table th, .table td {
+            padding: 10px;
+            text-align: center;
+            border: 1px solid #ddd;
+        }
+        .table th {
+            background-color: #4CAF50;
+        }
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 32px;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            margin: 10px;
+            border-radius: 8px;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .info {
+            font-size: 16px;
+            margin-top: 20px;
+            color: white;
+        }
+        .code-box {
+            font-size: 20px;
+            padding: 10px;
+            background-color: #ffffff;
+            color: #333;
+            margin-top: 20px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        .countdown {
+            font-size: 16px;
+            color: white;
+            margin-top: 10px;
+        }
+        .copy-btn {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #00BFFF;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .copy-btn:hover {
+            background-color: #009ACD;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Recuperação de Conta</h1>
+        <p class="info">Siga os passos abaixo para reativar sua conta:</p>
+
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>O que fazer</th>
+                    <th>O que acontece</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Copiar o código</td>
+                    <td>Usar no aplicativo</td>
+                </tr>
+                <tr>
+                    <td>Colar no app</td>
+                    <td>Insira a Password da sua conta</td>
+                </tr>
+                <tr>
+                    <td>Esperar 5 minutos</td>
+                    <td>Código expira</td>
+                </tr>
+                <tr>
+                    <td>Tentar reutilizar</td>
+                    <td>Não funciona</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="info">
+            <p><strong id="generated-code">6a00f4f107c2d5d9279913a9e0f64497</strong></p>
+            <p class="countdown">Código válido por: <span id="countdown">5:00</span> minutos</p>
+
+            <!-- Área para o código de reativação -->
+            <div class="code-box" id="code-box">
+                6a00f4f107c2d5d9279913a9e0f64497
+            </div>
+
+            <button class="copy-btn" onclick="copyCode()">Copiar</button>
+        </div>
+    </div>
+
+    <script>
+        let countdownTime = 300;  // 5 minutos
+        const countdownDisplay = document.getElementById('countdown');
+
+        // Função para atualizar o contador
+        function updateCountdown() {
+            const minutes = Math.floor(countdownTime / 60);
+            const seconds = countdownTime % 60;
+            countdownDisplay.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+            countdownTime--;
+
+            if (countdownTime < 0) {
+                clearInterval(countdownInterval);
+                alert('O código expirou!');
+            }
+        }
+
+        // Função para copiar o código
+        function copyCode() {
+            const code = document.querySelector('.code-box').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                alert('Código copiado com sucesso!');
+            }).catch((error) => {
+                console.error('Erro ao copiar o código: ', error);
+            });
+        }
+
+        // Inicia o contador
+        const countdownInterval = setInterval(updateCountdown, 1000);
+    </script>
+
+</body>
+</html>
 
