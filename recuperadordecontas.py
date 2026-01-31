@@ -217,6 +217,7 @@ def login():
         email=user.email
     )
 
+# ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
 def delete_account():
     data = request.get_json(force=True)
@@ -237,6 +238,7 @@ def delete_account():
 
     return jsonify(status="ok", msg="Conta eliminada")
 
+# ================= API PARA DESATIVAR CONTA =================
 @app.route("/deactivate-account", methods=["POST"])
 def deactivate_account():
     data = request.get_json(force=True)
@@ -262,6 +264,8 @@ def deactivate_account():
     db.session.commit()
 
     return jsonify(status="ok", msg="Conta desativada com sucesso. Você poderá reativar sua conta em até 3 meses.")
+
+# ================= API PARA REATIVAR CONTA =================
 @app.route("/reactivate-account", methods=["POST"])
 def reactivate_account():
     data = request.get_json(force=True)
@@ -280,16 +284,16 @@ def reactivate_account():
     if user.ativo:
         return jsonify(status="error", msg="A conta já está ativa"), 400
 
+    # Verifica se já passou mais de 3 meses desde a desativação
     if datetime.utcnow() - user.desativado_em > timedelta(days=90):  # 3 meses
         return jsonify(status="error", msg="A conta não pode ser reativada, já passou o prazo de 3 meses."), 400
 
     # Reativar conta
     user.ativo = True
-    user.desativado_em = None
+    user.desativado_em = None  # Remove a data de desativação
     db.session.commit()
 
     return jsonify(status="ok", msg="Conta reativada com sucesso!")
-
 
 # ================= START =================
 if __name__ == "__main__":
