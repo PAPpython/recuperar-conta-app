@@ -213,6 +213,26 @@ def login():
         email=user.email
     )
 
+@app.route("/delete-account", methods=["POST"])
+def delete_account():
+    data = request.get_json(force=True)
+
+    user_id = data.get("id")
+    username = (data.get("username") or "").strip().lower()
+
+    if not user_id or not username:
+        return jsonify(status="error", msg="Dados inválidos"), 400
+
+    user = User.query.filter_by(id=user_id, username=username).first()
+
+    if not user:
+        return jsonify(status="error", msg="Conta já não existe"), 404
+
+    db.session.delete(user)
+    db.session.commit()
+
+    return jsonify(status="ok", msg="Conta eliminada")
+
 # ================= START =================
 if __name__ == "__main__":
     with app.app_context():
