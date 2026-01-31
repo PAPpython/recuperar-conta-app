@@ -298,33 +298,35 @@ def deactivate_account():
     return jsonify(status="ok", msg="Conta desativada com sucesso. Você poderá reativar sua conta em até 3 meses.")
 
 # ================= API REATIVAR CONTA =================
+# Se for necessário usar o GET para renderizar a página, deixe-o separado
+@app.route("/reactivate-account", methods=["GET"])
+def reactivate_account_page():
+    return render_template("reactive_account.html")
+
+# A rota POST para a lógica de reativação
 @app.route("/reactivate-account", methods=["POST"])
 def reactivate_account():
     data = request.get_json(force=True)
-
     username = data.get("username")
     email = data.get("email")
-    code = data.get("code")  # O código de reativação enviado para o e-mail
-    password = data.get("password")  # A senha atual
+    code = data.get("code")
+    password = data.get("password")
 
-    # Verificar se o nome de usuário e e-mail são válidos
+    # Lógica de verificação e reativação
     user = User.query.filter_by(username=username, email=email).first()
 
     if not user:
         return jsonify({"status": "error", "msg": "Usuário não encontrado"}), 404
 
-    # Verificar o código de reativação
     if user.reactivation_code != code:
         return jsonify({"status": "error", "msg": "Código de reativação inválido"}), 400
 
-    # Verificar se a senha atual está correta
-    if user.password != hash_password(password):  # Supondo que a senha esteja criptografada
+    if user.password != hash_password(password):
         return jsonify({"status": "error", "msg": "Senha incorreta"}), 401
 
-    # Reativar a conta
     user.ativo = True
-    user.desativado_em = None  # Remove a data de desativação
-    user.reactivation_code = None  # Limpa o código de reativação
+    user.desativado_em = None
+    user.reactivation_code = None
     db.session.commit()
 
     return jsonify({"status": "ok", "msg": "Conta reativada com sucesso!"})
