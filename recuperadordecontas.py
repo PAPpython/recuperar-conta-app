@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import time
 import hashlib
@@ -30,8 +30,9 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True)
     password = db.Column(db.String(128))
 
-    ativo = db.Column(db.Boolean, default=True)  # Para indicar se a conta está ativa ou não
-    desativado_em = db.Column(db.DateTime, nullable=True)  # Data da desativação
+    ativo = db.Column(db.Boolean, default=True)
+    desativado_em = db.Column(db.DateTime, nullable=True)
+    reactivation_code = db.Column(db.String(32), nullable=True)  # Código de reativação temporário
 # ================= CRIAR TABELAS =================
 with app.app_context():
     db.create_all()
@@ -291,6 +292,71 @@ def reactivate_account():
     # Reativar conta
     user.ativo = True
     user.desativado_em = None  # Remove a data de desativação
+    db.session.commit()
+
+    return jsonify(status="ok", msg="Conta reativada com sucesso!")
+
+@app.route("/api/request-reactivation", methods=["POST"])
+def request_reactivation():
+    data = request.get_json(force=True)
+
+    username = (data.get("username") or "").strip().lower()
+    email = (data.get("email") or "").strip().lower()
+
+    if not username or not email:
+        return jsonify(status="error", msg="Dados inválidos"), 400
+
+    user = User.query.filter_by(username=username, email=email).first()
+
+    if not user:
+        return jsonify(status="error", msg="Conta não encontrada"), 404
+
+    if user.ativo:
+        return jsonify(status="error", msg="A conta já está ativa"), 400
+
+    # Gerar o código de reativação
+    reactivation_code = generate_code("reactivation")
+    user.reactivation_code = reactivation_code  # Salva o código gerado no banco de dados
+    db.session.commit()
+
+    # Enviar o código para o email
+    send_reactivation_email(user.email, reactivation_code)
+
+    return jsonify(status="ok", msg="Código enviado para o email.")
+
+def send_reactivation_email(email, code):
+    # Integração com serviço de envio de email (SMTP ou outro serviço)
+    subject = "Código de Reativação de Conta"
+    body = f"Seu código de reativação é: {code}"
+
+    try:
+        # Exemplo com SMTP (ajustar para seu serviço de email)
+        send_email(email, subject, body)
+    except Exception as e:
+        print(f"Erro ao enviar email: {e}")
+
+@app.route("/api/confirm-reactivation", methods=["POST"])
+def confirm_reactivation():
+    data = request.get_json(force=True)
+
+    username = (data.get("username") or "").strip().lower()
+    code = (data.get("code") or "").strip()
+
+    if not username or not code:
+        return jsonify(status="error", msg="Dados inválidos"), 400
+
+    user = User.query.filter_by(username=username).first()
+
+    if not user:
+        return jsonify(status="error", msg="Conta não encontrada"), 404
+
+    if user.reactivation_code != code:
+        return jsonify(status="error", msg="Código inválido"), 400
+
+    # Reativar conta
+    user.ativo = True
+    user.desativado_em = None
+    user.reactivation_code = None  # Limpa o código após reativação
     db.session.commit()
 
     return jsonify(status="ok", msg="Conta reativada com sucesso!")
