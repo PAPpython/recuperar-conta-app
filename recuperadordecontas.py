@@ -30,9 +30,11 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True)
     password = db.Column(db.String(128))
 
-    ativo = db.Column(db.Boolean, default=True)
-    desativado_em = db.Column(db.DateTime, nullable=True)
+    ativo = db.Column(db.Boolean, default=True)  # Define se a conta está ativa
+    desativado_em = db.Column(db.DateTime, nullable=True)  # Data de desativação
     reactivation_code = db.Column(db.String(32), nullable=True)  # Código de reativação temporário
+    apagado = db.Column(db.Boolean, default=False)  # Marca se a conta foi apagada
+
 # ================= CRIAR TABELAS =================
 with app.app_context():
     db.create_all()
@@ -211,12 +213,19 @@ def login():
     if user.password != hash_password(password):
         return jsonify(status="error", msg="Password incorreta"), 401
 
+    if not user.ativo:
+        return jsonify(status="error", msg="Conta desativada. Por favor, reative a conta."), 403  # Conta desativada
+
+    if user.apagado:
+        return jsonify(status="error", msg="A conta foi apagada. Não é possível fazer login."), 403  # Conta apagada
+
     return jsonify(
         status="ok",
         id=user.id,
         username=user.username,
         email=user.email
     )
+
 
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
@@ -234,10 +243,11 @@ def delete_account():
     if not user:
         return jsonify(status="error", msg="Conta já não existe"), 404
 
-    db.session.delete(user)
+    # Marcar a conta como apagada
+    user.apagado = True
     db.session.commit()
 
-    return jsonify(status="ok", msg="Conta eliminada")
+    return jsonify(status="ok", msg="Conta apagada com sucesso")
 
 # ================= API PARA DESATIVAR CONTA =================
 @app.route("/deactivate-account", methods=["POST"])
@@ -282,6 +292,9 @@ def reactivate_account():
     if not user:
         return jsonify(status="error", msg="Conta não encontrada"), 404
 
+    if user.apagado:  # Verifica se a conta foi apagada
+        return jsonify(status="error", msg="A conta foi apagada e não pode ser reativada"), 400
+
     if user.ativo:
         return jsonify(status="error", msg="A conta já está ativa"), 400
 
@@ -292,6 +305,7 @@ def reactivate_account():
     # Reativar conta
     user.ativo = True
     user.desativado_em = None  # Remove a data de desativação
+    user.reactivation_code = None  # Limpa o código de reativação após a reativação
     db.session.commit()
 
     return jsonify(status="ok", msg="Conta reativada com sucesso!")
