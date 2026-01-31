@@ -74,6 +74,10 @@ def recover_password():
 def recover_username():
     return render_template("recover_username.html")
 
+@app.route("/reactivate-account")
+def reactivate_account_page():
+    return render_template("reactive_account.html")  # Página onde o usuário vai inserir o código de reativação
+
 # ================= API GERAR CÓDIGOS =================
 @app.route("/api/generate-password-code", methods=["GET"])
 def generate_password_code():
@@ -83,6 +87,12 @@ def generate_password_code():
 @app.route("/api/generate-username-code", methods=["GET"])
 def generate_username_code():
     token = generate_code("username")
+    return jsonify(status="ok", token=token, expires=CODE_EXPIRATION)
+
+@app.route("/api/generate-reactivation-code", methods=["GET"])
+def generate_reactivation_code():
+    # Gera o código de reativação
+    token = generate_code("reactivation")
     return jsonify(status="ok", token=token, expires=CODE_EXPIRATION)
 
 # ================= API VALIDAR CÓDIGOS =================
@@ -103,6 +113,18 @@ def validate_username_code():
     code = (data.get("code") or "").strip()
 
     ok, msg = validate_code(code, "username")
+    if not ok:
+        return jsonify(status="error", msg=msg)
+
+    return jsonify(status="ok")
+
+@app.route("/api/validate-reactivation-code", methods=["POST"])
+def validate_reactivation_code():
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+
+    # Verifica se o código é válido
+    ok, msg = validate_code(code, "reactivation")
     if not ok:
         return jsonify(status="error", msg=msg)
 
@@ -309,45 +331,6 @@ def reactivate_account():
     db.session.commit()
 
     return jsonify(status="ok", msg="Conta reativada com sucesso!")
-
-@app.route("/api/request-reactivation", methods=["POST"])
-def request_reactivation():
-    data = request.get_json(force=True)
-
-    username = (data.get("username") or "").strip().lower()
-    email = (data.get("email") or "").strip().lower()
-
-    if not username or not email:
-        return jsonify(status="error", msg="Dados inválidos"), 400
-
-    user = User.query.filter_by(username=username, email=email).first()
-
-    if not user:
-        return jsonify(status="error", msg="Conta não encontrada"), 404
-
-    if user.ativo:
-        return jsonify(status="error", msg="A conta já está ativa"), 400
-
-    # Gerar o código de reativação
-    reactivation_code = generate_code("reactivation")
-    user.reactivation_code = reactivation_code  # Salva o código gerado no banco de dados
-    db.session.commit()
-
-    # Enviar o código para o email
-    send_reactivation_email(user.email, reactivation_code)
-
-    return jsonify(status="ok", msg="Código enviado para o email.")
-
-def send_reactivation_email(email, code):
-    # Integração com serviço de envio de email (SMTP ou outro serviço)
-    subject = "Código de Reativação de Conta"
-    body = f"Seu código de reativação é: {code}"
-
-    try:
-        # Exemplo com SMTP (ajustar para seu serviço de email)
-        send_email(email, subject, body)
-    except Exception as e:
-        print(f"Erro ao enviar email: {e}")
 
 @app.route("/api/confirm-reactivation", methods=["POST"])
 def confirm_reactivation():
