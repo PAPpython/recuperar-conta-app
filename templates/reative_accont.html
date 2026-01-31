@@ -113,12 +113,12 @@
         </table>
 
         <div class="info">
-            <p><strong id="generated-code">6a00f4f107c2d5d9279913a9e0f64497</strong></p>
+            <p><strong id="generated-code">Carregando...</strong></p>
             <p class="countdown">Código válido por: <span id="countdown">5:00</span> minutos</p>
 
             <!-- Área para o código de reativação -->
             <div class="code-box" id="code-box">
-                6a00f4f107c2d5d9279913a9e0f64497
+                Carregando...
             </div>
 
             <button class="copy-btn" onclick="copyCode()">Copiar</button>
@@ -128,6 +128,7 @@
     <script>
         let countdownTime = 300;  // 5 minutos
         const countdownDisplay = document.getElementById('countdown');
+        let code = "";
 
         // Função para atualizar o contador
         function updateCountdown() {
@@ -152,10 +153,44 @@
             });
         }
 
-        // Inicia o contador
-        const countdownInterval = setInterval(updateCountdown, 1000);
+        // Requisição para gerar o código de reativação
+        function generateReactivationCode() {
+            fetch('/api/generate-reactivation-code')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === "ok") {
+                        code = data.token;  // Código gerado pela API
+                        const expires = data.expires;
+
+                        // Exibindo o código e iniciando o contador
+                        document.getElementById('generated-code').textContent = code;
+                        document.getElementById('code-box').textContent = code;
+
+                        let countdownTimer = expires;
+                        const countdownInterval = setInterval(() => {
+                            const minutes = Math.floor(countdownTimer / 60);
+                            const seconds = countdownTimer % 60;
+                            countdownDisplay.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                            countdownTimer--;
+
+                            if (countdownTimer < 0) {
+                                clearInterval(countdownInterval);
+                                alert('O código expirou!');
+                            }
+                        }, 1000);
+                    } else {
+                        alert('Erro ao gerar código de reativação');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro na requisição:', error);
+                    alert('Erro ao tentar conectar com o servidor');
+                });
+        }
+
+        // Inicia a geração do código assim que a página carrega
+        window.onload = generateReactivationCode;
     </script>
 
 </body>
 </html>
-
