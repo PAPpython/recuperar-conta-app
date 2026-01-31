@@ -163,20 +163,20 @@ def check_email():
     
 @app.route("/register", methods=["POST"])
 def register():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(force=True)
 
     username = (data.get("username") or "").strip().lower()
     email = (data.get("email") or "").strip().lower()
     password = data.get("password")
 
     if not username or not email or not password:
-        return jsonify(status="error", msg="Dados inválidos")
+        return jsonify(status="error", msg="Dados inválidos"), 400
 
     if User.query.filter_by(username=username).first():
-        return jsonify(status="error", msg="Username já existe")
+        return jsonify(status="error", msg="Username já existe"), 409
 
     if User.query.filter_by(email=email).first():
-        return jsonify(status="error", msg="Email já existe")
+        return jsonify(status="error", msg="Email já existe"), 409
 
     user = User(
         username=username,
@@ -191,20 +191,20 @@ def register():
 
 @app.route("/login", methods=["POST"])
 def login():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(force=True)
 
     username = (data.get("username") or "").strip().lower()
     password = data.get("password")
 
     if not username or not password:
-        return jsonify(status="error", msg="Dados inválidos")
+        return jsonify(status="error", msg="Dados inválidos"), 400
 
     user = User.query.filter_by(username=username).first()
     if not user:
-        return jsonify(status="error", msg="Utilizador não encontrado")
+        return jsonify(status="error", msg="Utilizador não encontrado"), 404
 
     if user.password != hash_password(password):
-        return jsonify(status="error", msg="Password incorreta")
+        return jsonify(status="error", msg="Password incorreta"), 401
 
     return jsonify(
         status="ok",
