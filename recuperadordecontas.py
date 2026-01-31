@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
+from datetime import datetime
 import os
 import time
 import hashlib
@@ -28,6 +29,9 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True)
     email = db.Column(db.String(120), unique=True)
     password = db.Column(db.String(128))
+
+    ativo = db.Column(db.Boolean, default=True)  # Para indicar se a conta está ativa ou não
+    desativado_em = db.Column(db.DateTime, nullable=True)  # Data da desativação
 # ================= CRIAR TABELAS =================
 with app.app_context():
     db.create_all()
@@ -232,6 +236,60 @@ def delete_account():
     db.session.commit()
 
     return jsonify(status="ok", msg="Conta eliminada")
+
+@app.route("/deactivate-account", methods=["POST"])
+def deactivate_account():
+    data = request.get_json(force=True)
+
+    user_id = data.get("id")
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password")
+
+    if not user_id or not username or not password:
+        return jsonify(status="error", msg="Dados inválidos"), 400
+
+    user = User.query.filter_by(id=user_id, username=username).first()
+
+    if not user:
+        return jsonify(status="error", msg="Conta não encontrada"), 404
+
+    if user.password != hash_password(password):  # Verificação de senha
+        return jsonify(status="error", msg="Password incorreta"), 401
+
+    # Desativa a conta
+    user.ativo = False
+    user.desativado_em = datetime.utcnow()  # Marca a data de desativação
+    db.session.commit()
+
+    return jsonify(status="ok", msg="Conta desativada com sucesso. Você poderá reativar sua conta em até 3 meses.")
+@app.route("/reactivate-account", methods=["POST"])
+def reactivate_account():
+    data = request.get_json(force=True)
+
+    user_id = data.get("id")
+    username = (data.get("username") or "").strip().lower()
+
+    if not user_id or not username:
+        return jsonify(status="error", msg="Dados inválidos"), 400
+
+    user = User.query.filter_by(id=user_id, username=username).first()
+
+    if not user:
+        return jsonify(status="error", msg="Conta não encontrada"), 404
+
+    if user.ativo:
+        return jsonify(status="error", msg="A conta já está ativa"), 400
+
+    if datetime.utcnow() - user.desativado_em > timedelta(days=90):  # 3 meses
+        return jsonify(status="error", msg="A conta não pode ser reativada, já passou o prazo de 3 meses."), 400
+
+    # Reativar conta
+    user.ativo = True
+    user.desativado_em = None
+    db.session.commit()
+
+    return jsonify(status="ok", msg="Conta reativada com sucesso!")
+
 
 # ================= START =================
 if __name__ == "__main__":
