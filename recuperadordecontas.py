@@ -160,6 +160,58 @@ def check_email():
     return jsonify(
         exists=User.query.filter_by(email=email).first() is not None
     )
+    
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.get_json(silent=True) or {}
+
+    username = (data.get("username") or "").strip().lower()
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password")
+
+    if not username or not email or not password:
+        return jsonify(status="error", msg="Dados inválidos")
+
+    if User.query.filter_by(username=username).first():
+        return jsonify(status="error", msg="Username já existe")
+
+    if User.query.filter_by(email=email).first():
+        return jsonify(status="error", msg="Email já existe")
+
+    user = User(
+        username=username,
+        email=email,
+        password=hash_password(password)
+    )
+
+    db.session.add(user)
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json(silent=True) or {}
+
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify(status="error", msg="Dados inválidos")
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify(status="error", msg="Utilizador não encontrado")
+
+    if user.password != hash_password(password):
+        return jsonify(status="error", msg="Password incorreta")
+
+    return jsonify(
+        status="ok",
+        id=user.id,
+        username=user.username,
+        email=user.email
+    )
 
 # ================= START =================
 if __name__ == "__main__":
