@@ -203,24 +203,29 @@ def register():
 def login():
     data = request.get_json(force=True)
 
-    username = (data.get("username") or "").strip().lower()
+    identificador = (data.get("username") or "").strip().lower()
     password = data.get("password")
 
-    if not username or not password:
+    if not identificador or not password:
         return jsonify(status="error", msg="Dados inválidos"), 400
 
-    user = User.query.filter_by(username=username).first()
+    user = (
+        User.query.filter_by(username=identificador).first()
+        or User.query.filter_by(email=identificador).first()
+        or User.query.filter_by(email_recuperacao=identificador).first()
+    )
+
     if not user:
         return jsonify(status="error", msg="Utilizador não encontrado"), 404
 
     if user.password != hash_password(password):
-        return jsonify(status="error", msg="Password incorreta"), 401
-
-    if not user.ativo:
-        return jsonify(status="error", msg="Conta desativada. Por favor, reative a conta."), 403  # Conta desativada
+        return jsonify(status="error", msg="Password inválida"), 401
 
     if user.apagado:
-        return jsonify(status="error", msg="A conta foi apagada. Não é possível fazer login."), 403  # Conta apagada
+        return jsonify(
+            status="error",
+            msg="Essa conta foi apagada. Não é possível fazer login."
+        ), 403
 
     return jsonify(
         status="ok",
@@ -228,7 +233,6 @@ def login():
         username=user.username,
         email=user.email
     )
-
 
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
@@ -265,6 +269,23 @@ def save_recovery_data():
     if not user:
         return jsonify(status="error", msg="Utilizador não encontrado"), 404
 
+    # 🔒 EVITAR EMAIL DE RECUPERAÇÃO DUPLICADO
+    if email_rec:
+        existe = User.query.filter(
+            User.email_recuperacao == email_rec,
+            User.email != email
+        ).first()
+
+        if existe:
+            return jsonify(
+                status="error",
+                msg="Este email de recuperação já está a ser usado noutra conta"
+            ), 409
+
+    # 🔢 Limite de perguntas
+    if len(perguntas) > 5:
+        return jsonify(status="error", msg="Máximo de 5 perguntas"), 400
+
     # Guardar email de recuperação
     user.email_recuperacao = email_rec if email_rec else None
 
@@ -280,7 +301,9 @@ def save_recovery_data():
                 "hash": hash_resposta(resposta)
             })
 
-    user.perguntas_recuperacao = json.dumps(perguntas_guardar) if perguntas_guardar else None
+    user.perguntas_recuperacao = (
+        json.dumps(perguntas_guardar) if perguntas_guardar else None
+    )
 
     db.session.commit()
 
@@ -292,7 +315,11 @@ def get_recovery_questions():
     data = request.get_json(force=True)
     email = (data.get("email") or "").strip().lower()
 
-    user = User.query.filter_by(email=email).first()
+    user = (
+        User.query.filter_by(email=email).first()
+        or User.query.filter_by(email_recuperacao=email).first()
+    )
+
     if not user or not user.perguntas_recuperacao:
         return jsonify(status="error", msg="Sem perguntas de recuperação"), 404
 
@@ -300,9 +327,9 @@ def get_recovery_questions():
 
     return jsonify(
         status="ok",
+        email_principal=user.email,
         perguntas=[p["pergunta"] for p in perguntas]
     )
-
 # ================= VALIDAR RESPOSTAS =================
 @app.route("/api/validate-recovery-answers", methods=["POST"])
 def validate_recovery_answers():
@@ -311,7 +338,11 @@ def validate_recovery_answers():
     email = (data.get("email") or "").strip().lower()
     respostas = data.get("respostas", [])
 
-    user = User.query.filter_by(email=email).first()
+    user = (
+        User.query.filter_by(email=email).first()
+        or User.query.filter_by(email_recuperacao=email).first()
+    )
+
     if not user or not user.perguntas_recuperacao:
         return jsonify(status="error", msg="Utilizador inválido"), 404
 
@@ -324,7 +355,10 @@ def validate_recovery_answers():
         if hash_resposta(resposta) != perguntas_guardadas[i]["hash"]:
             return jsonify(status="error", msg="Resposta incorreta"), 401
 
-    return jsonify(status="ok")
+    return jsonify(
+        status="ok",
+        email_principal=user.email
+    )
 # ================= START =================
 if __name__ == "__main__":
     with app.app_context():
