@@ -110,37 +110,36 @@ def validate_username_code():
 # ================= API ALTERAR PASSWORD =================
 @app.route("/api/change-password", methods=["POST"])
 def change_password():
-    data = request.get_json(silent=True) or {}
-    username = data.get("username")
+    data = request.get_json(force=True)
+
+    email = (data.get("email") or "").strip().lower()
     new_password = data.get("password")
 
-    if not username or not new_password:
+    if not email or not new_password:
         return jsonify(status="error", msg="Dados inválidos")
-
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        return jsonify(status="error", msg="Utilizador não encontrado")
-
-    user.password = hash_password(new_password)
-    db.session.commit()
-
-    return jsonify(status="ok", msg="Password alterada com sucesso")
-
-# ================= API OBTER USERNAME =================
-@app.route("/api/get-username", methods=["POST"])
-def get_username():
-    data = request.get_json(silent=True) or {}
-    email = data.get("email")
-
-    if not email:
-        return jsonify(status="error", msg="Email inválido")
 
     user = User.query.filter_by(email=email).first()
     if not user:
         return jsonify(status="error", msg="Email não encontrado")
 
-    return jsonify(status="ok", username=user.username)
+    user.password = hash_password(new_password)
+    db.session.commit()
 
+    return jsonify(status="ok", msg="Password alterada com sucesso")
+# ================= API OBTER USERNAME =================
+@app.route("/api/get-username-by-email", methods=["POST"])
+def get_username_by_email():
+    data = request.get_json(force=True)
+    email = (data.get("email") or "").strip().lower()
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify(status="error", msg="Email não encontrado")
+
+    return jsonify(
+        status="ok",
+        username=user.username
+    )
 # ================= CHECK USERNAME =================
 @app.route("/check-username", methods=["POST"])
 def check_username():
@@ -153,7 +152,6 @@ def check_username():
     return jsonify(
         exists=User.query.filter_by(username=username).first() is not None
     )
-
 # ================= CHECK EMAIL =================
 @app.route("/check-email", methods=["POST"])
 def check_email():
