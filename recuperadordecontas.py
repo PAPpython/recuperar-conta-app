@@ -359,6 +359,28 @@ def validate_recovery_answers():
         status="ok",
         email_principal=user.email
     )
+
+# ================= CHECK EMAIL DE RECUPERAÇÃO =================
+@app.route("/api/check-recovery-email", methods=["POST"])
+def check_recovery_email():
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+
+    if not email:
+        return jsonify(status="error", msg="Email vazio"), 400
+
+    user = User.query.filter(
+        db.func.lower(User.email_recuperacao) == email
+    ).first()
+
+    if not user:
+        return jsonify(status="error", msg="Email de recuperação inválido"), 404
+
+    return jsonify(
+        status="ok",
+        email_principal=user.email
+    )
+
 # ================= START =================
 if __name__ == "__main__":
     with app.app_context():
