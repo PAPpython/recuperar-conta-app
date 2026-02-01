@@ -170,7 +170,7 @@ def check_email():
     return jsonify(
         exists=User.query.filter_by(email=email).first() is not None
     )
-    
+# ================= REGISTRAR =================  
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json(force=True)
@@ -198,7 +198,7 @@ def register():
     db.session.commit()
 
     return jsonify(status="ok")
-
+# ================= LOGIN =================
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json(force=True)
