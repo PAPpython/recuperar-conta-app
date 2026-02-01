@@ -30,6 +30,10 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True)
     password = db.Column(db.String(128))
 
+     # 🔐 Recuperação
+    email_recuperacao = db.Column(db.String(120), nullable=True)
+    perguntas_recuperacao = db.Column(db.Text, nullable=True)  # JSON
+
     ativo = db.Column(db.Boolean, default=True)  # Define se a conta está ativa
     desativado_em = db.Column(db.DateTime, nullable=True)  # Data de desativação
     reactivation_code = db.Column(db.String(32), nullable=True)  # Código de reativação temporário
@@ -59,6 +63,8 @@ def validate_code(token, tipo_esperado):
 
     return True, "OK"
 
+def hash_resposta(resposta: str) -> str:
+    return hashlib.sha256(resposta.strip().lower().encode()).hexdigest()
 
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
@@ -245,6 +251,80 @@ def delete_account():
     db.session.commit()
 
     return jsonify(status="ok", msg="Conta apagada com sucesso")
+
+# ================= GUARDAR DADOS DE RECUPERAÇÃO =================
+@app.route("/api/save-recovery-data", methods=["POST"])
+def save_recovery_data():
+    data = request.get_json(force=True)
+
+    email = (data.get("email") or "").strip().lower()
+    email_rec = (data.get("email_recuperacao") or "").strip().lower()
+    perguntas = data.get("perguntas", [])
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify(status="error", msg="Utilizador não encontrado"), 404
+
+    # Guardar email de recuperação
+    user.email_recuperacao = email_rec if email_rec else None
+
+    perguntas_guardar = []
+
+    for p in perguntas:
+        pergunta = (p.get("pergunta") or "").strip()
+        resposta = (p.get("resposta") or "").strip()
+
+        if pergunta and resposta:
+            perguntas_guardar.append({
+                "pergunta": pergunta,
+                "hash": hash_resposta(resposta)
+            })
+
+    user.perguntas_recuperacao = json.dumps(perguntas_guardar) if perguntas_guardar else None
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+# ================= OBTER PERGUNTAS DE RECUPERAÇÃO =================
+@app.route("/api/get-recovery-questions", methods=["POST"])
+def get_recovery_questions():
+    data = request.get_json(force=True)
+    email = (data.get("email") or "").strip().lower()
+
+    user = User.query.filter_by(email=email).first()
+    if not user or not user.perguntas_recuperacao:
+        return jsonify(status="error", msg="Sem perguntas de recuperação"), 404
+
+    perguntas = json.loads(user.perguntas_recuperacao)
+
+    return jsonify(
+        status="ok",
+        perguntas=[p["pergunta"] for p in perguntas]
+    )
+
+# ================= VALIDAR RESPOSTAS =================
+@app.route("/api/validate-recovery-answers", methods=["POST"])
+def validate_recovery_answers():
+    data = request.get_json(force=True)
+
+    email = (data.get("email") or "").strip().lower()
+    respostas = data.get("respostas", [])
+
+    user = User.query.filter_by(email=email).first()
+    if not user or not user.perguntas_recuperacao:
+        return jsonify(status="error", msg="Utilizador inválido"), 404
+
+    perguntas_guardadas = json.loads(user.perguntas_recuperacao)
+
+    if len(respostas) != len(perguntas_guardadas):
+        return jsonify(status="error", msg="Número de respostas inválido"), 400
+
+    for i, resposta in enumerate(respostas):
+        if hash_resposta(resposta) != perguntas_guardadas[i]["hash"]:
+            return jsonify(status="error", msg="Resposta incorreta"), 401
+
+    return jsonify(status="ok")
 # ================= START =================
 if __name__ == "__main__":
     with app.app_context():
