@@ -45,75 +45,105 @@ class User(db.Model):
     foto = db.Column(db.String(255), nullable=True)
 
 class Post(db.Model):
+    __tablename__ = "posts"
+
     id = db.Column(db.String, primary_key=True)
-    autor_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    autor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     texto = db.Column(db.Text)
     imagem = db.Column(db.String)
-    original_post_id = db.Column(db.String)
+    original_post_id = db.Column(db.String, db.ForeignKey("posts.id"))
     data = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Comment(db.Model):
+    __tablename__ = "comments"
+
     id = db.Column(db.String, primary_key=True)
-    post_id = db.Column(db.String, db.ForeignKey("posts.id"))
-    autor_id = db.Column(db.Integer, db.ForeignKey("users.id"))
-    texto = db.Column(db.Text)
-    parent_id = db.Column(db.String)
+    post_id = db.Column(
+        db.String,
+        db.ForeignKey("posts.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    autor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    texto = db.Column(db.Text, nullable=False)
+    parent_id = db.Column(db.String, db.ForeignKey("comments.id"))
     data = db.Column(db.DateTime, default=datetime.utcnow)
 
+
 class Like(db.Model):
+    __tablename__ = "likes"
+
     id = db.Column(db.String, primary_key=True)
-    post_id = db.Column(db.String)
-    user_id = db.Column(db.Integer)
+    post_id = db.Column(db.String, db.ForeignKey("posts.id", ondelete="CASCADE"))
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
 
 class CommentLike(db.Model):
+    __tablename__ = "comment_likes"
+
     id = db.Column(db.String, primary_key=True)
-    comment_id = db.Column(db.String)
-    user_id = db.Column(db.Integer)
+    comment_id = db.Column(db.String, db.ForeignKey("comments.id", ondelete="CASCADE"))
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
 
 class Follow(db.Model):
+    __tablename__ = "follows"
+
     id = db.Column(db.String, primary_key=True)
-    follower_id = db.Column(db.Integer)
-    followed_id = db.Column(db.Integer)
+    follower_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    followed_id = db.Column(db.Integer, db.ForeignKey("users.id"))
 
 class Block(db.Model):
+    __tablename__ = "blocks"
+
     id = db.Column(db.String, primary_key=True)
-    blocker_id = db.Column(db.Integer)
-    blocked_id = db.Column(db.Integer)
+    blocker_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    blocked_id = db.Column(db.Integer, db.ForeignKey("users.id"))
 
 class Notification(db.Model):
+    __tablename__ = "notifications"
+
     id = db.Column(db.String, primary_key=True)
-    user_id = db.Column(db.Integer)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     tipo = db.Column(db.String)
-    origem_id = db.Column(db.Integer)
-    post_id = db.Column(db.String)
-    comment_id = db.Column(db.String)
+    origem_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    post_id = db.Column(db.String, db.ForeignKey("posts.id"))
+    comment_id = db.Column(db.String, db.ForeignKey("comments.id"))
     lida = db.Column(db.Boolean, default=False)
     data = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Message(db.Model):
+    __tablename__ = "messages"
+
     id = db.Column(db.String, primary_key=True)
-    from_user_id = db.Column(db.Integer)
-    to_user_id = db.Column(db.Integer)
+    from_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    to_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     texto = db.Column(db.Text)
     lida = db.Column(db.Boolean, default=False)
     data = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Share(db.Model):
+    __tablename__ = "shares"
+
     id = db.Column(db.String, primary_key=True)
-    post_id = db.Column(db.String)
-    from_user_id = db.Column(db.Integer)
-    to_user_id = db.Column(db.Integer)
+    post_id = db.Column(db.String, db.ForeignKey("posts.id"))
+    from_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    to_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
 
 class ReportPost(db.Model):
+    __tablename__ = "reports_posts"
+
     id = db.Column(db.String, primary_key=True)
-    post_id = db.Column(db.String)
-    user_id = db.Column(db.Integer)
+    post_id = db.Column(db.String, db.ForeignKey("posts.id"))
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     motivo = db.Column(db.Text)
 
+
 class ReportUser(db.Model):
+    __tablename__ = "reports_users"
+
     id = db.Column(db.String, primary_key=True)
-    reported_user_id = db.Column(db.Integer)
-    reporter_id = db.Column(db.Integer)
+    reported_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    reporter_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     motivo = db.Column(db.Text)
 
 # ================= CRIAR TABELAS =================
