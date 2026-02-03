@@ -2,6 +2,8 @@ from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime, timedelta
+from flask import send_from_directory
+from flask import request
 import os
 import time
 import hashlib
@@ -15,6 +17,12 @@ app = Flask(__name__)
 CORS(app)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+# garantir que a pasta existe (Render)
+os.makedirs(os.path.join(UPLOAD_FOLDER, "fotos"), exist_ok=True)
+
 
 # ================= CONFIG =================
 app.config["SECRET_KEY"] = "recuperar-secret"
@@ -182,6 +190,17 @@ def existe_bloqueio(a, b):
         )
     ).first() is not None
 
+def foto_url(foto):
+    if not foto:
+        return None
+    if foto.startswith("http"):
+        return foto
+
+    # garante pasta correta
+    if not foto.startswith("fotos/"):
+        foto = f"fotos/{foto}"
+
+    return f"{request.host_url.rstrip('/')}/uploads/{foto}"
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
 def home():
@@ -508,6 +527,7 @@ def listar_posts():
     for p in posts:
         if user_id and existe_bloqueio(user_id, p.autor_id):
             continue
+
         real_id = p.original_post_id or p.id
         autor = User.query.get(p.autor_id)
 
@@ -526,12 +546,11 @@ def listar_posts():
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
-                "foto": autor.foto
+                "foto": foto_url(autor.foto)
             }
         })
 
     return jsonify(res)
-
 #================= CREATE POST =================
 @app.route("/posts", methods=["POST"])
 def criar_post():
@@ -717,7 +736,7 @@ def inbox(user_id):
             "enviado_por": sender.username,
             "autor": {
                 "username": autor.username,
-                "foto": autor.foto
+                "foto": foto_url(autor.foto)
             }
         })
 
@@ -1120,7 +1139,7 @@ def listar_comentarios(post_id):
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
-                "foto": autor.foto
+                "foto": foto_url(autor.foto)
             }
         })
 
@@ -1195,15 +1214,16 @@ def perfil_completo(user_id):
         ).first() is not None
 
     return jsonify({
-        "id": user.id,
-        "nome": user.nome,
-        "username": user.username,
-        "foto": user.foto,
-        "banner": user.banner,
-        "seguidores": seguidores,
-        "seguindo": seguindo,
-        "segue": segue
-    })
+    "id": user.id,
+    "nome": user.nome,
+    "username": user.username,
+    "foto": foto_url(user.foto),
+    "banner": user.banner,
+    "seguidores": seguidores,
+    "seguindo": seguindo,
+    "segue": segue
+})
+
 
 #================= POSTS DO PERFIL =================
 @app.route("/users/<int:user_id>/posts", methods=["GET"])
@@ -1360,6 +1380,10 @@ def atualizar_perfil():
     db.session.commit()
     return jsonify(status="ok")
 
+
+@app.route("/uploads/<path:filename>")
+def uploads(filename):
+    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
