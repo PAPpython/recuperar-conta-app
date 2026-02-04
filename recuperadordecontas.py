@@ -191,8 +191,7 @@ def existe_bloqueio(a, b):
     ).first() is not None
 
 def foto_url(foto):
-    # FOTO DEFAULT (avatar padrão)
-    DEFAULT = f"{request.host_url.rstrip('/')}/uploads/fotos/default.png"
+    DEFAULT = "https://i.imgur.com/8Km9tLL.png"  # avatar público
 
     if not foto:
         return DEFAULT
@@ -200,10 +199,7 @@ def foto_url(foto):
     if foto.startswith("http"):
         return foto
 
-    if not foto.startswith("fotos/"):
-        foto = f"fotos/{foto}"
-
-    return f"{request.host_url.rstrip('/')}/uploads/{foto}"
+    return f"{request.host_url.rstrip('/')}/uploads/fotos/{foto}"
 
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
