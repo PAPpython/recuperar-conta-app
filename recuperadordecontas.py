@@ -191,16 +191,20 @@ def existe_bloqueio(a, b):
     ).first() is not None
 
 def foto_url(foto):
+    # FOTO DEFAULT (avatar padrão)
+    DEFAULT = f"{request.host_url.rstrip('/')}/uploads/fotos/default.png"
+
     if not foto:
-        return None
+        return DEFAULT
+
     if foto.startswith("http"):
         return foto
 
-    # garante pasta correta
     if not foto.startswith("fotos/"):
         foto = f"fotos/{foto}"
 
     return f"{request.host_url.rstrip('/')}/uploads/{foto}"
+
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
 def home():
