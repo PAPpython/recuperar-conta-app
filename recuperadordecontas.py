@@ -50,7 +50,7 @@ class User(db.Model):
     desativado_em = db.Column(db.DateTime, nullable=True)  # Data de desativação
     reactivation_code = db.Column(db.String(32), nullable=True)  # Código de reativação temporário
     apagado = db.Column(db.Boolean, default=False)  # Marca se a conta foi apagada
-    foto = db.Column(db.String(255), nullable=True)
+    foto = db.Column(db.String, nullable=True)
 
 class Post(db.Model):
     __tablename__ = "posts"
@@ -525,28 +525,17 @@ def listar_posts():
     res = []
 
     for p in posts:
-        if user_id and existe_bloqueio(user_id, p.autor_id):
-            continue
-
-        real_id = p.original_post_id or p.id
         autor = User.query.get(p.autor_id)
 
         res.append({
             "id": p.id,
             "texto": p.texto,
-            "imagem": p.imagem,
             "data": p.data.strftime("%d/%m/%Y %H:%M"),
-            "repost": bool(p.original_post_id),
-
-            "likes": Like.query.filter_by(post_id=real_id).count(),
-            "comentarios": Comment.query.filter_by(post_id=real_id).count(),
-
-            "pode_apagar": user_id == p.autor_id,
 
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
-                "foto": foto_url(autor.foto)
+                "foto": autor.foto  # None ou URL/caminho
             }
         })
 
