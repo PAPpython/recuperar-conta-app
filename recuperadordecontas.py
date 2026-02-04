@@ -1384,6 +1384,38 @@ def atualizar_perfil():
 @app.route("/uploads/<path:filename>")
 def uploads(filename):
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+
+@app.route("/users/<int:user_id>/upload-photo", methods=["POST"])
+def upload_foto(user_id):
+    if "foto" not in request.files:
+        return jsonify(error="Nenhuma foto enviada"), 400
+
+    file = request.files["foto"]
+    if file.filename == "":
+        return jsonify(error="Nome inválido"), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    nome_ficheiro = f"{uuid.uuid4()}{ext}"
+
+    pasta = os.path.join(app.config["UPLOAD_FOLDER"], "fotos")
+    os.makedirs(pasta, exist_ok=True)
+
+    caminho = os.path.join(pasta, nome_ficheiro)
+    file.save(caminho)
+
+    # 🔥 GUARDA SÓ O NOME
+    user.foto = nome_ficheiro
+    db.session.commit()
+
+    return jsonify(
+        status="ok",
+        foto=foto_url(nome_ficheiro)
+    )
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
