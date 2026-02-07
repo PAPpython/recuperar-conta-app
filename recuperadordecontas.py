@@ -46,11 +46,13 @@ class User(db.Model):
     email_recuperacao = db.Column(db.String(120), nullable=True)
     perguntas_recuperacao = db.Column(db.Text, nullable=True)  # JSON
 
+    moedas = db.Column(db.Integer, default=0)
+
     ativo = db.Column(db.Boolean, default=True)  # Define se a conta está ativa
     desativado_em = db.Column(db.DateTime, nullable=True)  # Data de desativação
     reactivation_code = db.Column(db.String(32), nullable=True)  # Código de reativação temporário
     apagado = db.Column(db.Boolean, default=False)  # Marca se a conta foi apagada
-    foto = db.Column(db.String, nullable=True)
+    avatar = db.Column(db.String(50), nullable=True)  # ✅ AVATAR (ID DO AVATAR)
 
 class Post(db.Model):
     __tablename__ = "posts"
@@ -190,17 +192,6 @@ def existe_bloqueio(a, b):
         )
     ).first() is not None
 
-def foto_url(foto):
-    DEFAULT = "https://i.imgur.com/8Km9tLL.png"  # avatar público
-
-    if not foto:
-        return DEFAULT
-
-    if foto.startswith("http"):
-        return foto
-
-    return f"{request.host_url.rstrip('/')}/uploads/fotos/{foto}"
-
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
 def home():
@@ -327,6 +318,7 @@ def register():
         username=username,
         email=email,
         password=hash_password(password)
+        avatar=data.get("avatar", "default")
     )
 
     db.session.add(user)
@@ -531,11 +523,11 @@ def listar_posts():
             "id": p.id,
             "texto": p.texto,
             "data": p.data.strftime("%d/%m/%Y %H:%M"),
-
+            
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
-                "foto": autor.foto  # None ou URL/caminho
+                "avatar": autor.avatar
             }
         })
 
@@ -725,7 +717,7 @@ def inbox(user_id):
             "enviado_por": sender.username,
             "autor": {
                 "username": autor.username,
-                "foto": foto_url(autor.foto)
+                "avatar", user.avatar
             }
         })
 
@@ -1128,7 +1120,7 @@ def listar_comentarios(post_id):
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
-                "foto": foto_url(autor.foto)
+                "avatar", user.avatar
             }
         })
 
@@ -1203,15 +1195,14 @@ def perfil_completo(user_id):
         ).first() is not None
 
     return jsonify({
-    "id": user.id,
-    "nome": user.nome,
-    "username": user.username,
-    "foto": foto_url(user.foto),
-    "banner": user.banner,
-    "seguidores": seguidores,
-    "seguindo": seguindo,
-    "segue": segue
-})
+        "id": user.id,
+        "nome": user.nome,
+        "username": user.username,
+        "avatar": user.avatar,  # ✅
+        "banner": user.banner,
+        "seguidores": seguidores,
+        "seguindo": seguindo
+    })
 
 
 #================= POSTS DO PERFIL =================
@@ -1344,7 +1335,7 @@ def atualizar_perfil():
     user_id = data.get("id")
     username = (data.get("username") or "").strip().lower()
     apelido = data.get("apelido")
-    foto = data.get("foto")
+    "avatar", user.avatar
 
     if not user_id or not username:
         return jsonify(error="Dados inválidos"), 400
@@ -1364,12 +1355,12 @@ def atualizar_perfil():
 
     user.username = username
     user.nome = apelido
-    user.foto = foto
+    user.avatar =avatar
 
     db.session.commit()
     return jsonify(status="ok")
 
-
+#=============================================
 @app.route("/uploads/<path:filename>")
 def uploads(filename):
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
