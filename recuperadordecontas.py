@@ -317,7 +317,7 @@ def register():
     user = User(
         username=username,
         email=email,
-        password=hash_password(password)
+        password=hash_password(password),
         avatar=data.get("avatar", "default")
     )
 
