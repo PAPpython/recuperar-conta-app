@@ -518,12 +518,14 @@ def listar_posts():
 
     for p in posts:
         autor = User.query.get(p.autor_id)
+        real_id = p.original_post_id or p.id
 
         res.append({
             "id": p.id,
             "texto": p.texto,
             "data": p.data.strftime("%d/%m/%Y %H:%M"),
-            
+            "likes": Like.query.filter_by(post_id=real_id).count(),
+            "comentarios": Comment.query.filter_by(post_id=real_id).count(),
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
