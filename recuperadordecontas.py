@@ -315,11 +315,11 @@ def register():
         return jsonify(status="error", msg="Email já existe"), 409
 
     user = User(
-        username=username,
-        email=email,
-        password=hash_password(password),
-        avatar=data.get("avatar", "default")
-    )
+    username=username,
+    email=email,
+    password=hash_password(password),
+    avatar="default"
+)
 
     db.session.add(user)
     db.session.commit()
@@ -355,11 +355,13 @@ def login():
         ), 403
 
     return jsonify(
-        status="ok",
-        id=user.id,
-        username=user.username,
-        email=user.email
-    )
+    status="ok",
+    id=user.id,
+    username=user.username,
+    email=user.email,
+    avatar=user.avatar,
+    moedas=user.moedas
+)
 
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
