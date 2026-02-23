@@ -12,6 +12,8 @@ import base64
 import json
 import uuid
 
+print("ESTE DEPLOY É O NOVO!!!")
+
 # ================= APP =================
 app = Flask(__name__)
 CORS(app)
