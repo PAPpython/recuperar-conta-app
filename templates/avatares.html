@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Escolher Avatar</title>
+</head>
+<body>
+
+<h2>Escolhe o teu Avatar</h2>
+
+<div style="display:flex; flex-wrap:wrap; gap:15px;">
+
+{% for avatar in avatares %}
+    <div style="text-align:center;">
+        <img src="{{ url_for('static', filename='avatars/' + avatar + '.png') }}"
+             width="120">
+        <br>
+        <a href="/selecionar-avatar/{{ avatar }}">
+            Escolher
+        </a>
+    </div>
+{% endfor %}
+
+</div>
+
+</body>
+</html>
