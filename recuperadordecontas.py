@@ -1434,6 +1434,11 @@ def comprar_avatar():
         novo_avatar=user.avatar,
         moedas_restantes=user.moedas
     )
+
+@app.route("/avatar/<filename>")
+def servir_avatar(filename):
+    caminho = os.path.join(app.root_path, "static", "avatars")
+    return send_from_directory(caminho, filename)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
