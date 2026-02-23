@@ -721,7 +721,7 @@ def inbox(user_id):
             "enviado_por": sender.username,
             "autor": {
                 "username": autor.username,
-                "avatar": user.avatar
+                "avatar": autor.avatar
             }
         })
 
@@ -1124,7 +1124,7 @@ def listar_comentarios(post_id):
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
-                "avatar": user.avatar
+                "avatar": autor.avatar
             }
         })
 
@@ -1366,6 +1366,74 @@ def atualizar_perfil():
     db.session.commit()
     return jsonify(status="ok")
 
+# ================= LOJA DE AVATARES =================
+
+AVATARES_LOJA = [
+    "1000135268",
+    "1000135269",
+    "1000135270",
+    "1000135271",
+    "1000135272",
+    "1000135273",
+    "1000135274",
+    "1000135275",
+    "1000135276",
+    "1000135277", 
+    "1000135278",
+    "1000135279",
+    "1000135280",
+    "1000135281",
+    "1000135282",
+    "1000135283",
+    "1000135284",
+    "1000135285",
+    "1000135286",
+    "1000135287",
+    "1000135288",
+    "1000135289",
+    "1000135290"
+]
+
+PRECO_AVATAR = 250  # moedas por avatar
+
+@app.route("/avatars/loja", methods=["GET"])
+def listar_loja_avatares():
+    return jsonify({
+        "avatares": AVATARES_LOJA,
+        "preco": PRECO_AVATAR
+    })
+
+
+@app.route("/avatars/comprar", methods=["POST"])
+def comprar_avatar():
+    data = request.get_json(force=True)
+
+    user_id = data.get("user_id")
+    avatar_id = data.get("avatar")
+
+    if not user_id or not avatar_id:
+        return jsonify(error="Dados inválidos"), 400
+
+    if avatar_id not in AVATARES_LOJA:
+        return jsonify(error="Avatar inválido"), 400
+
+    user = User.query.get(user_id)
+    if not user or user.apagado:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    if user.moedas < PRECO_AVATAR:
+        return jsonify(error="Moedas insuficientes"), 403
+
+    user.moedas -= PRECO_AVATAR
+    user.avatar = avatar_id
+
+    db.session.commit()
+
+    return jsonify(
+        status="ok",
+        novo_avatar=user.avatar,
+        moedas_restantes=user.moedas
+    )
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
