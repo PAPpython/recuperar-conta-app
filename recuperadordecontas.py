@@ -1458,6 +1458,33 @@ def comprar_avatar():
 def servir_avatar(filename):
     caminho = os.path.join(app.root_path, "static", "avatars")
     return send_from_directory(caminho, filename)
+
+# ================= ATUALIZAR MOEDAS =================
+@app.route("/users/moedas", methods=["POST"])
+def atualizar_moedas():
+
+    data = request.get_json(force=True)
+
+    user_id = data.get("user_id")
+    moedas = data.get("moedas")
+
+    if user_id is None or moedas is None:
+        return jsonify(error="Dados inválidos"), 400
+
+    user = User.query.get(user_id)
+
+    if not user or user.apagado:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    print("ATUALIZAR MOEDAS:", user_id, "->", moedas)
+
+    user.moedas = int(moedas)
+    db.session.commit()
+
+    return jsonify(
+        status="ok",
+        moedas=user.moedas
+    )
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
