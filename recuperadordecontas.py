@@ -1333,6 +1333,22 @@ def marcar_lidas(user_id, from_user):
     db.session.commit()
     return jsonify(status="ok")
 
+# ================= OBTER PERFIL =================
+@app.route("/users/<int:user_id>", methods=["GET"])
+def obter_user(user_id):
+
+    user = User.query.get(user_id)
+
+    if not user or user.apagado:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    return jsonify({
+        "id": user.id,
+        "username": user.username,
+        "apelido": user.nome,
+        "avatar": user.avatar,
+        "moedas": user.moedas
+    })
 # ================= ATUALIZAR PERFIL =================
 @app.route("/users/update", methods=["POST"])
 def atualizar_perfil():
@@ -1347,6 +1363,7 @@ def atualizar_perfil():
         return jsonify(error="Dados inválidos"), 400
 
     user = User.query.get(user_id)
+    print("USER:", user_id, "MOEDAS:", user.moedas)
     if not user or user.apagado:
         return jsonify(error="Utilizador não encontrado"), 404
 
