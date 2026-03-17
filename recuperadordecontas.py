@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify,send_from_directory
+import os
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime, timedelta
@@ -13,6 +14,18 @@ import json
 import uuid
 
 print("ESTE DEPLOY É O NOVO!!!")
+
+# ================= SERVIR AVATARES =================
+@app.route('/avatar/<filename>')
+def servir_avatar(filename):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, 'static', 'avatars')
+
+    print("A SERVIR AVATAR:", filename)
+    print("PASTA:", path)
+
+    return send_from_directory(path, filename)
+    
 # ================= APP =================
 app = Flask(__name__)
 CORS(app)
