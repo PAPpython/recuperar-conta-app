@@ -1489,6 +1489,28 @@ def atualizar_moedas():
         status="ok",
         moedas=user.moedas
     )
+
+@app.route("/users/add-moedas", methods=["POST"])
+def adicionar_moedas():
+    data = request.get_json()
+
+    user_id = data.get("user_id")
+    moedas = data.get("moedas", 0)
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.moedas += int(moedas)
+
+    db.session.commit()
+
+    return jsonify({
+        "status": "ok",
+        "moedas": user.moedas
+    })
+    
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
