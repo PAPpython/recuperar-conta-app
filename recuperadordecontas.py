@@ -15,17 +15,6 @@ import uuid
 
 print("ESTE DEPLOY É O NOVO!!!")
 
-# ================= SERVIR AVATARES =================
-@app.route('/avatar/<filename>')
-def servir_avatar(filename):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base_dir, 'static', 'avatars')
-
-    print("A SERVIR AVATAR:", filename)
-    print("PASTA:", path)
-
-    return send_from_directory(path, filename)
-    
 # ================= APP =================
 app = Flask(__name__)
 CORS(app)
@@ -37,7 +26,16 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # garantir que a pasta existe (Render)
 os.makedirs(os.path.join(UPLOAD_FOLDER, "fotos"), exist_ok=True)
 
+# ================= SERVIR AVATARES =================
+@app.route('/avatar/<filename>')
+def servir_avatar(filename):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, 'static', 'avatars')
 
+    print("A SERVIR AVATAR:", filename)
+    print("PASTA:", path)
+
+    return send_from_directory(path, filename)
 # ================= CONFIG =================
 app.config["SECRET_KEY"] = "recuperar-secret"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
