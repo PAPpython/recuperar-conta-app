@@ -1440,10 +1440,19 @@ def comprar_avatar():
     if not user or user.apagado:
         return jsonify(error="Utilizador não encontrado"), 404
 
-    if user.moedas < PRECO_AVATAR:
+    # 🔍 DEBUG (podes apagar depois)
+    print("USER:", user_id)
+    print("MOEDAS DB:", user.moedas)
+    print("PREÇO:", PRECO_AVATAR)
+
+    # 🔴 VERIFICAÇÃO CORRETA
+    if int(user.moedas) < int(PRECO_AVATAR):
         return jsonify(error="Moedas insuficientes"), 403
 
-    user.moedas -= PRECO_AVATAR
+    # 💰 DESCONTAR
+    user.moedas = int(user.moedas) - int(PRECO_AVATAR)
+
+    # 🖼️ ATUALIZAR AVATAR
     user.avatar = avatar_id
 
     db.session.commit()
@@ -1453,11 +1462,6 @@ def comprar_avatar():
         novo_avatar=user.avatar,
         moedas_restantes=user.moedas
     )
-
-@app.route("/avatar/<filename>")
-def servir_avatar(filename):
-    caminho = os.path.join(app.root_path, "static", "avatars")
-    return send_from_directory(caminho, filename)
 
 # ================= ATUALIZAR MOEDAS =================
 @app.route("/users/moedas", methods=["POST"])
