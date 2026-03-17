@@ -543,7 +543,7 @@ def listar_posts():
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
-                "avatar": autor.avatar
+                "avatar": post.autor.avatar
             }
         })
 
