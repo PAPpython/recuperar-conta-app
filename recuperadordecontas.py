@@ -53,6 +53,8 @@ class User(db.Model):
     password = db.Column(db.String(128))
     nome = db.Column(db.String(120), nullable=True)
     banner = db.Column(db.String(255), nullable=True)
+    avatares_comprados = db.Column(db.Text, default="[]")
+    banners_comprados = db.Column(db.Text, default="[]")
 
      # 🔐 Recuperação
     email_recuperacao = db.Column(db.String(120), nullable=True)
@@ -65,6 +67,7 @@ class User(db.Model):
     reactivation_code = db.Column(db.String(32), nullable=True)  # Código de reativação temporário
     apagado = db.Column(db.Boolean, default=False)  # Marca se a conta foi apagada
     avatar = db.Column(db.String(50), nullable=True)  # ✅ AVATAR (ID DO AVATAR)
+    ultima_recompensa_post = db.Column(db.DateTime, nullable=True)
 
 class Post(db.Model):
     __tablename__ = "posts"
@@ -331,7 +334,10 @@ def register():
     email=email,
     password=hash_password(password),
     avatar="default",
-    banner="bannerdefault"
+    banner="bannerdefault",
+    avatares_comprados=json.dumps([]),
+    banners_comprados=json.dumps([]),
+    moedas=0
 )
 
     db.session.add(user)
@@ -555,6 +561,10 @@ def listar_posts():
 def criar_post():
     data = request.get_json(force=True)
 
+    user = User.query.get(data["autor_id"])
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
     post = Post(
         id=str(uuid.uuid4()),
         autor_id=data["autor_id"],
@@ -564,10 +574,32 @@ def criar_post():
     )
 
     db.session.add(post)
+
+    # ===============================
+    # 🎁 MISSÃO DIÁRIA: 1 POST = 500 MOEDAS
+    # ===============================
+    from datetime import datetime
+
+    hoje = datetime.utcnow().date()
+
+    if user.ultima_recompensa_post:
+        ultimo = user.ultima_recompensa_post.date()
+    else:
+        ultimo = None
+
+    if ultimo != hoje:
+        user.moedas += 500
+        user.ultima_recompensa_post = datetime.utcnow()
+
+        print("🎁 Recompensa diária atribuída: +500 moedas")
+
     db.session.commit()
 
-    return jsonify(status="ok", id=post.id)
-
+    return jsonify(
+        status="ok",
+        id=post.id,
+        moedas=user.moedas
+    )
 #================= DELETE POST =================
 @app.route("/posts/<post_id>", methods=["DELETE"])
 def apagar_post(post_id):
@@ -1469,35 +1501,53 @@ def comprar_avatar():
     if not user_id or not avatar_id:
         return jsonify(error="Dados inválidos"), 400
 
-    if avatar_id not in AVATARES_LOJA:
-        return jsonify(error="Avatar inválido"), 400
-
     user = User.query.get(user_id)
-    if not user or user.apagado:
+
+    if not user:
         return jsonify(error="Utilizador não encontrado"), 404
 
-    # 🔍 DEBUG (podes apagar depois)
-    print("USER:", user_id)
-    print("MOEDAS DB:", user.moedas)
-    print("PREÇO:", PRECO_AVATAR)
+    # 🔥 buscar comprados
+    comprados = json.loads(user.avatares_comprados or "[]")
 
-    # 🔴 VERIFICAÇÃO CORRETA
-    if int(user.moedas) < int(PRECO_AVATAR):
+    # ✅ já comprou → só equipa
+    if avatar_id in comprados:
+        user.avatar = avatar_id
+        db.session.commit()
+
+        return jsonify(
+            status="equipado",
+            novo_avatar=user.avatar,
+            moedas_restantes=user.moedas
+        )
+
+    # 💰 PREÇO DINÂMICO
+    if len(comprados) == 0:
+        preco = 250
+    else:
+        preco = 500
+
+    # ❌ dinheiro insuficiente
+    if user.moedas < preco:
         return jsonify(error="Moedas insuficientes"), 403
 
-    # 💰 DESCONTAR
-    user.moedas = int(user.moedas) - int(PRECO_AVATAR)
+    # 💸 descontar moedas
+    user.moedas -= preco
 
-    # 🖼️ ATUALIZAR AVATAR
+    # 🧠 guardar compra
+    comprados.append(avatar_id)
+    user.avatares_comprados = json.dumps(comprados)
+
+    # 🖼️ equipar automaticamente
     user.avatar = avatar_id
 
     db.session.commit()
 
     return jsonify(
-        status="ok",
+        status="comprado",
         novo_avatar=user.avatar,
         moedas_restantes=user.moedas
     )
+
 
 @app.route("/banners/comprar", methods=["POST"])
 def comprar_banner():
@@ -1516,25 +1566,55 @@ def comprar_banner():
     if not user or user.apagado:
         return jsonify(error="Utilizador não encontrado"), 404
 
-    # 🔍 DEBUG
-    print("USER:", user_id)
-    print("MOEDAS DB:", user.moedas)
-    print("PREÇO:", PRECO_BANNER)
+    # 📦 Lista de banners comprados
+    import json
+    comprados = json.loads(user.banners_comprados or "[]")
 
-    # 🔴 VERIFICAÇÃO
-    if int(user.moedas) < int(PRECO_BANNER):
+    # ===============================
+    # ✅ JÁ COMPROU → só equipa
+    # ===============================
+    if banner_id in comprados:
+        user.banner = banner_id
+        db.session.commit()
+
+        return jsonify(
+            status="equipado",
+            novo_banner=user.banner,
+            moedas_restantes=user.moedas
+        )
+
+    # ===============================
+    # 💰 PREÇO DINÂMICO
+    # ===============================
+    if len(comprados) == 0:
+        preco = 250
+    else:
+        preco = 500
+
+    print("PREÇO:", preco)
+    print("MOEDAS:", user.moedas)
+
+    # ===============================
+    # ❌ MOEDAS INSUFICIENTES
+    # ===============================
+    if int(user.moedas) < int(preco):
         return jsonify(error="Moedas insuficientes"), 403
 
-    # 💰 DESCONTAR
-    user.moedas = int(user.moedas) - int(PRECO_BANNER)
+    # ===============================
+    # 💸 DESCONTAR + GUARDAR
+    # ===============================
+    user.moedas -= preco
+    comprados.append(banner_id)
 
-    # 🖼️ ATUALIZAR BANNER
+    user.banners_comprados = json.dumps(comprados)
+
+    # 🎯 EQUIPAR AUTOMATICAMENTE
     user.banner = banner_id
 
     db.session.commit()
 
     return jsonify(
-        status="ok",
+        status="comprado",
         novo_banner=user.banner,
         moedas_restantes=user.moedas
     )
