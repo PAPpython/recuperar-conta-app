@@ -1592,11 +1592,13 @@ def servir_banner(filename):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(base_dir, 'static', 'banners')
 
-    print("A SERVIR BANNER:", nome)
+    print("A SERVIR BANNER:", filename)
 
     for ext in [".png", ".jpg", ".jpeg"]:
-        file = nome + ext
-        if os.path.exists(os.path.join(path, file)):
+        file = filename + ext
+        full_path = os.path.join(path, file)
+
+        if os.path.exists(full_path):
             return send_from_directory(path, file)
 
     return "Banner não encontrado", 404
