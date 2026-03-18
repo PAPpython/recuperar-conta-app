@@ -330,7 +330,8 @@ def register():
     username=username,
     email=email,
     password=hash_password(password),
-    avatar="default"
+    avatar="default",
+    banner="bannerdefault"
 )
 
     db.session.add(user)
@@ -372,6 +373,7 @@ def login():
     username=user.username,
     email=user.email,
     avatar=user.avatar,
+    banner=user.banner,
     moedas=user.moedas
 )
 
@@ -733,7 +735,8 @@ def inbox(user_id):
             "enviado_por": sender.username,
             "autor": {
                 "username": autor.username,
-                "avatar": autor.avatar
+                "avatar": autor.avatar,
+                "banner": autor.banner
             }
         })
 
@@ -1136,7 +1139,8 @@ def listar_comentarios(post_id):
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
-                "avatar": autor.avatar
+                "avatar": autor.avatar,
+                "banner": autor.banner
             }
         })
 
@@ -1357,6 +1361,7 @@ def obter_user(user_id):
         "username": user.username,
         "apelido": user.nome,
         "avatar": user.avatar,
+        "banner": user.banner,
         "moedas": user.moedas
     })
 # ================= ATUALIZAR PERFIL =================
@@ -1368,6 +1373,7 @@ def atualizar_perfil():
     username = (data.get("username") or "").strip().lower()
     apelido = data.get("apelido")
     avatar = data.get("avatar")
+    banner = data.get("banner")
 
     if not user_id or not username:
         return jsonify(error="Dados inválidos"), 400
@@ -1391,6 +1397,9 @@ def atualizar_perfil():
 
     if avatar:
         user.avatar = avatar
+
+    if banner:
+        user.banner = banner
 
     db.session.commit()
     return jsonify(status="ok")
@@ -1425,11 +1434,29 @@ AVATARES_LOJA = [
 
 PRECO_AVATAR = 250  # moedas por avatar
 
+# ================= BANNERS LOJA =================
+BANNERS_LOJA = [
+    "1000135250",
+    "1000135255",
+    "1000135291",
+    "1000135292",
+    "bannerdefault"
+]
+
+PRECO_BANNER = 500
+
 @app.route("/avatars/loja", methods=["GET"])
 def listar_loja_avatares():
     return jsonify({
         "avatares": AVATARES_LOJA,
         "preco": PRECO_AVATAR
+    })
+
+@app.route("/banners/loja", methods=["GET"])
+def listar_loja_banners():
+    return jsonify({
+        "banners": BANNERS_LOJA,
+        "preco": PRECO_BANNER
     })
 
 
@@ -1473,6 +1500,45 @@ def comprar_avatar():
         moedas_restantes=user.moedas
     )
 
+@app.route("/banners/comprar", methods=["POST"])
+def comprar_banner():
+    data = request.get_json(force=True)
+
+    user_id = data.get("user_id")
+    banner_id = data.get("banner")
+
+    if not user_id or not banner_id:
+        return jsonify(error="Dados inválidos"), 400
+
+    if banner_id not in BANNERS_LOJA:
+        return jsonify(error="Banner inválido"), 400
+
+    user = User.query.get(user_id)
+    if not user or user.apagado:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    # 🔍 DEBUG
+    print("USER:", user_id)
+    print("MOEDAS DB:", user.moedas)
+    print("PREÇO:", PRECO_BANNER)
+
+    # 🔴 VERIFICAÇÃO
+    if int(user.moedas) < int(PRECO_BANNER):
+        return jsonify(error="Moedas insuficientes"), 403
+
+    # 💰 DESCONTAR
+    user.moedas = int(user.moedas) - int(PRECO_BANNER)
+
+    # 🖼️ ATUALIZAR BANNER
+    user.banner = banner_id
+
+    db.session.commit()
+
+    return jsonify(
+        status="ok",
+        novo_banner=user.banner,
+        moedas_restantes=user.moedas
+    )
 # ================= ATUALIZAR MOEDAS =================
 @app.route("/users/moedas", methods=["POST"])
 def atualizar_moedas():
@@ -1520,7 +1586,20 @@ def adicionar_moedas():
         "status": "ok",
         "moedas": user.moedas
     })
-    
+
+@app.route('/banner/<filename>')
+def servir_banner(filename):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, 'static', 'banners')
+
+    print("A SERVIR BANNER:", nome)
+
+    for ext in [".png", ".jpg", ".jpeg"]:
+        file = nome + ext
+        if os.path.exists(os.path.join(path, file)):
+            return send_from_directory(path, file)
+
+    return "Banner não encontrado", 404
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
