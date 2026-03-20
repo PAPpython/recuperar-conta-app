@@ -380,7 +380,11 @@ def login():
     email=user.email,
     avatar=user.avatar,
     banner=user.banner,
-    moedas=user.moedas
+    moedas=user.moedas,
+
+    # 🔥 NOVO (MUITO IMPORTANTE)
+    avatares_comprados=json.loads(user.avatares_comprados or "[]"),
+    banners_comprados=json.loads(user.banners_comprados or "[]")
 )
 
 # ================= API PARA DELETAR CONTA =================
