@@ -1251,16 +1251,17 @@ def perfil_completo(user_id):
         ).first() is not None
 
     return jsonify({
-        "id": user.id,
-        "nome": user.nome,
-        "username": user.username,
-        "avatar": user.avatar,  # ✅
-        "banner": user.banner,
-        "seguidores": seguidores,
-        "seguindo": seguindo
-    })
+    "id": user.id,
+    "nome": user.nome,
+    "username": user.username,
+    "avatar": user.avatar,
+    "banner": user.banner,
+    "seguidores": seguidores,
+    "seguindo": seguindo,
 
-
+    # 🔥 NOVO
+    "seguindo_este_user": segue
+})
 #================= POSTS DO PERFIL =================
 @app.route("/users/<int:user_id>/posts", methods=["GET"])
 def posts_perfil(user_id):
