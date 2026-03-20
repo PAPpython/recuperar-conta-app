@@ -1681,6 +1681,42 @@ def servir_banner(filename):
             return send_from_directory(path, file)
 
     return "Banner não encontrado", 404
+
+@app.route("/users/<int:user_id>/stats", methods=["GET"])
+def user_stats(user_id):
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    # 📌 POSTS
+    posts = Post.query.filter_by(autor_id=user_id).all()
+    num_posts = len(posts)
+
+    # 📌 IDS dos posts
+    post_ids = [p.id for p in posts]
+
+    # ❤️ TOTAL LIKES (em TODOS os posts)
+    total_likes = Like.query.filter(
+        Like.post_id.in_(post_ids)
+    ).count() if post_ids else 0
+
+    # 👥 SEGUIDORES
+    seguidores = Follow.query.filter_by(
+        followed_id=user_id
+    ).count()
+
+    # ➡️ SEGUINDO
+    seguindo = Follow.query.filter_by(
+        follower_id=user_id
+    ).count()
+
+    return jsonify({
+        "posts": num_posts,
+        "likes": total_likes,
+        "seguidores": seguidores,
+        "seguindo": seguindo
+    })
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
