@@ -14,7 +14,13 @@ import json
 import uuid
 from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+api_key = os.getenv("OPENAI_API_KEY")
+
+if api_key:
+    client = OpenAI(api_key=api_key)
+else:
+    client = None
+    print("⚠️ OPENAI_API_KEY não definida")
 print("ESTE DEPLOY É O NOVO!!!")
 
 # ================= APP =================
