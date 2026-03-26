@@ -1259,8 +1259,11 @@ def perfil_completo(user_id):
     "username": user.username,
     "avatar": user.avatar,
     "banner": user.banner,
+    "bio": user.bio,  # 🔥 ADICIONA ISTO
     "seguidores": seguidores,
     "seguindo": seguindo,
+    "seguindo_este_user": segue
+})
     
 
     # 🔥 NOVO
