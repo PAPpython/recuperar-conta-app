@@ -13,16 +13,6 @@ import base64
 import json
 import uuid
 from openai import OpenAI
-
-api_key = os.getenv("OPENAI_API_KEY")
-
-if api_key:
-    client = OpenAI(api_key=api_key)
-else:
-    client = None
-    print("⚠️ OPENAI_API_KEY não definida")
-print("ESTE DEPLOY É O NOVO!!!")
-
 # ================= APP =================
 app = Flask(__name__)
 CORS(app)
@@ -48,6 +38,16 @@ def servir_avatar(filename):
 app.config["SECRET_KEY"] = "recuperar-secret"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+api_key = os.getenv("OPENAI_API_KEY")
+
+if api_key:
+    client = OpenAI(api_key=api_key)
+else:
+    client = None
+    print("⚠️ OPENAI_API_KEY não definida")
+print("ESTE DEPLOY É O NOVO!!!")
+
 
 # ================= DB =================
 db = SQLAlchemy(app)
