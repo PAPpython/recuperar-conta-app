@@ -39,16 +39,6 @@ app.config["SECRET_KEY"] = "recuperar-secret"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-api_key = os.getenv("OPENAI_API_KEY")
-
-if api_key:
-    client = OpenAI(api_key=api_key)
-else:
-    client = None
-    print("⚠️ OPENAI_API_KEY não definida")
-print("ESTE DEPLOY É O NOVO!!!")
-
-
 # ================= DB =================
 db = SQLAlchemy(app)
 
@@ -1739,94 +1729,6 @@ def user_stats(user_id):
         "seguindo": seguindo
     })
 
-@app.route("/ai/generate-bio", methods=["POST"])
-def gerar_bio():
-    data = request.get_json()
-    prompt = data.get("prompt", "")
-
-    if not prompt:
-        return jsonify(error="Prompt vazio"), 400
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Cria biografias curtas (máx 175 caracteres) para perfis de rede social."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        )
-
-        bio = response.choices[0].message.content.strip()
-
-        return jsonify({
-            "bio": bio[:175]
-        })
-
-    except Exception as e:
-        return jsonify(error=str(e)), 500
-
-
-# =========================================================
-# 🤖 5. IA DE AJUDA DO APP
-# =========================================================
-
-@app.route("/ai/help", methods=["POST"])
-def ai_help():
-    data = request.get_json()
-    pergunta = data.get("pergunta", "")
-
-    if not pergunta:
-        return jsonify(error="Pergunta vazia"), 400
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """
-És um assistente de uma rede social.
-Explicas ao utilizador como funciona o app.
-
-Funcionalidades:
-- Criar conta
-- Recuperar conta
-- Eliminar conta
-- Missões diárias
-- Botão AERON7
-- Criar posts
-- Curtir
-- Comentar
-- Seguir
-- Bloquear
-- Denunciar
-- Editar perfil
-- Ganhar moedas
-
-Responde sempre de forma simples.
-"""
-                },
-                {
-                    "role": "user",
-                    "content": pergunta
-                }
-            ]
-        )
-
-        resposta = response.choices[0].message.content.strip()
-
-        return jsonify({
-            "resposta": resposta
-        })
-
-    except Exception as e:
-        return jsonify(error=str(e)), 500
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
