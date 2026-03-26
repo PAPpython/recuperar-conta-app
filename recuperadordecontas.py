@@ -12,7 +12,9 @@ import hmac
 import base64
 import json
 import uuid
+from openai import OpenAI
 
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 print("ESTE DEPLOY É O NOVO!!!")
 
 # ================= APP =================
@@ -55,6 +57,7 @@ class User(db.Model):
     banner = db.Column(db.String(255), nullable=True)
     avatares_comprados = db.Column(db.Text, default="[]")
     banners_comprados = db.Column(db.Text, default="[]")
+    bio = db.Column(db.String(175), nullable=True)
 
      # 🔐 Recuperação
     email_recuperacao = db.Column(db.String(120), nullable=True)
@@ -1258,6 +1261,7 @@ def perfil_completo(user_id):
     "banner": user.banner,
     "seguidores": seguidores,
     "seguindo": seguindo,
+    
 
     # 🔥 NOVO
     "seguindo_este_user": segue
@@ -1399,7 +1403,8 @@ def obter_user(user_id):
         "apelido": user.nome,
         "avatar": user.avatar,
         "banner": user.banner,
-        "moedas": user.moedas
+        "moedas": user.moedas,
+        "bio": user.bio
     })
 # ================= ATUALIZAR PERFIL =================
 @app.route("/users/update", methods=["POST"])
@@ -1411,14 +1416,21 @@ def atualizar_perfil():
     apelido = data.get("apelido")
     avatar = data.get("avatar")
     banner = data.get("banner")
-
-    if not user_id or not username:
-        return jsonify(error="Dados inválidos"), 400
+    bio = data.get("bio", "")
 
     user = User.query.get(user_id)
+    
+    if not user:
+        return jsonify(error="Utilizador não encontrado"), 404
+
     print("USER:", user_id, "MOEDAS:", user.moedas)
     if not user or user.apagado:
         return jsonify(error="Utilizador não encontrado"), 404
+
+    bio = data.get("bio", "")
+    
+    if bio is not None:
+        user.bio = bio[:175]
 
     # 🔒 garantir username único
     existente = User.query.filter(
@@ -1722,6 +1734,95 @@ def user_stats(user_id):
         "seguidores": seguidores,
         "seguindo": seguindo
     })
+
+@app.route("/ai/generate-bio", methods=["POST"])
+def gerar_bio():
+    data = request.get_json()
+    prompt = data.get("prompt", "")
+
+    if not prompt:
+        return jsonify(error="Prompt vazio"), 400
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Cria biografias curtas (máx 175 caracteres) para perfis de rede social."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+
+        bio = response.choices[0].message.content.strip()
+
+        return jsonify({
+            "bio": bio[:175]
+        })
+
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+
+# =========================================================
+# 🤖 5. IA DE AJUDA DO APP
+# =========================================================
+
+@app.route("/ai/help", methods=["POST"])
+def ai_help():
+    data = request.get_json()
+    pergunta = data.get("pergunta", "")
+
+    if not pergunta:
+        return jsonify(error="Pergunta vazia"), 400
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """
+És um assistente de uma rede social.
+Explicas ao utilizador como funciona o app.
+
+Funcionalidades:
+- Criar conta
+- Recuperar conta
+- Eliminar conta
+- Missões diárias
+- Botão AERON7
+- Criar posts
+- Curtir
+- Comentar
+- Seguir
+- Bloquear
+- Denunciar
+- Editar perfil
+- Ganhar moedas
+
+Responde sempre de forma simples.
+"""
+                },
+                {
+                    "role": "user",
+                    "content": pergunta
+                }
+            ]
+        )
+
+        resposta = response.choices[0].message.content.strip()
+
+        return jsonify({
+            "resposta": resposta
+        })
+
+    except Exception as e:
+        return jsonify(error=str(e)), 500
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
