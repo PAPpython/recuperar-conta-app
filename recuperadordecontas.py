@@ -1253,19 +1253,15 @@ def perfil_completo(user_id):
             followed_id=user_id
         ).first() is not None
 
-    return jsonify({
+return jsonify({
     "id": user.id,
     "nome": user.nome,
     "username": user.username,
     "avatar": user.avatar,
     "banner": user.banner,
-    "bio": user.bio,  # 🔥 ADICIONA ISTO
+    "bio": user.bio,
     "seguidores": seguidores,
-    "seguindo": seguindo
-})
-    
-
-    # 🔥 NOVO
+    "seguindo": seguindo,
     "seguindo_este_user": segue
 })
 #================= POSTS DO PERFIL =================
