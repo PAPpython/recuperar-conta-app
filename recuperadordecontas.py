@@ -12,7 +12,6 @@ import hmac
 import base64
 import json
 import uuid
-from openai import OpenAI
 # ================= APP =================
 app = Flask(__name__)
 CORS(app)
