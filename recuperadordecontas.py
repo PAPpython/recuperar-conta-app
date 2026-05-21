@@ -53,7 +53,17 @@ class User(db.Model):
     avatares_comprados = db.Column(db.Text, default="[]")
     banners_comprados = db.Column(db.Text, default="[]")
     bio = db.Column(db.String(175), nullable=True)
-
+    role = db.Column(db.String(20), default="user")
+    banido = db.Column(db.Boolean, default=False)
+    suspenso_ate = db.Column(db.DateTime, nullable=True)
+    warn_count = db.Column(db.Integer, default=0)
+    ia_banido = db.Column(db.Boolean, default=False)
+    ia_suspenso_ate = db.Column(db.DateTime, nullable=True)
+    warning_count = db.Column(db.Integer, default=0)
+    ia_ban_reason = db.Column(db.String(255), nullable=True)
+    ultima_punicao_ia = db.Column(db.DateTime, nullable=True)
+    ban_reason = db.Column(db.String(255), nullable=True)
+    
      # 🔐 Recuperação
     email_recuperacao = db.Column(db.String(120), nullable=True)
     perguntas_recuperacao = db.Column(db.Text, nullable=True)  # JSON
@@ -204,6 +214,16 @@ def existe_bloqueio(a, b):
             db.and_(Block.blocker_id == b, Block.blocked_id == a)
         )
     ).first() is not None
+
+def is_admin(user_id):
+    user = User.query.get(user_id)
+    return user and user.role == "admin"
+
+def admin_required(user_id):
+    user = User.query.get(user_id)
+    if not user or user.role != "admin":
+        return False, jsonify(error="Sem permissão"), 403
+    return True, user
 
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
@@ -369,6 +389,11 @@ def login():
         return jsonify(
             status="error",
             msg="Essa conta foi apagada. Não é possível fazer login."
+        ), 403
+    if user.banido:
+        return jsonify(
+            status="error",
+            msg="Conta banida"
         ), 403
 
     return jsonify(
@@ -1728,6 +1753,176 @@ def user_stats(user_id):
         "seguindo": seguindo
     })
 
+@app.route("/admin/promote", methods=["POST"])
+def promote_user():
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+    target = data.get("username") or data.get("user_id")
+
+    # 🔐 verificar admin
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    # procurar user
+    if isinstance(target, int):
+        user = User.query.get(target)
+    else:
+        user = User.query.filter_by(username=target.lower()).first()
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.role = "admin"
+    db.session.commit()
+
+    return jsonify(status="ok", msg=f"{user.username} agora é admin")
+
+IA_SUSPENSOES = {
+    1: timedelta(hours=3),
+    2: timedelta(hours=12),
+    3: timedelta(days=1),
+    4: timedelta(days=3),
+    5: timedelta(days=7),
+}
+
+def punir_ia(user, motivo="Violação das regras IA"):
+    
+    user.warning_count += 1
+
+    nivel = user.warning_count
+
+    if nivel >= 6:
+        user.ia_banido = True
+        user.ia_ban_reason = motivo
+        db.session.commit()
+
+        return {
+            "status": "banido",
+            "msg": "Banido permanentemente da IA"
+        }
+
+    tempo = IA_SUSPENSOES.get(nivel)
+
+    user.ia_suspenso_ate = datetime.utcnow() + tempo
+    user.ultima_punicao_ia = datetime.utcnow()
+
+    db.session.commit()
+
+    return {
+        "status": "suspenso",
+        "tempo": str(tempo)
+    }
+
+def verificar_ban_ia(user):
+
+    if user.ia_banido:
+        return jsonify(error="Banido da IA"), 403
+
+    if user.ia_suspenso_ate and user.ia_suspenso_ate > datetime.utcnow():
+        return jsonify(
+            error=f"IA suspensa até {user.ia_suspenso_ate}"
+        ), 403
+
+    return None
+
+@app.route("/admin/posts/<post_id>", methods=["DELETE"])
+def admin_delete_post(post_id):
+
+    data = request.get_json(force=True)
+    admin_id = data.get("admin_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    post = Post.query.get(post_id)
+
+    if not post:
+        return jsonify(error="Post não encontrado"), 404
+
+    db.session.delete(post)
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+@app.route("/admin/comments/<comment_id>", methods=["DELETE"])
+def admin_delete_comment(comment_id):
+
+    data = request.get_json(force=True)
+    admin_id = data.get("admin_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    comment = Comment.query.get(comment_id)
+
+    if not comment:
+        return jsonify(error="Comentário não encontrado"), 404
+
+    db.session.delete(comment)
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+@app.route("/admin/ban/<int:user_id>", methods=["POST"])
+def admin_ban_user(user_id):
+
+    data = request.get_json(force=True)
+    admin_id = data.get("admin_id")
+    motivo = data.get("motivo", "Violação das regras")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    if user.role == "admin":
+        return jsonify(error="Não podes punir outro admin"), 403
+
+    user.banido = True
+    user.ban_reason = motivo
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+@app.route("/admin/demote", methods=["POST"])
+def demote_user():
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+    target_id = data.get("user_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(target_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.role = "user"
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+class AdminLog(db.Model):
+    __tablename__ = "admin_logs"
+
+    id = db.Column(db.String, primary_key=True)
+
+    admin_id = db.Column(db.Integer)
+    alvo_id = db.Column(db.Integer)
+
+    acao = db.Column(db.String(100))
+    motivo = db.Column(db.String(255))
+
+    data = db.Column(db.DateTime, default=datetime.utcnow)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
