@@ -618,32 +618,82 @@ def listar_posts():
 #================= CREATE POST =================
 @app.route("/posts", methods=["POST"])
 def criar_post():
-    data = request.get_json(force=True)
+
+    # ==========================================
+    # JSON OU FORM-DATA
+    # ==========================================
+
+    if request.form:
+        data = request.form
+    else:
+        data = request.get_json(force=True)
 
     user = User.query.get(data["autor_id"])
 
     if not user:
         return jsonify(error="User não encontrado"), 404
 
+    # ==========================================
     # 🔒 UTILIZADOR BLOQUEADO
+    # ==========================================
+
     if user.bloqueado:
         return jsonify(
             error="Conta bloqueada"
         ), 403
 
+    # ==========================================
+    # IMAGEM
+    # ==========================================
+
+    imagem = data.get("imagem")
+
+    # upload real
+    if "imagem" in request.files:
+
+        file = request.files["imagem"]
+
+        if file.filename != "":
+
+            nome = f"{uuid.uuid4()}.png"
+
+            pasta = os.path.join(
+                "static",
+                "posts"
+            )
+
+            os.makedirs(
+                pasta,
+                exist_ok=True
+            )
+
+            caminho = os.path.join(
+                pasta,
+                nome
+            )
+
+            file.save(caminho)
+
+            imagem = f"/static/posts/{nome}"
+
+    # ==========================================
+    # CRIAR POST
+    # ==========================================
+
     post = Post(
         id=str(uuid.uuid4()),
         autor_id=data["autor_id"],
         texto=data.get("texto"),
-        imagem=data.get("imagem"),
+        imagem=imagem,
         original_post_id=data.get("original_post_id")
     )
 
     db.session.add(post)
 
-    # ===============================
-    # 🎁 MISSÃO DIÁRIA: 1 POST = 500 MOEDAS
-    # ===============================
+    # ==========================================
+    # 🎁 MISSÃO DIÁRIA
+    # ==========================================
+
     from datetime import datetime
 
     hoje = datetime.utcnow().date()
@@ -654,18 +704,44 @@ def criar_post():
         ultimo = None
 
     if ultimo != hoje:
+
         user.moedas += 500
+
         user.ultima_recompensa_post = datetime.utcnow()
 
-        print("🎁 Recompensa diária atribuída: +500 moedas")
+        print(
+            "🎁 Recompensa diária atribuída: +500 moedas"
+        )
 
     db.session.commit()
 
-    return jsonify(
-        status="ok",
-        id=post.id,
-        moedas=user.moedas
-    )
+    # ==========================================
+    # RETORNO COMPLETO
+    # ==========================================
+
+    return jsonify({
+
+        "status": "ok",
+
+        "id": post.id,  # ✅ ID POST
+
+        "texto": post.texto,
+
+        "imagem": post.imagem,
+
+        "moedas": user.moedas,
+
+        "autor": {
+
+            "id": user.id,
+
+            "username": user.username,
+
+            "avatar": user.avatar
+
+        }
+
+    })
 #================= DELETE POST =================
 @app.route("/posts/<post_id>", methods=["DELETE"])
 def apagar_post(post_id):
@@ -856,129 +932,177 @@ def inbox(user_id):
 # ================= comentário =================
 @app.route("/posts/<post_id>/comment", methods=["POST"])
 def comentar(post_id):
-    data = request.get_json(force=True)
+
+    # ==========================================
+    # JSON OU FORM-DATA
+    # ==========================================
+
+    if request.form:
+        data = request.form
+    else:
+        data = request.get_json(force=True)
 
     user_id = data.get("user_id")
-    texto = (data.get("texto") or "").strip()
+
+    texto = (
+        data.get("texto") or ""
+    ).strip()
+
     parent_id = data.get("parent_id")
 
-    if not user_id or not texto:
-        return jsonify(error="Dados inválidos"), 400
+    # ==========================================
+    # USER
+    # ==========================================
 
-    # 🔒 BUSCAR UTILIZADOR
-    user = User.query.get(user_id)
+    autor = User.query.get(user_id)
 
-    if not user:
-        return jsonify(error="Utilizador não encontrado"), 404
+    if not autor:
+        return jsonify(
+            error="User não encontrado"
+        ), 404
 
-    # 🔒 CONTA BLOQUEADA
-    if user.bloqueado:
+    # ==========================================
+    # 🔒 BLOQUEADO
+    # ==========================================
+
+    if autor.bloqueado:
         return jsonify(
             error="Conta bloqueada"
         ), 403
 
+    # ==========================================
+    # POST
+    # ==========================================
+
     post = Post.query.get(post_id)
 
     if not post:
-        return jsonify(error="Post não encontrado"), 404
+        return jsonify(
+            error="Post não encontrado"
+        ), 404
 
-    # 🚫 BLOQUEIO com autor do post
-    if existe_bloqueio(user_id, post.autor_id):
-        return jsonify(error="Não podes comentar neste post"), 403
+    # 🚫 BLOQUEIO COM AUTOR DO POST
+    if existe_bloqueio(
+        user_id,
+        post.autor_id
+    ):
+        return jsonify(
+            error="Não podes comentar neste post"
+        ), 403
+
+    # ==========================================
+    # IMAGEM
+    # ==========================================
+
+    imagem = data.get("imagem")
+
+    if "imagem" in request.files:
+
+        file = request.files["imagem"]
+
+        if file.filename != "":
+
+            nome = f"{uuid.uuid4()}.png"
+
+            pasta = os.path.join(
+                "static",
+                "comments"
+            )
+
+            os.makedirs(
+                pasta,
+                exist_ok=True
+            )
+
+            caminho = os.path.join(
+                pasta,
+                nome
+            )
+
+            file.save(caminho)
+
+            imagem = f"/static/comments/{nome}"
+
+    # ==========================================
+    # RESPOSTA A COMENTÁRIO
+    # ==========================================
 
     parent_comment = None
 
-    # ===============================
-    # RESPOSTA A COMENTÁRIO
-    # ===============================
     if parent_id:
 
-        parent_comment = Comment.query.get(parent_id)
+        parent_comment = Comment.query.get(
+            parent_id
+        )
 
         if not parent_comment:
-            return jsonify(error="Comentário pai não existe"), 404
+            return jsonify(
+                error="Comentário pai não existe"
+            ), 404
 
         if parent_comment.post_id != post_id:
-            return jsonify(error="Comentário não pertence a este post"), 400
-
-        # 🚫 BLOQUEIO com autor do comentário pai
-        if existe_bloqueio(user_id, parent_comment.autor_id):
             return jsonify(
-                error="Não podes responder a este comentário"
+                error="Comentário inválido"
+            ), 400
+
+        # 🚫 BLOQUEIO
+        if existe_bloqueio(
+            user_id,
+            parent_comment.autor_id
+        ):
+            return jsonify(
+                error="Não podes responder"
             ), 403
 
-    # ===============================
+    # ==========================================
     # CRIAR COMENTÁRIO
-    # ===============================
+    # ==========================================
+
     comment = Comment(
         id=str(uuid.uuid4()),
         post_id=post_id,
         autor_id=user_id,
         texto=texto,
+        imagem=imagem,
         parent_id=parent_id
     )
 
     db.session.add(comment)
 
-    autor = User.query.get(user_id)
-
     db.session.commit()
 
-    return jsonify(
-        status="ok",
-        comment_id=comment.id
-    )
-    # ===============================
-    # NOTIFICAÇÕES
-    # ===============================
+    # ==========================================
+    # RETORNO COMPLETO
+    # ==========================================
 
-    # resposta a comentário
-    if parent_comment and parent_comment.autor_id != user_id:
-        if not existe_bloqueio(user_id, parent_comment.autor_id):
-            db.session.add(Notification(
-                id=str(uuid.uuid4()),
-                user_id=parent_comment.autor_id,
-                tipo="reply_comment",
-                origem_id=user_id,
-                post_id=post_id,
-                comment_id=comment.id
-            ))
-
-    # comentário no post
-    elif not parent_id and post.autor_id != user_id:
-        if not existe_bloqueio(user_id, post.autor_id):
-            db.session.add(Notification(
-                id=str(uuid.uuid4()),
-                user_id=post.autor_id,
-                tipo="comment",
-                origem_id=user_id,
-                post_id=post_id,
-                comment_id=comment.id
-            ))
-
-    db.session.commit()
-
-    # ===============================
-    # RESPONSE MELHORADO
-    # ===============================
     return jsonify({
-        "status": "ok",
-        "comment": {
-            "id": comment.id,
-            "post_id": comment.post_id,
-            "texto": comment.texto,
-            "parent_id": comment.parent_id,
-            "data": comment.data.strftime("%d/%m/%Y %H:%M"),
 
-            "likes": 0,
-            "liked_by_me": False,
+        "status": "ok",
+
+        "comment": {
+
+            "id": comment.id,  # ✅ ID COMENTÁRIO
+
+            "post_id": comment.post_id,
+
+            "texto": comment.texto,
+
+            "imagem": comment.imagem,
+
+            "parent_id": comment.parent_id,
 
             "autor": {
+
                 "id": autor.id,
+
                 "username": autor.username,
+
                 "avatar": autor.avatar
+
             }
+
         }
+
     })
 #================= CURTIR COMENTÁRIO =================
 @app.route("/comments/<comment_id>/like", methods=["POST"])
