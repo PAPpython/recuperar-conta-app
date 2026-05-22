@@ -2178,12 +2178,14 @@ def admin_unblock_user(user_id):
 # =========================================================
 # SUSPENDER IA
 # =========================================================
+
 @app.route("/admin/suspend-ia/<int:user_id>", methods=["POST"])
 def suspend_ia(user_id):
 
     data = request.get_json(force=True)
+
     admin_id = data.get("admin_id")
-    horas = int(data.get("horas", 0))
+    tempo = data.get("horas")  # vem tipo "3 horas"
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2193,7 +2195,44 @@ def suspend_ia(user_id):
     if not user:
         return jsonify(error="User não encontrado"), 404
 
-    # ⏳ definir suspensão
+    # 🔥 CONVERSOR DO TEU COMBOBOX
+    def converter_tempo(txt):
+
+        if not txt:
+            return 0
+
+        txt = txt.lower().strip()
+
+        if "permanente" in txt:
+            return -1
+
+        if "semana" in txt:
+            return int(txt.split()[0]) * 24 * 7
+
+        if "dia" in txt:
+            return int(txt.split()[0]) * 24
+
+        if "hora" in txt:
+            return int(txt.split()[0])
+
+        return 0
+
+    horas = converter_tempo(tempo)
+
+    # ⛔ validação
+    if horas == 0:
+        return jsonify(error="Tempo inválido"), 400
+
+    # ♾ permanente
+    if horas == -1:
+        user.ia_banido = True
+        user.ia_suspenso_ate = None
+
+        db.session.commit()
+
+        return jsonify(status="banido")
+
+    # ⏳ suspensão normal
     user.ia_banido = False
     user.ia_suspenso_ate = datetime.utcnow() + timedelta(hours=horas)
 
@@ -2201,6 +2240,7 @@ def suspend_ia(user_id):
 
     return jsonify(
         status="suspenso",
+        horas=horas,
         remaining=horas * 3600
     )
 # =========================================================
@@ -2407,15 +2447,10 @@ def is_admin(user_id):
     except:
         return False
 
-    if user_id == 1:
-        return True
-
     user = User.query.get(user_id)
 
     return bool(user and user.role == "admin")
-
-from functools import wraps
-
+    
 @app.route("/admin/delete-user/<int:user_id>", methods=["DELETE"])
 def admin_delete_user(user_id):
 
