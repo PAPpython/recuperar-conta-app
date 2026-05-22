@@ -2460,6 +2460,17 @@ def listar_admins_publico():
         })
 
     return jsonify(res)
+
+def is_admin(user_id):
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return False
+
+    user = User.query.get(user_id)
+
+    return bool(user and user.role == "admin")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
