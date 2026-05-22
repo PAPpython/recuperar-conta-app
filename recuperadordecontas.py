@@ -1781,31 +1781,27 @@ def promote_user():
     data = request.get_json(force=True)
 
     admin_id = data.get("admin_id")
-    target = data.get("username") or data.get("user_id")
+    target = data.get("user_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
 
-    # procurar user
-    if isinstance(target, int):
-        user = User.query.get(target)
-    else:
-        user = User.query.filter_by(
-            username=str(target).lower()
-        ).first()
+    # 🔥 FORÇAR INT SEMPRE
+    try:
+        user_id = int(target)
+    except:
+        return jsonify(error="ID inválido"), 400
+
+    user = User.query.get(user_id)
 
     if not user:
         return jsonify(error="User não encontrado"), 404
 
     user.role = "admin"
-
     db.session.commit()
 
-    return jsonify(
-        status="ok",
-        msg=f"{user.username} agora é admin"
-    )
-
+    return jsonify(status="ok", msg=f"{user.username} agora é admin")
+    
 
 # =========================================================
 # REMOVER ADMIN
@@ -2182,14 +2178,12 @@ def admin_unblock_user(user_id):
 # =========================================================
 # SUSPENDER IA
 # =========================================================
-
 @app.route("/admin/suspend-ia/<int:user_id>", methods=["POST"])
-def admin_suspend_ia(user_id):
+def suspend_ia(user_id):
 
     data = request.get_json(force=True)
-
     admin_id = data.get("admin_id")
-    horas = int(data.get("horas", 24))
+    horas = int(data.get("horas", 0))
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2199,15 +2193,16 @@ def admin_suspend_ia(user_id):
     if not user:
         return jsonify(error="User não encontrado"), 404
 
-    user.ia_suspenso_ate = (
-        datetime.utcnow() + timedelta(hours=horas)
-    )
+    # ⏳ definir suspensão
+    user.ia_banido = False
+    user.ia_suspenso_ate = datetime.utcnow() + timedelta(hours=horas)
 
     db.session.commit()
 
-    return jsonify(status="ok")
-
-
+    return jsonify(
+        status="suspenso",
+        remaining=horas * 3600
+    )
 # =========================================================
 # DESSUSPENDER IA
 # =========================================================
@@ -2237,12 +2232,10 @@ def admin_unsuspend_ia(user_id):
 # =========================================================
 # BANIR IA PERMANENTE
 # =========================================================
-
 @app.route("/admin/ban-ia/<int:user_id>", methods=["POST"])
-def admin_ban_ia(user_id):
+def ban_ia(user_id):
 
     data = request.get_json(force=True)
-
     admin_id = data.get("admin_id")
 
     if not is_admin(admin_id):
@@ -2253,13 +2246,13 @@ def admin_ban_ia(user_id):
     if not user:
         return jsonify(error="User não encontrado"), 404
 
+    # 🔴 BAN PERMANENTE
     user.ia_banido = True
     user.ia_suspenso_ate = None
 
     db.session.commit()
 
-    return jsonify(status="ok")
-
+    return jsonify(status="banido")
 
 # =========================================================
 # DESBANIR IA
@@ -2422,6 +2415,131 @@ def is_admin(user_id):
     return bool(user and user.role == "admin")
 
 from functools import wraps
+
+@app.route("/admin/delete-user/<int:user_id>", methods=["DELETE"])
+def admin_delete_user(user_id):
+
+    data = request.get_json(force=True)
+    admin_id = data.get("admin_id")
+
+    # 🔒 só admin
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    # 🚫 impedir apagar outro admin (opcional)
+    if user.role == "admin":
+        return jsonify(error="Não podes apagar outro admin"), 403
+
+    # ===============================
+    # 🧹 LIMPEZA COMPLETA (igual ao ban)
+    # ===============================
+
+    Post.query.filter_by(autor_id=user.id).delete()
+
+    Comment.query.filter_by(autor_id=user.id).delete()
+
+    Like.query.filter_by(user_id=user.id).delete()
+
+    CommentLike.query.filter_by(user_id=user.id).delete()
+
+    Message.query.filter(
+        db.or_(
+            Message.from_user_id == user.id,
+            Message.to_user_id == user.id
+        )
+    ).delete()
+
+    Follow.query.filter(
+        db.or_(
+            Follow.follower_id == user.id,
+            Follow.followed_id == user.id
+        )
+    ).delete()
+
+    Notification.query.filter(
+        db.or_(
+            Notification.user_id == user.id,
+            Notification.origem_id == user.id
+        )
+    ).delete()
+
+    # 🗑 apagar user
+    db.session.delete(user)
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+@app.route("/admin/avisar-user", methods=["POST"])
+def avisar_user():
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+    user_id = data.get("user_id")
+    motivo = (data.get("motivo") or "").strip()
+
+    # 🔒 valida admin
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    if not motivo:
+        return jsonify(error="Motivo obrigatório"), 400
+
+    # ===============================
+    # 📌 incrementar contador de avisos
+    # ===============================
+    user.avisos += 1
+
+    # ===============================
+    # 🔔 criar notificação
+    # ===============================
+    db.session.add(Notification(
+        id=str(uuid.uuid4()),
+        user_id=user.id,
+        tipo="admin_warning",
+        origem_id=admin_id,
+        post_id=None,
+        comment_id=None
+    ))
+
+    db.session.commit()
+
+    return jsonify(
+        status="ok",
+        msg="Aviso enviado"
+    )
+
+@app.route("/ia/status/<int:user_id>", methods=["GET"])
+def ia_status(user_id):
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    if user.ia_banido:
+        return jsonify(status="banido")
+
+    if user.ia_suspenso_ate:
+        remaining = (user.ia_suspenso_ate - datetime.utcnow()).total_seconds()
+
+        if remaining > 0:
+            return jsonify(
+                status="suspenso",
+                remaining=int(remaining)
+            )
+
+    return jsonify(status="ativo")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
