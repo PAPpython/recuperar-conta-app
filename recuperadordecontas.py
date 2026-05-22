@@ -2456,7 +2456,7 @@ def is_admin(user_id):
 
     user = User.query.get(user_id)
 
-    return bool(user and user.role == "admin"
+    return bool(user and user.role == "admin")
                 
 @app.route("/admin/delete-user/<int:user_id>", methods=["DELETE"])
 def admin_delete_user(user_id):
