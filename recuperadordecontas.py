@@ -847,43 +847,46 @@ def inbox(user_id):
 
     return jsonify(res)
 
-#================= RESPONDER COMENTÁRIO =================
 @app.route("/posts/<post_id>/comment", methods=["POST"])
 def comentar(post_id):
     data = request.get_json(force=True)
 
     user_id = data.get("user_id")
     texto = (data.get("texto") or "").strip()
-    parent_id = data.get("parent_id")  # opcional
+    parent_id = data.get("parent_id")
 
     if not user_id or not texto:
         return jsonify(error="Dados inválidos"), 400
 
-    # Verificar se o post existe
     post = Post.query.get(post_id)
     if not post:
         return jsonify(error="Post não encontrado"), 404
 
-    # 🚫 BLOQUEIO: autor do post
+    # 🚫 BLOQUEIO com autor do post
     if existe_bloqueio(user_id, post.autor_id):
         return jsonify(error="Não podes comentar neste post"), 403
 
     parent_comment = None
 
-    # Se for resposta, validar comentário pai
+    # ===============================
+    # RESPOSTA A COMENTÁRIO
+    # ===============================
     if parent_id:
         parent_comment = Comment.query.get(parent_id)
+
         if not parent_comment:
             return jsonify(error="Comentário pai não existe"), 404
 
         if parent_comment.post_id != post_id:
             return jsonify(error="Comentário não pertence a este post"), 400
 
-        # 🚫 BLOQUEIO: autor do comentário pai
+        # 🚫 BLOQUEIO com autor do comentário pai
         if existe_bloqueio(user_id, parent_comment.autor_id):
             return jsonify(error="Não podes responder a este comentário"), 403
 
-    # Criar comentário
+    # ===============================
+    # CRIAR COMENTÁRIO
+    # ===============================
     comment = Comment(
         id=str(uuid.uuid4()),
         post_id=post_id,
@@ -894,8 +897,13 @@ def comentar(post_id):
 
     db.session.add(comment)
 
-    # 🔔 NOTIFICAÇÕES (apenas se NÃO houver bloqueio)
-    # Resposta a comentário
+    autor = User.query.get(user_id)
+
+    # ===============================
+    # NOTIFICAÇÕES
+    # ===============================
+
+    # resposta a comentário
     if parent_comment and parent_comment.autor_id != user_id:
         if not existe_bloqueio(user_id, parent_comment.autor_id):
             db.session.add(Notification(
@@ -904,10 +912,10 @@ def comentar(post_id):
                 tipo="reply_comment",
                 origem_id=user_id,
                 post_id=post_id,
-                comment_id=parent_id
+                comment_id=comment.id
             ))
 
-    # Comentário normal no post
+    # comentário no post
     elif not parent_id and post.autor_id != user_id:
         if not existe_bloqueio(user_id, post.autor_id):
             db.session.add(Notification(
@@ -915,17 +923,34 @@ def comentar(post_id):
                 user_id=post.autor_id,
                 tipo="comment",
                 origem_id=user_id,
-                post_id=post_id
+                post_id=post_id,
+                comment_id=comment.id
             ))
 
     db.session.commit()
 
-    return jsonify(
-        status="ok",
-        id=comment.id,
-        parent_id=comment.parent_id
-    )
+    # ===============================
+    # RESPONSE MELHORADO
+    # ===============================
+    return jsonify({
+        "status": "ok",
+        "comment": {
+            "id": comment.id,
+            "post_id": comment.post_id,
+            "texto": comment.texto,
+            "parent_id": comment.parent_id,
+            "data": comment.data.strftime("%d/%m/%Y %H:%M"),
 
+            "likes": 0,
+            "liked_by_me": False,
+
+            "autor": {
+                "id": autor.id,
+                "username": autor.username,
+                "avatar": autor.avatar
+            }
+        }
+    })
 #================= CURTIR COMENTÁRIO =================
 @app.route("/comments/<comment_id>/like", methods=["POST"])
 def like_comment(comment_id):
@@ -2388,7 +2413,53 @@ def listar_users():
 
     return jsonify(res)
 
+@app.route("/admin/admins", methods=["GET"])
+def listar_admins_admin():
 
+    requester_id = request.args.get("user_id", type=int)
+
+    # só admins podem ver tudo
+    if not is_admin(requester_id):
+        return jsonify(error="Sem permissão"), 403
+
+    admins = User.query.filter_by(role="admin").all()
+
+    res = []
+
+    for u in admins:
+        res.append({
+            "id": u.id,
+            "username": u.username,
+            "nome": u.nome,
+            "avatar": u.avatar,
+            "banner": u.banner,
+            "bio": u.bio,
+            "mostrar_publicamente": u.mostrar_publicamente
+        })
+
+    return jsonify(res)
+
+@app.route("/admins", methods=["GET"])
+def listar_admins_publico():
+
+    admins = User.query.filter_by(
+        role="admin",
+        mostrar_publicamente=True
+    ).all()
+
+    res = []
+
+    for u in admins:
+        res.append({
+            "id": u.id,
+            "username": u.username,
+            "nome": u.nome,
+            "avatar": u.avatar,
+            "banner": u.banner,
+            "bio": u.bio
+        })
+
+    return jsonify(res)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
