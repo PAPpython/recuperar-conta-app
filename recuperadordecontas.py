@@ -621,8 +621,15 @@ def criar_post():
     data = request.get_json(force=True)
 
     user = User.query.get(data["autor_id"])
+
     if not user:
         return jsonify(error="User não encontrado"), 404
+
+    # 🔒 UTILIZADOR BLOQUEADO
+    if user.bloqueado:
+        return jsonify(
+            error="Conta bloqueada"
+        ), 403
 
     post = Post(
         id=str(uuid.uuid4()),
@@ -773,7 +780,20 @@ def share_post(post_id):
     from_user = data["from_user_id"]
     to_user = data["to_user_id"]
 
+    # 🔒 VER UTILIZADOR
+    user = User.query.get(from_user)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    # 🚫 UTILIZADOR BLOQUEADO/SUSPENSO
+    if user.bloqueado:
+        return jsonify(
+            error="Estás bloqueado e não podes partilhar posts"
+        ), 403
+
     post = Post.query.get(post_id)
+
     if not post:
         return jsonify(error="Post não encontrado"), 404
 
@@ -796,7 +816,7 @@ def share_post(post_id):
     db.session.commit()
 
     return jsonify(status="ok")
-
+    
 # ================= recebidos =================
 @app.route("/shares/<int:user_id>", methods=["GET"])
 def inbox(user_id):
@@ -832,7 +852,8 @@ def inbox(user_id):
         })
 
     return jsonify(res)
-
+    
+# ================= comentário =================
 @app.route("/posts/<post_id>/comment", methods=["POST"])
 def comentar(post_id):
     data = request.get_json(force=True)
@@ -844,7 +865,20 @@ def comentar(post_id):
     if not user_id or not texto:
         return jsonify(error="Dados inválidos"), 400
 
+    # 🔒 BUSCAR UTILIZADOR
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    # 🔒 CONTA BLOQUEADA
+    if user.bloqueado:
+        return jsonify(
+            error="Conta bloqueada"
+        ), 403
+
     post = Post.query.get(post_id)
+
     if not post:
         return jsonify(error="Post não encontrado"), 404
 
@@ -858,6 +892,7 @@ def comentar(post_id):
     # RESPOSTA A COMENTÁRIO
     # ===============================
     if parent_id:
+
         parent_comment = Comment.query.get(parent_id)
 
         if not parent_comment:
@@ -868,7 +903,9 @@ def comentar(post_id):
 
         # 🚫 BLOQUEIO com autor do comentário pai
         if existe_bloqueio(user_id, parent_comment.autor_id):
-            return jsonify(error="Não podes responder a este comentário"), 403
+            return jsonify(
+                error="Não podes responder a este comentário"
+            ), 403
 
     # ===============================
     # CRIAR COMENTÁRIO
@@ -885,6 +922,12 @@ def comentar(post_id):
 
     autor = User.query.get(user_id)
 
+    db.session.commit()
+
+    return jsonify(
+        status="ok",
+        comment_id=comment.id
+    )
     # ===============================
     # NOTIFICAÇÕES
     # ===============================
@@ -1372,6 +1415,7 @@ def posts_perfil(user_id):
 #================= ENVIAR MENSAGEM =================
 @app.route("/messages/send", methods=["POST"])
 def enviar_mensagem():
+
     data = request.get_json(force=True)
 
     from_user = data["from_user_id"]
@@ -1381,9 +1425,23 @@ def enviar_mensagem():
     if not texto:
         return jsonify(error="Mensagem vazia"), 400
 
-    # 🔒 BLOQUEIO TOTAL (dos dois lados)
+    # 🔒 VER UTILIZADOR
+    user = User.query.get(from_user)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    # 🚫 UTILIZADOR BLOQUEADO/SUSPENSO
+    if user.bloqueado:
+        return jsonify(
+            error="Estás bloqueado e não podes enviar mensagens"
+        ), 403
+
+    # 🔒 BLOQUEIO TOTAL ENTRE USERS
     if existe_bloqueio(from_user, to_user):
-        return jsonify(error="Não é possível enviar mensagem a este utilizador"), 403
+        return jsonify(
+            error="Não é possível enviar mensagem a este utilizador"
+        ), 403
 
     msg = Message(
         id=str(uuid.uuid4()),
@@ -1403,8 +1461,9 @@ def enviar_mensagem():
     ))
 
     db.session.commit()
-    return jsonify(status="ok")
 
+    return jsonify(status="ok")
+    
 #================= CONVERSA =================
 @app.route("/messages/<int:user1>/<int:user2>", methods=["GET"])
 def conversa(user1, user2):
