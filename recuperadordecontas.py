@@ -425,23 +425,6 @@ def login():
             msg="Conta banida"
         ), 403
         
-    # 🔒 conta bloqueada temporariamente
-    if user.bloqueado:
-
-    # ainda está bloqueado
-        if user.bloqueado_ate and user.bloqueado_ate > datetime.utcnow():
-            return jsonify(
-                status="error",
-                msg=f"Conta bloqueada até {user.bloqueado_ate}"
-            ), 403
-
-    # tempo acabou → desbloquear automático
-        else:
-            user.bloqueado = False
-            user.bloqueado_ate = None
-            db.session.commit()
-
-
     return jsonify(
     status="ok",
     id=user.id,
@@ -1891,72 +1874,35 @@ IA_SUSPENSOES = {
     5: timedelta(days=7),
 }
 
-
-def punir_ia(user, motivo="Violação das regras IA"):
-
-    user.warning_count += 1
-
-    nivel = user.warning_count
-
-    # BANIMENTO PERMANENTE IA
-    if nivel >= 6:
-
-        user.ia_banido = True
-        user.ia_ban_reason = motivo
-        user.ia_suspenso_ate = None
-
-        db.session.commit()
-
-        return {
-            "status": "banido",
-            "msg": "Banido permanentemente da IA"
-        }
-
-    # SUSPENSÃO TEMPORÁRIA
-    tempo = IA_SUSPENSOES.get(nivel)
-
-    user.ia_suspenso_ate = datetime.utcnow() + tempo
-    user.ultima_punicao_ia = datetime.utcnow()
-
-    db.session.commit()
-
-    return {
-        "status": "suspenso",
-        "tempo": str(tempo)
-    }
-
-
 def verificar_ban_ia(user):
 
-    # BANIMENTO PERMANENTE
+    # 🔴 BANIMENTO PERMANENTE
     if user.ia_banido:
+        return {
+            "status": "banido",
+            "remaining": None
+        }
 
-        return jsonify(
-            error="Banido permanentemente da IA"
-        ), 403
+    # 🟡 SUSPENSÃO TEMPORÁRIA
+    if user.ia_suspenso_ate:
 
-    # SUSPENSÃO TEMPORÁRIA
-    if (
-        user.ia_suspenso_ate
-        and user.ia_suspenso_ate > datetime.utcnow()
-    ):
+        remaining = (user.ia_suspenso_ate - datetime.utcnow()).total_seconds()
 
-        return jsonify(
-            error=f"IA suspensa até {user.ia_suspenso_ate}"
-        ), 403
+        if remaining > 0:
+            return {
+                "status": "suspenso",
+                "remaining": int(remaining)
+            }
 
-    # DESSUSPENDER AUTOMÁTICO
-    if (
-        user.ia_suspenso_ate
-        and user.ia_suspenso_ate <= datetime.utcnow()
-    ):
-
+        # auto unlock
         user.ia_suspenso_ate = None
         db.session.commit()
 
-    return None
-
-
+    # 🟢 LIBERADO
+    return {
+        "status": "ativo",
+        "remaining": 0
+    }
 # =========================================================
 # ADMIN APAGAR POST
 # =========================================================
@@ -2474,6 +2420,8 @@ def is_admin(user_id):
     user = User.query.get(user_id)
 
     return bool(user and user.role == "admin")
+
+from functools import wraps
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
