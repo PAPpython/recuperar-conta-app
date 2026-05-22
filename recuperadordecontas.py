@@ -88,24 +88,52 @@ class Post(db.Model):
 
     id = db.Column(db.String, primary_key=True)
     autor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
     texto = db.Column(db.Text)
+
     imagem = db.Column(db.String)
-    original_post_id = db.Column(db.String, db.ForeignKey("posts.id"))
-    data = db.Column(db.DateTime, default=datetime.utcnow)
+
+    original_post_id = db.Column(
+        db.String,
+        db.ForeignKey("posts.id")
+    )
+
+    data = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
 
 class Comment(db.Model):
     __tablename__ = "comments"
 
     id = db.Column(db.String, primary_key=True)
+
     post_id = db.Column(
         db.String,
         db.ForeignKey("posts.id", ondelete="CASCADE"),
         nullable=False
     )
-    autor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    autor_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
     texto = db.Column(db.Text, nullable=False)
-    parent_id = db.Column(db.String, db.ForeignKey("comments.id"))
-    data = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # 🔥 FALTAVA ISTO
+    imagem = db.Column(db.String)
+
+    parent_id = db.Column(
+        db.String,
+        db.ForeignKey("comments.id")
+    )
+
+    data = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
 
 
 class Like(db.Model):
@@ -603,10 +631,17 @@ def listar_posts():
 
         res.append({
             "id": p.id,
+
             "texto": p.texto,
+
+            "imagem": p.imagem,  # 🔥 FALTAVA ISTO
+
             "data": p.data.strftime("%d/%m/%Y %H:%M"),
+
             "likes": Like.query.filter_by(post_id=real_id).count(),
+
             "comentarios": Comment.query.filter_by(post_id=real_id).count(),
+
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
@@ -1383,52 +1418,55 @@ def editar_post(post_id):
 #================= LISTAR COMENTÁRIOS (COM RESPOSTAS) =================
 @app.route("/posts/<post_id>/comments", methods=["GET"])
 def listar_comentarios(post_id):
+
     viewer_id = request.args.get("viewer_id", type=int)
 
-    comments = Comment.query.filter_by(post_id=post_id).order_by(Comment.data).all()
+    comments = Comment.query.filter_by(
+        post_id=post_id
+    ).order_by(Comment.data).all()
+
     res = []
 
     for c in comments:
-        # 🔒 BLOQUEIO
-        if viewer_id and existe_bloqueio(viewer_id, c.autor_id):
+
+        if viewer_id and existe_bloqueio(
+            viewer_id,
+            c.autor_id
+        ):
             continue
 
         autor = User.query.get(c.autor_id)
-        if not autor:
-            continue
 
-        parent_info = None
-        if c.parent_id:
-            parent = Comment.query.get(c.parent_id)
-            if parent:
-                # 🔒 BLOQUEIO DO AUTOR DO COMENTÁRIO PAI
-                if viewer_id and existe_bloqueio(viewer_id, parent.autor_id):
-                    continue
+        imagem_url = None
 
-                parent_user = User.query.get(parent.autor_id)
-                if parent_user:
-                    parent_info = {
-                        "id": parent.id,
-                        "username": parent_user.username
-                    }
+        if c.imagem:
+            imagem_url = request.host_url[:-1] + c.imagem
 
         res.append({
+
+            # 🔥 ID COMENTÁRIO
             "id": c.id,
+
             "texto": c.texto,
+
+            # 🔥 IMAGEM
+            "imagem": imagem_url,
+
             "data": c.data.strftime("%d/%m/%Y %H:%M"),
-            "parent_id": c.parent_id,
-            "parent": parent_info,
-            "likes": CommentLike.query.filter_by(comment_id=c.id).count(),
+
+            "likes": CommentLike.query.filter_by(
+                comment_id=c.id
+            ).count(),
+
             "autor": {
                 "id": autor.id,
                 "username": autor.username,
-                "avatar": autor.avatar,
-                "banner": autor.banner
+                "avatar": autor.avatar
             }
+
         })
 
     return jsonify(res)
-
 #================= LISTAR NOTIFICAÇÕES =================
 @app.route("/notifications/<int:user_id>", methods=["GET"])
 def listar_notificacoes(user_id):
@@ -2765,6 +2803,41 @@ def ia_status(user_id):
             )
 
     return jsonify(status="ativo")
+
+@app.route("/comments/<comment_id>", methods=["DELETE"])
+def apagar_comentario(comment_id):
+
+    data = request.get_json(force=True)
+
+    user_id = data.get("user_id")
+
+    if not user_id:
+        return jsonify(error="User inválido"), 400
+
+    comment = Comment.query.get(comment_id)
+
+    if not comment:
+        return jsonify(error="Comentário não encontrado"), 404
+
+    # 🔒 Apenas autor ou admin
+    if comment.autor_id != user_id and not is_admin(user_id):
+        return jsonify(error="Sem permissão"), 403
+
+    # apagar likes
+    CommentLike.query.filter_by(
+        comment_id=comment.id
+    ).delete()
+
+    # apagar notificações
+    Notification.query.filter_by(
+        comment_id=comment.id
+    ).delete()
+
+    db.session.delete(comment)
+
+    db.session.commit()
+
+    return jsonify(status="ok")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
