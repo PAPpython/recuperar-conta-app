@@ -434,7 +434,10 @@ def login():
     banner=user.banner,
     moedas=user.moedas,
 
-    # 🔥 NOVO (MUITO IMPORTANTE)
+    # 🔥 ADMIN ROLE
+    role=user.role,
+
+    # 🔥 COMPRADOS
     avatares_comprados=json.loads(user.avatares_comprados or "[]"),
     banners_comprados=json.loads(user.banners_comprados or "[]")
 )
@@ -2447,10 +2450,14 @@ def is_admin(user_id):
     except:
         return False
 
+    # 👑 OWNER PRINCIPAL
+    if user_id == 1:
+        return True
+
     user = User.query.get(user_id)
 
-    return bool(user and user.role == "admin")
-    
+    return bool(user and user.role == "admin"
+                
 @app.route("/admin/delete-user/<int:user_id>", methods=["DELETE"])
 def admin_delete_user(user_id):
 
