@@ -63,6 +63,12 @@ class User(db.Model):
     ia_ban_reason = db.Column(db.String(255), nullable=True)
     ultima_punicao_ia = db.Column(db.DateTime, nullable=True)
     ban_reason = db.Column(db.String(255), nullable=True)
+    bloqueado = db.Column(db.Boolean, default=False)
+    bloqueado_ate = db.Column(db.DateTime, nullable=True)
+    apagado_por_admin = db.Column(db.Boolean, default=False)
+    avisos = db.Column(db.Integer, default=0)
+    email_banido = db.Column(db.Boolean, default=False)
+    mostrar_publicamente = db.Column(db.Boolean, default=True)
     
      # 🔐 Recuperação
     email_recuperacao = db.Column(db.String(120), nullable=True)
@@ -329,9 +335,10 @@ def check_email():
     return jsonify(
         exists=User.query.filter_by(email=email).first() is not None
     )
-# ================= REGISTRAR =================  
+# ================= REGISTRAR =================
 @app.route("/register", methods=["POST"])
 def register():
+
     data = request.get_json(force=True)
 
     username = (data.get("username") or "").strip().lower()
@@ -341,22 +348,43 @@ def register():
     if not username or not email or not password:
         return jsonify(status="error", msg="Dados inválidos"), 400
 
+    # 🚫 EMAIL PERMANENTEMENTE BANIDO
+    banido_email = User.query.filter_by(
+        email=email,
+        email_banido=True
+    ).first()
+
+    if banido_email:
+        return jsonify(
+            status="error",
+            msg="Este email foi permanentemente banido"
+        ), 403
+
+    # 🚫 USERNAME JÁ EXISTE
     if User.query.filter_by(username=username).first():
-        return jsonify(status="error", msg="Username já existe"), 409
+        return jsonify(
+            status="error",
+            msg="Username já existe"
+        ), 409
 
+    # 🚫 EMAIL JÁ EXISTE
     if User.query.filter_by(email=email).first():
-        return jsonify(status="error", msg="Email já existe"), 409
+        return jsonify(
+            status="error",
+            msg="Email já existe"
+        ), 409
 
+    # ✅ CRIAR CONTA
     user = User(
-    username=username,
-    email=email,
-    password=hash_password(password),
-    avatar="default",
-    banner="bannerdefault",
-    avatares_comprados=json.dumps([]),
-    banners_comprados=json.dumps([]),
-    moedas=0
-)
+        username=username,
+        email=email,
+        password=hash_password(password),
+        avatar="default",
+        banner="bannerdefault",
+        avatares_comprados=json.dumps([]),
+        banners_comprados=json.dumps([]),
+        moedas=0
+    )
 
     db.session.add(user)
     db.session.commit()
@@ -390,11 +418,29 @@ def login():
             status="error",
             msg="Essa conta foi apagada. Não é possível fazer login."
         ), 403
+        
     if user.banido:
         return jsonify(
             status="error",
             msg="Conta banida"
         ), 403
+        
+    # 🔒 conta bloqueada temporariamente
+    if user.bloqueado:
+
+    # ainda está bloqueado
+        if user.bloqueado_ate and user.bloqueado_ate > datetime.utcnow():
+            return jsonify(
+                status="error",
+                msg=f"Conta bloqueada até {user.bloqueado_ate}"
+            ), 403
+
+    # tempo acabou → desbloquear automático
+        else:
+            user.bloqueado = False
+            user.bloqueado_ate = None
+            db.session.commit()
+
 
     return jsonify(
     status="ok",
@@ -1717,50 +1763,18 @@ def servir_banner(filename):
 
     return "Banner não encontrado", 404
 
-@app.route("/users/<int:user_id>/stats", methods=["GET"])
-def user_stats(user_id):
-
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify(error="User não encontrado"), 404
-
-    # 📌 POSTS
-    posts = Post.query.filter_by(autor_id=user_id).all()
-    num_posts = len(posts)
-
-    # 📌 IDS dos posts
-    post_ids = [p.id for p in posts]
-
-    # ❤️ TOTAL LIKES (em TODOS os posts)
-    total_likes = Like.query.filter(
-        Like.post_id.in_(post_ids)
-    ).count() if post_ids else 0
-
-    # 👥 SEGUIDORES
-    seguidores = Follow.query.filter_by(
-        followed_id=user_id
-    ).count()
-
-    # ➡️ SEGUINDO
-    seguindo = Follow.query.filter_by(
-        follower_id=user_id
-    ).count()
-
-    return jsonify({
-        "posts": num_posts,
-        "likes": total_likes,
-        "seguidores": seguidores,
-        "seguindo": seguindo
-    })
+# =========================================================
+# ADMIN
+# =========================================================
 
 @app.route("/admin/promote", methods=["POST"])
 def promote_user():
+
     data = request.get_json(force=True)
 
     admin_id = data.get("admin_id")
     target = data.get("username") or data.get("user_id")
 
-    # 🔐 verificar admin
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
 
@@ -1768,126 +1782,26 @@ def promote_user():
     if isinstance(target, int):
         user = User.query.get(target)
     else:
-        user = User.query.filter_by(username=target.lower()).first()
+        user = User.query.filter_by(
+            username=str(target).lower()
+        ).first()
 
     if not user:
         return jsonify(error="User não encontrado"), 404
 
     user.role = "admin"
-    db.session.commit()
-
-    return jsonify(status="ok", msg=f"{user.username} agora é admin")
-
-IA_SUSPENSOES = {
-    1: timedelta(hours=3),
-    2: timedelta(hours=12),
-    3: timedelta(days=1),
-    4: timedelta(days=3),
-    5: timedelta(days=7),
-}
-
-def punir_ia(user, motivo="Violação das regras IA"):
-    
-    user.warning_count += 1
-
-    nivel = user.warning_count
-
-    if nivel >= 6:
-        user.ia_banido = True
-        user.ia_ban_reason = motivo
-        db.session.commit()
-
-        return {
-            "status": "banido",
-            "msg": "Banido permanentemente da IA"
-        }
-
-    tempo = IA_SUSPENSOES.get(nivel)
-
-    user.ia_suspenso_ate = datetime.utcnow() + tempo
-    user.ultima_punicao_ia = datetime.utcnow()
 
     db.session.commit()
 
-    return {
-        "status": "suspenso",
-        "tempo": str(tempo)
-    }
+    return jsonify(
+        status="ok",
+        msg=f"{user.username} agora é admin"
+    )
 
-def verificar_ban_ia(user):
 
-    if user.ia_banido:
-        return jsonify(error="Banido da IA"), 403
-
-    if user.ia_suspenso_ate and user.ia_suspenso_ate > datetime.utcnow():
-        return jsonify(
-            error=f"IA suspensa até {user.ia_suspenso_ate}"
-        ), 403
-
-    return None
-
-@app.route("/admin/posts/<post_id>", methods=["DELETE"])
-def admin_delete_post(post_id):
-
-    data = request.get_json(force=True)
-    admin_id = data.get("admin_id")
-
-    if not is_admin(admin_id):
-        return jsonify(error="Sem permissão"), 403
-
-    post = Post.query.get(post_id)
-
-    if not post:
-        return jsonify(error="Post não encontrado"), 404
-
-    db.session.delete(post)
-    db.session.commit()
-
-    return jsonify(status="ok")
-
-@app.route("/admin/comments/<comment_id>", methods=["DELETE"])
-def admin_delete_comment(comment_id):
-
-    data = request.get_json(force=True)
-    admin_id = data.get("admin_id")
-
-    if not is_admin(admin_id):
-        return jsonify(error="Sem permissão"), 403
-
-    comment = Comment.query.get(comment_id)
-
-    if not comment:
-        return jsonify(error="Comentário não encontrado"), 404
-
-    db.session.delete(comment)
-    db.session.commit()
-
-    return jsonify(status="ok")
-
-@app.route("/admin/ban/<int:user_id>", methods=["POST"])
-def admin_ban_user(user_id):
-
-    data = request.get_json(force=True)
-    admin_id = data.get("admin_id")
-    motivo = data.get("motivo", "Violação das regras")
-
-    if not is_admin(admin_id):
-        return jsonify(error="Sem permissão"), 403
-
-    user = User.query.get(user_id)
-
-    if not user:
-        return jsonify(error="User não encontrado"), 404
-
-    if user.role == "admin":
-        return jsonify(error="Não podes punir outro admin"), 403
-
-    user.banido = True
-    user.ban_reason = motivo
-
-    db.session.commit()
-
-    return jsonify(status="ok")
+# =========================================================
+# REMOVER ADMIN
+# =========================================================
 
 @app.route("/admin/demote", methods=["POST"])
 def demote_user():
@@ -1905,13 +1819,25 @@ def demote_user():
     if not user:
         return jsonify(error="User não encontrado"), 404
 
+    # impedir remover a si próprio
+    if user.id == admin_id:
+        return jsonify(
+            error="Não podes remover o teu próprio admin"
+        ), 403
+
     user.role = "user"
 
     db.session.commit()
 
     return jsonify(status="ok")
 
+
+# =========================================================
+# LOGS ADMIN
+# =========================================================
+
 class AdminLog(db.Model):
+
     __tablename__ = "admin_logs"
 
     id = db.Column(db.String, primary_key=True)
@@ -1922,7 +1848,547 @@ class AdminLog(db.Model):
     acao = db.Column(db.String(100))
     motivo = db.Column(db.String(255))
 
-    data = db.Column(db.DateTime, default=datetime.utcnow)
+    data = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+
+# =========================================================
+# SISTEMA IA
+# =========================================================
+
+IA_SUSPENSOES = {
+    1: timedelta(hours=3),
+    2: timedelta(hours=12),
+    3: timedelta(days=1),
+    4: timedelta(days=3),
+    5: timedelta(days=7),
+}
+
+
+def punir_ia(user, motivo="Violação das regras IA"):
+
+    user.warning_count += 1
+
+    nivel = user.warning_count
+
+    # BANIMENTO PERMANENTE IA
+    if nivel >= 6:
+
+        user.ia_banido = True
+        user.ia_ban_reason = motivo
+        user.ia_suspenso_ate = None
+
+        db.session.commit()
+
+        return {
+            "status": "banido",
+            "msg": "Banido permanentemente da IA"
+        }
+
+    # SUSPENSÃO TEMPORÁRIA
+    tempo = IA_SUSPENSOES.get(nivel)
+
+    user.ia_suspenso_ate = datetime.utcnow() + tempo
+    user.ultima_punicao_ia = datetime.utcnow()
+
+    db.session.commit()
+
+    return {
+        "status": "suspenso",
+        "tempo": str(tempo)
+    }
+
+
+def verificar_ban_ia(user):
+
+    # BANIMENTO PERMANENTE
+    if user.ia_banido:
+
+        return jsonify(
+            error="Banido permanentemente da IA"
+        ), 403
+
+    # SUSPENSÃO TEMPORÁRIA
+    if (
+        user.ia_suspenso_ate
+        and user.ia_suspenso_ate > datetime.utcnow()
+    ):
+
+        return jsonify(
+            error=f"IA suspensa até {user.ia_suspenso_ate}"
+        ), 403
+
+    # DESSUSPENDER AUTOMÁTICO
+    if (
+        user.ia_suspenso_ate
+        and user.ia_suspenso_ate <= datetime.utcnow()
+    ):
+
+        user.ia_suspenso_ate = None
+        db.session.commit()
+
+    return None
+
+
+# =========================================================
+# ADMIN APAGAR POST
+# =========================================================
+
+@app.route("/admin/posts/<post_id>", methods=["DELETE"])
+def admin_delete_post(post_id):
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    post = Post.query.get(post_id)
+
+    if not post:
+        return jsonify(error="Post não encontrado"), 404
+
+    # apagar likes
+    Like.query.filter_by(
+        post_id=post.id
+    ).delete()
+
+    # apagar comentários
+    Comment.query.filter_by(
+        post_id=post.id
+    ).delete()
+
+    # apagar notificações
+    Notification.query.filter_by(
+        post_id=post.id
+    ).delete()
+
+    db.session.delete(post)
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+
+# =========================================================
+# ADMIN APAGAR COMENTÁRIO
+# =========================================================
+
+@app.route("/admin/comments/<comment_id>", methods=["DELETE"])
+def admin_delete_comment(comment_id):
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    comment = Comment.query.get(comment_id)
+
+    if not comment:
+        return jsonify(error="Comentário não encontrado"), 404
+
+    # apagar likes comentário
+    CommentLike.query.filter_by(
+        comment_id=comment.id
+    ).delete()
+
+    db.session.delete(comment)
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+
+# =========================================================
+# BANIR USER
+# =========================================================
+
+@app.route("/admin/ban/<int:user_id>", methods=["POST"])
+def admin_ban_user(user_id):
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+    motivo = data.get(
+        "motivo",
+        "Violação das regras"
+    )
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    if user.role == "admin":
+        return jsonify(
+            error="Não podes banir outro admin"
+        ), 403
+
+    # =========================================
+    # BANIMENTO
+    # =========================================
+
+    user.banido = True
+    user.email_banido = True
+    user.ban_reason = motivo
+
+    # =========================================
+    # APAGAR POSTS
+    # =========================================
+
+    posts = Post.query.filter_by(
+        autor_id=user.id
+    ).all()
+
+    for p in posts:
+
+        Like.query.filter_by(
+            post_id=p.id
+        ).delete()
+
+        Comment.query.filter_by(
+            post_id=p.id
+        ).delete()
+
+        Notification.query.filter_by(
+            post_id=p.id
+        ).delete()
+
+        db.session.delete(p)
+
+    # =========================================
+    # APAGAR COMENTÁRIOS
+    # =========================================
+
+    Comment.query.filter_by(
+        autor_id=user.id
+    ).delete()
+
+    # =========================================
+    # APAGAR LIKES
+    # =========================================
+
+    Like.query.filter_by(
+        user_id=user.id
+    ).delete()
+
+    CommentLike.query.filter_by(
+        user_id=user.id
+    ).delete()
+
+    # =========================================
+    # APAGAR MENSAGENS
+    # =========================================
+
+    Message.query.filter(
+        db.or_(
+            Message.from_user_id == user.id,
+            Message.to_user_id == user.id
+        )
+    ).delete()
+
+    # =========================================
+    # APAGAR FOLLOWS
+    # =========================================
+
+    Follow.query.filter(
+        db.or_(
+            Follow.follower_id == user.id,
+            Follow.followed_id == user.id
+        )
+    ).delete()
+
+    # =========================================
+    # APAGAR NOTIFICAÇÕES
+    # =========================================
+
+    Notification.query.filter(
+        db.or_(
+            Notification.user_id == user.id,
+            Notification.origem_id == user.id
+        )
+    ).delete()
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+
+# =========================================================
+# DESBANIR USER
+# =========================================================
+
+@app.route("/admin/unban/<int:user_id>", methods=["POST"])
+def admin_unban_user(user_id):
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.banido = False
+    user.email_banido = False
+    user.ban_reason = None
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+
+# =========================================================
+# BLOQUEAR USER
+# =========================================================
+
+@app.route("/admin/block/<int:user_id>", methods=["POST"])
+def admin_block_user(user_id):
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+
+    dias = int(data.get("dias", 7))
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.bloqueado = True
+    user.bloqueado_ate = (
+        datetime.utcnow() + timedelta(days=dias)
+    )
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+
+# =========================================================
+# DESBLOQUEAR USER
+# =========================================================
+
+@app.route("/admin/unblock/<int:user_id>", methods=["POST"])
+def admin_unblock_user(user_id):
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.bloqueado = False
+    user.bloqueado_ate = None
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+
+# =========================================================
+# SUSPENDER IA
+# =========================================================
+
+@app.route("/admin/suspend-ia/<int:user_id>", methods=["POST"])
+def admin_suspend_ia(user_id):
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+    horas = int(data.get("horas", 24))
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.ia_suspenso_ate = (
+        datetime.utcnow() + timedelta(hours=horas)
+    )
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+
+# =========================================================
+# DESSUSPENDER IA
+# =========================================================
+
+@app.route("/admin/unsuspend-ia/<int:user_id>", methods=["POST"])
+def admin_unsuspend_ia(user_id):
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.ia_suspenso_ate = None
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+
+# =========================================================
+# BANIR IA PERMANENTE
+# =========================================================
+
+@app.route("/admin/ban-ia/<int:user_id>", methods=["POST"])
+def admin_ban_ia(user_id):
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.ia_banido = True
+    user.ia_suspenso_ate = None
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+
+# =========================================================
+# DESBANIR IA
+# =========================================================
+
+@app.route("/admin/unban-ia/<int:user_id>", methods=["POST"])
+def admin_unban_ia(user_id):
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.ia_banido = False
+    user.warning_count = 0
+    user.ia_ban_reason = None
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+@app.route("/admin/add-moedas", methods=["POST"])
+def admin_add_moedas():
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+    user_id = data.get("user_id")
+    moedas = int(data.get("moedas", 0))
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    user.moedas += moedas
+
+    db.session.commit()
+
+    return jsonify(
+        status="ok",
+        moedas=user.moedas
+    )
+
+@app.route("/admin/toggle-public", methods=["POST"])
+def toggle_public_admin():
+
+    data = request.get_json(force=True)
+
+    admin_id = data.get("admin_id")
+    visible = bool(data.get("visible"))
+
+    user = User.query.get(admin_id)
+
+    if not user:
+        return jsonify(error="User não encontrado"), 404
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    user.mostrar_publicamente = visible
+
+    db.session.commit()
+
+    return jsonify(
+        status="ok",
+        visible=user.mostrar_publicamente
+    )
+
+@app.route("/users/list", methods=["GET"])
+def listar_users():
+
+    users = User.query.filter_by(
+        apagado=False
+    ).all()
+
+    res = []
+
+    for u in users:
+
+        res.append({
+            "id": u.id,
+            "username": u.username,
+            "avatar": u.avatar,
+            "role": u.role
+        })
+
+    return jsonify(res)
+
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
