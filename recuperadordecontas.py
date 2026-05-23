@@ -2521,7 +2521,7 @@ def admin_unsuspend_ia(user_id):
 def ban_ia(user_id):
 
     data = request.get_json(force=True)
-    admin_id = session.get("user_id"))
+    admin_id = session.get("user_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
