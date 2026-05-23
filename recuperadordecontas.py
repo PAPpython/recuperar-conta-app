@@ -2877,27 +2877,30 @@ def google_callback():
 
     user = User.query.filter_by(email=email).first()
 
+    # ================= NOVA CONTA =================
     if not user:
         temp_token = uuid.uuid4().hex
 
-    user = User(
-        username=None,
-        email=email,
-        password="google",
-        google_name=google_name,
-        google_picture=google_picture,
-        provider="google",
-        google_token=temp_token,
-        is_google_pending=True
-    )
-    db.session.add(user)
-else:
-    user.google_name = google_name
-    user.google_picture = google_picture
-    user.provider = "google"
-    user.google_token = uuid.uuid4().hex
+        user = User(
+            username=username,
+            email=email,
+            password="google",
+            google_name=google_name,
+            google_picture=google_picture,
+            provider="google",
+            google_token=temp_token,
+            is_google_pending=True
+        )
 
-    user.google_token = uuid.uuid4().hex
+        db.session.add(user)
+
+    # ================= CONTA EXISTENTE =================
+    else:
+        user.google_name = google_name
+        user.google_picture = google_picture
+        user.provider = "google"
+        user.google_token = uuid.uuid4().hex
+        user.is_google_pending = False
 
     db.session.commit()
 
@@ -2908,7 +2911,6 @@ else:
     <p>Copie o código:</p>
     <h2>{user.google_token}</h2>
     """
-
 @app.route("/google-login", methods=["POST"])
 def google_login_tk():
     data = request.json
