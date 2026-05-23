@@ -2871,12 +2871,9 @@ def apagar_comentario(comment_id):
 
 @app.route("/login/google")
 def login_google():
+    session.clear()  # 🔥 isto evita trocar de conta sozinho
     redirect_uri = url_for("google_callback", _external=True)
-
-    return google.authorize_redirect(
-        redirect_uri,
-        prompt="select_account"  # 🔥 força escolher conta
-    )
+    return google.authorize_redirect(redirect_uri)
 
 
 @app.route("/auth/google/callback")
