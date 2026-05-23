@@ -5,6 +5,9 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 from flask import send_from_directory
 from flask import request
+from authlib.integrations.flask_client import OAuth
+from werkzeug.middleware.proxy_fix import ProxyFix
+import uuid
 import os
 import time
 import hashlib
@@ -14,6 +17,7 @@ import json
 import uuid
 # ================= APP =================
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 CORS(app)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -40,6 +44,18 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # ================= DB =================
 db = SQLAlchemy(app)
+
+oauth = OAuth(app)
+
+google = oauth.register(
+    name="google",
+    client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+    client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+    access_token_url="https://oauth2.googleapis.com/token",
+    authorize_url="https://accounts.google.com/o/oauth2/auth",
+    api_base_url="https://www.googleapis.com/oauth2/v2/",
+    client_kwargs={"scope": "email profile"},
+)
 
 # ================= MODELO USER =================
 class User(db.Model):
@@ -69,6 +85,10 @@ class User(db.Model):
     avisos = db.Column(db.Integer, default=0)
     email_banido = db.Column(db.Boolean, default=False)
     mostrar_publicamente = db.Column(db.Boolean, default=True)
+    google_name = db.Column(db.String(120))
+    google_picture = db.Column(db.String(300))
+    provider = db.Column(db.String(20), default="local")
+    google_token = db.Column(db.String(64), unique=True)
     
      # 🔐 Recuperação
     email_recuperacao = db.Column(db.String(120), nullable=True)
@@ -2838,6 +2858,69 @@ def apagar_comentario(comment_id):
     db.session.commit()
 
     return jsonify(status="ok")
+
+@app.route("/login/google")
+def login_google():
+    redirect_uri = url_for("google_callback", _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+@app.route("/auth/google/callback")
+def google_callback():
+    token = google.authorize_access_token()
+    info = google.get("userinfo").json()
+
+    email = info["email"]
+    google_name = info.get("name")
+    google_picture = info.get("picture")
+    username = google_name or email.split("@")[0]
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        user = User(
+            username=username,
+            email=email,
+            password="google",
+            google_name=google_name,
+            google_picture=google_picture,
+            provider="google"
+        )
+        db.session.add(user)
+    else:
+        user.google_name = google_name
+        user.google_picture = google_picture
+        user.provider = "google"
+
+    user.google_token = uuid.uuid4().hex
+
+    db.session.commit()
+
+    session["user_id"] = user.id
+
+    return f"""
+    <h1>Login Google OK ✅</h1>
+    <p>Copie o código:</p>
+    <h2>{user.google_token}</h2>
+    """
+
+@app.route("/google-login", methods=["POST"])
+def google_login_tk():
+    data = request.json
+    token = data.get("token")
+
+    if not token:
+        return jsonify(status="error")
+
+    user = User.query.filter_by(google_token=token).first()
+
+    if not user:
+        return jsonify(status="error")
+
+    return jsonify(
+        status="ok",
+        nome=user.username,
+        email=user.email
+    )
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
