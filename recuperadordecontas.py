@@ -2872,11 +2872,17 @@ def apagar_comentario(comment_id):
 @app.route("/login/google")
 def login_google():
     redirect_uri = url_for("google_callback", _external=True)
-    return google.authorize_redirect(redirect_uri)
+
+    return google.authorize_redirect(
+        redirect_uri,
+        prompt="select_account"  # 🔥 força escolher conta
+    )
+
 
 @app.route("/auth/google/callback")
 def google_callback():
-    token = google.authorize_access_token()
+
+    token_data = google.authorize_access_token()
     info = google.get("userinfo").json()
 
     email = info["email"]
@@ -2884,7 +2890,17 @@ def google_callback():
     google_picture = info.get("picture")
     username = google_name or email.split("@")[0]
 
-    user = User.query.filter_by(email=email).first()
+    # 🔥 limpar sessão antiga (evita entrar em conta errada)
+    session.clear()
+
+    # 🔥 proteger contas normais vs google
+    existing_email_user = User.query.filter_by(email=email).first()
+
+    if existing_email_user and existing_email_user.provider != "google":
+        return jsonify(error="Este email já está associado a outra conta"), 400
+
+    # 🔥 procurar só conta Google
+    user = User.query.filter_by(email=email, provider="google").first()
 
     # ================= NOVA CONTA =================
     if not user:
@@ -2898,7 +2914,8 @@ def google_callback():
             google_picture=google_picture,
             provider="google",
             google_token=temp_token,
-            is_google_pending=True
+            is_google_pending=True,
+            role="user"  # 🔥 garante que não vira admin
         )
 
         db.session.add(user)
@@ -2907,21 +2924,24 @@ def google_callback():
     else:
         user.google_name = google_name
         user.google_picture = google_picture
-        user.provider = "google"
         user.google_token = uuid.uuid4().hex
         user.is_google_pending = False
 
     db.session.commit()
 
     session["user_id"] = user.id
+    session.modified = True
 
     return f"""
     <h1>Login Google OK ✅</h1>
     <p>Copie o código:</p>
     <h2>{user.google_token}</h2>
     """
+
+
 @app.route("/google-login", methods=["POST"])
 def google_login_tk():
+
     data = request.json
     token = data.get("token")
 
@@ -2937,11 +2957,13 @@ def google_login_tk():
         pending=(user.username is None)
     )
 
+
 @app.route("/google-login/complete", methods=["POST"])
 def google_complete():
+
     data = request.json
-    token = data["token"]
-    username = data["username"]
+    token = data.get("token")
+    username = data.get("username")
     display_name = data.get("display_name")
 
     user = User.query.filter_by(google_token=token).first()
