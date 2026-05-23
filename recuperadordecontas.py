@@ -89,6 +89,7 @@ class User(db.Model):
     google_picture = db.Column(db.String(300))
     provider = db.Column(db.String(20), default="local")
     google_token = db.Column(db.String(64), unique=True)
+    is_google_pending = db.Column(db.Boolean, default=False)
     
      # 🔐 Recuperação
     email_recuperacao = db.Column(db.String(120), nullable=True)
@@ -2877,19 +2878,24 @@ def google_callback():
     user = User.query.filter_by(email=email).first()
 
     if not user:
-        user = User(
-            username=username,
-            email=email,
-            password="google",
-            google_name=google_name,
-            google_picture=google_picture,
-            provider="google"
-        )
-        db.session.add(user)
-    else:
-        user.google_name = google_name
-        user.google_picture = google_picture
-        user.provider = "google"
+    temp_token = uuid.uuid4().hex
+
+    user = User(
+        username=None,
+        email=email,
+        password="google",
+        google_name=google_name,
+        google_picture=google_picture,
+        provider="google",
+        google_token=temp_token,
+        is_google_pending=True
+    )
+    db.session.add(user)
+else:
+    user.google_name = google_name
+    user.google_picture = google_picture
+    user.provider = "google"
+    user.google_token = uuid.uuid4().hex
 
     user.google_token = uuid.uuid4().hex
 
@@ -2908,9 +2914,6 @@ def google_login_tk():
     data = request.json
     token = data.get("token")
 
-    if not token:
-        return jsonify(status="error")
-
     user = User.query.filter_by(google_token=token).first()
 
     if not user:
@@ -2919,8 +2922,29 @@ def google_login_tk():
     return jsonify(
         status="ok",
         nome=user.username,
-        email=user.email
+        email=user.email,
+        pending=(user.username is None)
     )
+
+@app.route("/google-login/complete", methods=["POST"])
+def google_complete():
+    data = request.json
+    token = data["token"]
+    username = data["username"]
+    display_name = data.get("display_name")
+
+    user = User.query.filter_by(google_token=token).first()
+
+    if not user:
+        return jsonify(status="error")
+
+    user.username = username
+    user.google_name = display_name or username
+    user.is_google_pending = False
+
+    db.session.commit()
+
+    return jsonify(status="ok", id=user.id)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
