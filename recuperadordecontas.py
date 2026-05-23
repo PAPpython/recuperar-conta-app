@@ -2025,7 +2025,7 @@ def promote_user():
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
     target = data.get("user_id")
 
     if not is_admin(admin_id):
@@ -2057,7 +2057,7 @@ def demote_user():
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
     target_id = data.get("user_id")
 
     if not is_admin(admin_id):
@@ -2153,7 +2153,7 @@ def admin_delete_post(post_id):
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2194,7 +2194,7 @@ def admin_delete_comment(comment_id):
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2225,7 +2225,7 @@ def admin_ban_user(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
     motivo = data.get(
         "motivo",
         "Violação das regras"
@@ -2343,7 +2343,7 @@ def admin_unban_user(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2371,7 +2371,7 @@ def admin_block_user(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
 
     dias = int(data.get("dias", 7))
 
@@ -2402,7 +2402,7 @@ def admin_unblock_user(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2429,7 +2429,7 @@ def suspend_ia(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
     tempo = data.get("horas")  # vem tipo "3 horas"
 
     if not is_admin(admin_id):
@@ -2497,7 +2497,7 @@ def admin_unsuspend_ia(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2521,7 +2521,7 @@ def admin_unsuspend_ia(user_id):
 def ban_ia(user_id):
 
     data = request.get_json(force=True)
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id"))
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2548,7 +2548,7 @@ def admin_unban_ia(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2571,7 +2571,7 @@ def admin_add_moedas():
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
     user_id = data.get("user_id")
     moedas = int(data.get("moedas", 0))
 
@@ -2597,7 +2597,7 @@ def toggle_public_admin():
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
     visible = bool(data.get("visible"))
 
     user = User.query.get(admin_id)
@@ -2685,25 +2685,27 @@ def listar_admins_publico():
 
     return jsonify(res)
 
-def is_admin(user_id):
+def is_admin(user_id=None):
+
+    if user_id is None:
+        user_id = session.get("user_id")
+
+    if not user_id:
+        return False
 
     try:
         user_id = int(user_id)
     except:
         return False
 
-    # 👑 OWNER FIXO (SEMPRE ADMIN)
-    if user_id == 1:
-        return True
-
     user = User.query.get(user_id)
 
     if not user:
         return False
 
-    # 🔥 garante consistência mesmo com Google / bugs
-    if user.role is None:
-        return False
+    # 👑 OWNER FIXO POR ID
+    if user.id == 1:
+        return True
 
     return user.role == "admin"
                 
@@ -2711,7 +2713,7 @@ def is_admin(user_id):
 def admin_delete_user(user_id):
 
     data = request.get_json(force=True)
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
 
     # 🔒 só admin
     if not is_admin(admin_id):
@@ -2770,7 +2772,7 @@ def avisar_user():
 
     data = request.get_json(force=True)
 
-    admin_id = data.get("admin_id")
+    admin_id = session.get("user_id")
     user_id = data.get("user_id")
     motivo = (data.get("motivo") or "").strip()
 
@@ -2958,12 +2960,6 @@ def google_complete():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-
-        # 🔥 garantir owner como admin
-        user = User.query.get(1)
-        if user:
-            user.role = "admin"
-            db.session.commit()
 
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
