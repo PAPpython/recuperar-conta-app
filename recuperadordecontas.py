@@ -2878,7 +2878,7 @@ def google_callback():
     user = User.query.filter_by(email=email).first()
 
     if not user:
-    temp_token = uuid.uuid4().hex
+        temp_token = uuid.uuid4().hex
 
     user = User(
         username=None,
