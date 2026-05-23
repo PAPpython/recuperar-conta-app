@@ -2692,13 +2692,20 @@ def is_admin(user_id):
     except:
         return False
 
-    # 👑 OWNER PRINCIPAL
+    # 👑 OWNER FIXO (SEMPRE ADMIN)
     if user_id == 1:
         return True
 
     user = User.query.get(user_id)
 
-    return bool(user and user.role == "admin")
+    if not user:
+        return False
+
+    # 🔥 garante consistência mesmo com Google / bugs
+    if user.role is None:
+        return False
+
+    return user.role == "admin"
                 
 @app.route("/admin/delete-user/<int:user_id>", methods=["DELETE"])
 def admin_delete_user(user_id):
@@ -2951,6 +2958,12 @@ def google_complete():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
+
+        # 🔥 garantir owner como admin
+        user = User.query.get(1)
+        if user:
+            user.role = "admin"
+            db.session.commit()
 
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
