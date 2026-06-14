@@ -2875,8 +2875,7 @@ def login_google():
 
 @app.route("/auth/google/callback")
 def google_callback():
-
-    token_data = google.authorize_access_token()
+    
     info = google.get("userinfo").json()
 
     email = info["email"]
@@ -2900,7 +2899,6 @@ def google_callback():
             google_name=google_name,
             google_picture=google_picture,
             provider="google",
-            google_token=uuid.uuid4().hex,
             is_google_pending=True,
             role="user"
         )
