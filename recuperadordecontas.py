@@ -2885,57 +2885,64 @@ def google_callback():
     email = info["email"]
     google_name = info.get("name")
     google_picture = info.get("picture")
-    username = google_name or email.split("@")[0]
+    
+    print("EMAIL GOOGLE:", email)
+    print("USER ENCONTRADO:", user.id if user else None)
 
-    # 🔥 limpar sessão antiga (evita entrar em conta errada)
     session.clear()
 
-    # 🔥 proteger contas normais vs google
-    existing_email_user = User.query.filter_by(email=email).first()
+    existing_email_user = User.query.filter_by(
+        email=email
+    ).first()
 
     if existing_email_user and existing_email_user.provider != "google":
-        return jsonify(error="Este email já está associado a outra conta"), 400
+        return jsonify(
+            error="Este email já está associado a uma conta normal"
+        ), 400
 
-    # 🔥 procurar só conta Google
-    user = User.query.filter_by(email=email, provider="google").first()
+    user = User.query.filter_by(
+        email=email,
+        provider="google"
+    ).first()
+
+    print("USER ENCONTRADO:", user.id if user else None)
 
     # ================= NOVA CONTA =================
     if not user:
+
         temp_token = uuid.uuid4().hex
 
         user = User(
-            username=username,
+            username=None,
             email=email,
-            password="google",
+            password=None,
             google_name=google_name,
             google_picture=google_picture,
             provider="google",
             google_token=temp_token,
             is_google_pending=True,
-            role="user"  # 🔥 garante que não vira admin
+            role="user"
         )
 
         db.session.add(user)
 
     # ================= CONTA EXISTENTE =================
     else:
+
         user.google_name = google_name
         user.google_picture = google_picture
         user.google_token = uuid.uuid4().hex
-        user.is_google_pending = False
 
     db.session.commit()
 
     session["user_id"] = user.id
-    session.modified = True
 
     return f"""
     <h1>Login Google OK ✅</h1>
     <p>Copie o código:</p>
     <h2>{user.google_token}</h2>
     """
-
-
+    
 @app.route("/google-login", methods=["POST"])
 def google_login_tk():
 
@@ -2943,6 +2950,9 @@ def google_login_tk():
     token = data.get("token")
 
     user = User.query.filter_by(google_token=token).first()
+    
+    print("EMAIL GOOGLE:", email)
+    print("USER ENCONTRADO:", user.id if user else None)
 
     if not user:
         return jsonify(status="error")
@@ -2959,22 +2969,30 @@ def google_login_tk():
 def google_complete():
 
     data = request.json
+
     token = data.get("token")
     username = data.get("username")
+    password = data.get("password")
     display_name = data.get("display_name")
 
-    user = User.query.filter_by(google_token=token).first()
+    user = User.query.filter_by(
+        google_token=token
+    ).first()
 
     if not user:
         return jsonify(status="error")
 
     user.username = username
+    user.password = hash_password(password)
     user.google_name = display_name or username
     user.is_google_pending = False
 
     db.session.commit()
 
-    return jsonify(status="ok", id=user.id)
+    return jsonify(
+        status="ok",
+        id=user.id
+    )
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
