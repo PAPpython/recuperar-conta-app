@@ -15,6 +15,7 @@ import hmac
 import base64
 import json
 import uuid
+from flask import session
 # ================= APP =================
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -3048,6 +3049,24 @@ def google_complete():
     session.pop("google_pending", None)
 
     return jsonify(status="ok", id=user.id)
+
+@app.route("/google-login/status")
+def google_status():
+    # isto tem de vir da session do Flask
+    user = session.get("google_temp_user")
+
+    if not user:
+        return {"logged": False}
+
+    return {
+        "logged": True,
+        "exists": user.get("exists"),
+        "email": user.get("email"),
+        "id": user.get("id"),
+        "username": user.get("username"),
+        "provider": user.get("provider"),
+        "token": user.get("token")
+    }
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
