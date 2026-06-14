@@ -2882,61 +2882,38 @@ def google_callback():
     google_name = info.get("name")
     google_picture = info.get("picture")
 
-    print("EMAIL GOOGLE:", email)
-
     user = User.query.filter_by(email=email).first()
 
-    print("USER ENCONTRADO:", user.id if user else None)
-
-    # ================= CONTA EXISTENTE =================
+    # ================= EXISTE CONTA =================
     if user:
-        user.provider = "google"
+
+        # 🔥 bloqueio: conta não é Google
+        if user.provider != "google":
+            return redirect("/erro-conta-existe")
+
+        # login Google normal
         user.google_name = google_name
         user.google_picture = google_picture
 
         db.session.commit()
 
         session["user_id"] = user.id
-
-        # 👉 entra direto no app
         return redirect("/dashboard")
 
     # ================= NOVA CONTA =================
-    else:
-        # guarda dados temporários na sessão (SEM TOKEN)
-        session["google_pending"] = {
-            "email": email,
-            "name": google_name,
-            "picture": google_picture
-        }
+    session["google_pending"] = {
+        "email": email,
+        "name": google_name,
+        "picture": google_picture
+    }
 
-        # 👉 vai para tela de criação de conta
-        return redirect("/criar-conta-google")
-        
+    return redirect("/criar-conta-google")
 @app.route("/google-login", methods=["POST"])
-def google_login_tk():
 
-    data = request.json
-    token = data.get("token")
-
-    user = User.query.filter_by(google_token=token).first()
-    
-    print("USER ENCONTRADO:", user.id if user else None)
-
-    if not user:
-        return jsonify(status="error")
-
-    return jsonify(
-        status="ok",
-        nome=user.username,
-        email=user.email,
-        pending=(user.username is None)
-    )
-
-
-@app.route("/google-login/complete", methods=["POST"])
+@@app.route("/google-login/complete", methods=["POST"])
 def google_complete():
     data = request.json
+
     username = data.get("username")
     password = data.get("password")
     display_name = data.get("display_name")
