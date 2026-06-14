@@ -2910,7 +2910,7 @@ def google_callback():
     return redirect("/criar-conta-google")
 @app.route("/google-login", methods=["POST"])
 
-@@app.route("/google-login/complete", methods=["POST"])
+@app.route("/google-login/complete", methods=["POST"])
 def google_complete():
     data = request.json
 
