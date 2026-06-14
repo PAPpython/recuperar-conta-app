@@ -2873,7 +2873,54 @@ def login_google():
     redirect_uri = url_for("google_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
 
-return """
+@app.route("/auth/google/callback")
+def google_callback():
+
+    token = google.authorize_access_token()
+    
+    resp = google.get("https://openidconnect.googleapis.com/v1/userinfo")
+    info = resp.json()
+
+    email = info["email"]
+    google_name = info.get("name")
+    google_picture = info.get("picture")
+
+    print("EMAIL GOOGLE:", email)
+
+    # 🔥 procurar por email apenas
+    user = User.query.filter_by(email=email).first()
+
+    print("USER ENCONTRADO:", user.id if user else None)
+
+    # ================= NOVA CONTA =================
+    if not user:
+
+        user = User(
+            username=None,
+            email=email,
+            password=None,
+            google_name=google_name,
+            google_picture=google_picture,
+            provider="google",
+            is_google_pending=True,
+            role="user"
+        )
+
+        db.session.add(user)
+
+    # ================= CONTA EXISTENTE =================
+    else:
+
+        user.provider = "google"
+        user.google_name = google_name
+        user.google_picture = google_picture
+        user.google_token = uuid.uuid4().hex
+
+    db.session.commit()
+
+    session["user_id"] = user.id
+
+    return """
 <!DOCTYPE html>
 <html lang="pt">
 <head>
