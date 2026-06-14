@@ -2875,41 +2875,56 @@ def login_google():
 
 @app.route("/auth/google/callback")
 def google_callback():
-    google.authorize_access_token()
+
+    token_data = google.authorize_access_token()
     info = google.get("userinfo").json()
 
     email = info["email"]
     google_name = info.get("name")
     google_picture = info.get("picture")
 
+    print("EMAIL GOOGLE:", email)
+
+    # 🔥 procurar por email apenas
     user = User.query.filter_by(email=email).first()
 
-    # ================= EXISTE CONTA =================
-    if user:
-
-        # 🔥 bloqueio: conta não é Google
-        if user.provider != "google":
-            return redirect("/erro-conta-existe")
-
-        # login Google normal
-        user.google_name = google_name
-        user.google_picture = google_picture
-
-        db.session.commit()
-
-        session["user_id"] = user.id
-        return redirect("/dashboard")
+    print("USER ENCONTRADO:", user.id if user else None)
 
     # ================= NOVA CONTA =================
-    session["google_pending"] = {
-        "email": email,
-        "name": google_name,
-        "picture": google_picture
-    }
+    if not user:
 
-    return redirect("/criar-conta-google")
-@app.route("/google-login", methods=["POST"])
+        user = User(
+            username=None,
+            email=email,
+            password=None,
+            google_name=google_name,
+            google_picture=google_picture,
+            provider="google",
+            google_token=uuid.uuid4().hex,
+            is_google_pending=True,
+            role="user"
+        )
 
+        db.session.add(user)
+
+    # ================= CONTA EXISTENTE =================
+    else:
+
+        user.provider = "google"
+        user.google_name = google_name
+        user.google_picture = google_picture
+        user.google_token = uuid.uuid4().hex
+
+    db.session.commit()
+
+    session["user_id"] = user.id
+
+    return f"""
+    <h1>Login Google OK ✅</h1>
+    <p>Copie o código:</p>
+    <h2>{user.google_token}</h2>
+    """
+    
 @app.route("/google-login/complete", methods=["POST"])
 def google_complete():
     data = request.json
