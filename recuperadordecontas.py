@@ -28,6 +28,11 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # garantir que a pasta existe (Render)
 os.makedirs(os.path.join(UPLOAD_FOLDER, "fotos"), exist_ok=True)
 
+
+# ================= GOOGLE LOGIN STATE =================
+# 🔥 ISTO É NOVO (essencial para o Tkinter)
+google_sessions = {}
+
 # ================= SERVIR AVATARES =================
 @app.route('/avatar/<filename>')
 def servir_avatar(filename):
@@ -2877,8 +2882,8 @@ def login_google():
 @app.route("/auth/google/callback")
 def google_callback():
 
-    token = google.authorize_access_token()
-    
+    google.authorize_access_token()
+
     resp = google.get("https://openidconnect.googleapis.com/v1/userinfo")
     info = resp.json()
 
@@ -2886,16 +2891,21 @@ def google_callback():
     google_name = info.get("name")
     google_picture = info.get("picture")
 
-    print("EMAIL GOOGLE:", email)
-
-    # 🔥 procurar por email apenas
     user = User.query.filter_by(email=email).first()
 
-    print("USER ENCONTRADO:", user.id if user else None)
+    app_token = uuid.uuid4().hex
 
-    # ================= NOVA CONTA =================
+    # 🔥 guardar estado para Tkinter
+    google_sessions[app_token] = {
+        "exists": user is not None,
+        "id": user.id if user else None,
+        "email": email,
+        "username": user.username if user else None,
+        "picture": google_picture
+    }
+
+    # ================= CRIAR USER SE NÃO EXISTIR =================
     if not user:
-
         user = User(
             username=None,
             email=email,
@@ -2906,16 +2916,11 @@ def google_callback():
             is_google_pending=True,
             role="user"
         )
-
         db.session.add(user)
-
-    # ================= CONTA EXISTENTE =================
     else:
-
         user.provider = "google"
         user.google_name = google_name
         user.google_picture = google_picture
-        user.google_token = uuid.uuid4().hex
 
     db.session.commit()
 
@@ -2929,94 +2934,58 @@ def google_callback():
 <title>Login concluído</title>
 
 <style>
-    body {{
-        margin: 0;
-        height: 100vh;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        font-family: Arial, sans-serif;
-        background: linear-gradient(135deg, #7dd3fc, #2563eb, #000000);
-        color: white;
-    }}
+body {{
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: Arial;
+    background: linear-gradient(135deg,#7dd3fc,#2563eb,#000);
+    color: white;
+}}
 
-    .card {{
-        background: rgba(255, 255, 255, 0.08);
-        backdrop-filter: blur(12px);
-        border-radius: 20px;
-        padding: 40px;
-        text-align: center;
-        width: 360px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-        animation: fadeIn 0.6s ease-in-out;
-    }}
+.card {{
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(12px);
+    padding: 40px;
+    border-radius: 20px;
+    text-align: center;
+}}
 
-    h1 {{
-        margin-bottom: 10px;
-        font-size: 26px;
-    }}
-
-    p {{
-        opacity: 0.85;
-        margin-bottom: 25px;
-    }}
-
-    .btn {{
-        display: inline-block;
-        padding: 12px 22px;
-        border-radius: 12px;
-        background: linear-gradient(90deg, #38bdf8, #1d4ed8);
-        color: white;
-        font-weight: bold;
-        cursor: pointer;
-        border: none;
-        transition: 0.3s;
-    }}
-
-    .btn:hover {{
-        transform: scale(1.05);
-        box-shadow: 0 0 15px rgba(56,189,248,0.6);
-    }}
-
-    .check {{
-        font-size: 50px;
-        margin-bottom: 10px;
-    }}
-
-    @keyframes fadeIn {{
-        from {{ opacity: 0; transform: translateY(20px); }}
-        to {{ opacity: 1; transform: translateY(0); }}
-    }}
+.btn {{
+    padding: 12px 22px;
+    border-radius: 12px;
+    border: none;
+    background: linear-gradient(90deg,#38bdf8,#1d4ed8);
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+}}
 </style>
-
 </head>
 
 <body>
 
 <div class="card">
-    <div class="check">✅</div>
     <h1>Login concluído</h1>
-    <p>Agora que já fizeste login, podes voltar ao app.</p>
+    <p>Enviar dados para o AERON?</p>
 
-    <button class="btn" onclick="goApp()">
-        Voltar ao AERON
+    <button class="btn" onclick="send()">
+        Enviar para o app
     </button>
 </div>
 
 <script>
-function goApp() {{
-    window.location.href = "myapp://login?token={user.google_token}";
-    
-    setTimeout(() => {{
-        window.close();
-    }}, 1000);
+function send() {{
+    window.location.href = "myapp://google-login?token={app_token}";
+    setTimeout(() => window.close(), 800);
 }}
 </script>
 
 </body>
 </html>
 """
-    
 @app.route("/google-login/complete", methods=["POST"])
 def google_complete():
     data = request.json
@@ -3050,23 +3019,14 @@ def google_complete():
 
     return jsonify(status="ok", id=user.id)
 
-@app.route("/google-login/status")
-def google_status():
-    # isto tem de vir da session do Flask
-    user = session.get("google_temp_user")
+@app.route("/google-login/get/<token>")
+def google_get(token):
+    data = google_sessions.get(token)
 
-    if not user:
-        return {"logged": False}
+    if not data:
+        return jsonify({"status": "error"})
 
-    return {
-        "logged": True,
-        "exists": user.get("exists"),
-        "email": user.get("email"),
-        "id": user.get("id"),
-        "username": user.get("username"),
-        "provider": user.get("provider"),
-        "token": user.get("token")
-    }
+    return jsonify(data)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
