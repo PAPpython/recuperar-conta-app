@@ -49,12 +49,13 @@ oauth = OAuth(app)
 
 google = oauth.register(
     name="google",
-    client_id=os.environ.get("GOOGLE_CLIENT_ID"),
-    client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
-    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_kwargs={
-        "scope": "openid email profile"
-    }
+    client_id="...",
+    client_secret="...",
+    access_token_url="https://oauth2.googleapis.com/token",
+    authorize_url="https://accounts.google.com/o/oauth2/auth",
+    api_base_url="https://openidconnect.googleapis.com/v1/",
+    userinfo_endpoint="https://openidconnect.googleapis.com/v1/userinfo",
+    client_kwargs={"scope": "openid email profile"}
 )
 # ================= MODELO USER =================
 class User(db.Model):
