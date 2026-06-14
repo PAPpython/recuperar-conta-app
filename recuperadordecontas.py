@@ -2875,6 +2875,8 @@ def login_google():
 
 @app.route("/auth/google/callback")
 def google_callback():
+
+    token = google.authorize_access_token()
     
     resp = google.get("https://openidconnect.googleapis.com/v1/userinfo")
     info = resp.json()
