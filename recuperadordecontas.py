@@ -2870,20 +2870,12 @@ def apagar_comentario(comment_id):
 
 @app.route("/login/google")
 def login_google():
-
-    redirect_uri = url_for(
-        "google_callback",
-        _external=True
-    )
-
-    return google.authorize_redirect(
-        redirect_uri
-    )
+    redirect_uri = url_for("google_callback", _external=True)
+    return google.authorize_redirect(redirect_uri)
 
 @app.route("/auth/google/callback")
 def google_callback():
-
-    token_data = google.authorize_access_token()
+    google.authorize_access_token()
     info = google.get("userinfo").json()
 
     email = info["email"]
@@ -2892,46 +2884,35 @@ def google_callback():
 
     print("EMAIL GOOGLE:", email)
 
-    # 🔥 procurar por email apenas
     user = User.query.filter_by(email=email).first()
 
     print("USER ENCONTRADO:", user.id if user else None)
 
-    # ================= NOVA CONTA =================
-    if not user:
-
-        user = User(
-            username=None,
-            email=email,
-            password=None,
-            google_name=google_name,
-            google_picture=google_picture,
-            provider="google",
-            google_token=uuid.uuid4().hex,
-            is_google_pending=True,
-            role="user"
-        )
-
-        db.session.add(user)
-
     # ================= CONTA EXISTENTE =================
-    else:
-
+    if user:
         user.provider = "google"
         user.google_name = google_name
         user.google_picture = google_picture
-        user.google_token = uuid.uuid4().hex
 
-    db.session.commit()
+        db.session.commit()
 
-    session["user_id"] = user.id
+        session["user_id"] = user.id
 
-    return f"""
-    <h1>Login Google OK ✅</h1>
-    <p>Copie o código:</p>
-    <h2>{user.google_token}</h2>
-    """
-    
+        # 👉 entra direto no app
+        return redirect("/dashboard")
+
+    # ================= NOVA CONTA =================
+    else:
+        # guarda dados temporários na sessão (SEM TOKEN)
+        session["google_pending"] = {
+            "email": email,
+            "name": google_name,
+            "picture": google_picture
+        }
+
+        # 👉 vai para tela de criação de conta
+        return redirect("/criar-conta-google")
+        
 @app.route("/google-login", methods=["POST"])
 def google_login_tk():
 
@@ -2955,35 +2936,35 @@ def google_login_tk():
 
 @app.route("/google-login/complete", methods=["POST"])
 def google_complete():
-
     data = request.json
-
-    token = data.get("token")
     username = data.get("username")
     password = data.get("password")
     display_name = data.get("display_name")
 
-    user = User.query.filter_by(
-        google_token=token
-    ).first()
+    google_data = session.get("google_pending")
 
-    if not user:
+    if not google_data:
         return jsonify(status="error")
 
-    user.username = username
+    user = User(
+        username=username,
+        email=google_data["email"],
+        google_name=display_name or username,
+        google_picture=google_data["picture"],
+        provider="google",
+        is_google_pending=False
+    )
 
     if password:
         user.password = hash_password(password)
 
-    user.google_name = display_name or username
-    user.is_google_pending = False
-
+    db.session.add(user)
     db.session.commit()
 
-    return jsonify(
-        status="ok",
-        id=user.id
-    )
+    session["user_id"] = user.id
+    session.pop("google_pending", None)
+
+    return jsonify(status="ok", id=user.id)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
