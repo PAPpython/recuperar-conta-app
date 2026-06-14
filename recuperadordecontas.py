@@ -2920,7 +2920,7 @@ def google_callback():
 
     session["user_id"] = user.id
 
-    return """
+    return f"""
 <!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -2947,7 +2947,6 @@ def google_callback():
         text-align: center;
         width: 360px;
         box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-        animation: fadeIn 0.6s ease-in-out;
     }
 
     h1 {
@@ -2964,28 +2963,19 @@ def google_callback():
         display: inline-block;
         padding: 12px 22px;
         border-radius: 12px;
-        background: linear-gradient(90deg, #38bdf8, #1d4ed8);
-        color: white;
-        text-decoration: none;
+        background: #000000;   /* preto */
+        color: #ffffff;        /* texto branco */
         font-weight: bold;
-        transition: 0.3s;
-        cursor: pointer;
         border: none;
-    }
-
-    .btn:hover {
-        transform: scale(1.05);
-        box-shadow: 0 0 15px rgba(56,189,248,0.6);
+        cursor: default;       /* NÃO parece clicável */
+        user-select: none;
+        pointer-events: none;  /* impede clique */
+        opacity: 0.9;
     }
 
     .check {
         font-size: 50px;
         margin-bottom: 10px;
-    }
-
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
     }
 </style>
 
@@ -2998,9 +2988,9 @@ def google_callback():
     <h1>Login concluído</h1>
     <p>Agora que já fizeste login, podes voltar ao app.</p>
 
-    <button class="btn" onclick="window.close()">
+    <div class="btn">
         Voltar ao app
-    </button>
+    </div>
 </div>
 
 </body>
