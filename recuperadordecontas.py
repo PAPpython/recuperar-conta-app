@@ -2873,54 +2873,7 @@ def login_google():
     redirect_uri = url_for("google_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
 
-@app.route("/auth/google/callback")
-def google_callback():
-
-    token = google.authorize_access_token()
-    
-    resp = google.get("https://openidconnect.googleapis.com/v1/userinfo")
-    info = resp.json()
-
-    email = info["email"]
-    google_name = info.get("name")
-    google_picture = info.get("picture")
-
-    print("EMAIL GOOGLE:", email)
-
-    # 🔥 procurar por email apenas
-    user = User.query.filter_by(email=email).first()
-
-    print("USER ENCONTRADO:", user.id if user else None)
-
-    # ================= NOVA CONTA =================
-    if not user:
-
-        user = User(
-            username=None,
-            email=email,
-            password=None,
-            google_name=google_name,
-            google_picture=google_picture,
-            provider="google",
-            is_google_pending=True,
-            role="user"
-        )
-
-        db.session.add(user)
-
-    # ================= CONTA EXISTENTE =================
-    else:
-
-        user.provider = "google"
-        user.google_name = google_name
-        user.google_picture = google_picture
-        user.google_token = uuid.uuid4().hex
-
-    db.session.commit()
-
-    session["user_id"] = user.id
-
-    return f"""
+return """
 <!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -2947,6 +2900,7 @@ def google_callback():
         text-align: center;
         width: 360px;
         box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+        animation: fadeIn 0.6s ease-in-out;
     }
 
     h1 {
@@ -2963,19 +2917,28 @@ def google_callback():
         display: inline-block;
         padding: 12px 22px;
         border-radius: 12px;
-        background: #000000;   /* preto */
-        color: #ffffff;        /* texto branco */
+        background: linear-gradient(90deg, #38bdf8, #1d4ed8);
+        color: white;
+        text-decoration: none;
         font-weight: bold;
+        transition: 0.3s;
+        cursor: pointer;
         border: none;
-        cursor: default;       /* NÃO parece clicável */
-        user-select: none;
-        pointer-events: none;  /* impede clique */
-        opacity: 0.9;
+    }
+
+    .btn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 0 15px rgba(56,189,248,0.6);
     }
 
     .check {
         font-size: 50px;
         margin-bottom: 10px;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
     }
 </style>
 
@@ -2988,9 +2951,9 @@ def google_callback():
     <h1>Login concluído</h1>
     <p>Agora que já fizeste login, podes voltar ao app.</p>
 
-    <div class="btn">
+    <button class="btn" onclick="window.close()">
         Voltar ao app
-    </div>
+    </button>
 </div>
 
 </body>
