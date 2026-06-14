@@ -2920,7 +2920,7 @@ def google_callback():
 
     session["user_id"] = user.id
 
-    return """
+    return f"""
 <!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -2928,7 +2928,7 @@ def google_callback():
 <title>Login concluído</title>
 
 <style>
-    body {
+    body {{
         margin: 0;
         height: 100vh;
         display: flex;
@@ -2937,9 +2937,9 @@ def google_callback():
         font-family: Arial, sans-serif;
         background: linear-gradient(135deg, #7dd3fc, #2563eb, #000000);
         color: white;
-    }
+    }}
 
-    .card {
+    .card {{
         background: rgba(255, 255, 255, 0.08);
         backdrop-filter: blur(12px);
         border-radius: 20px;
@@ -2948,45 +2948,44 @@ def google_callback():
         width: 360px;
         box-shadow: 0 10px 30px rgba(0,0,0,0.4);
         animation: fadeIn 0.6s ease-in-out;
-    }
+    }}
 
-    h1 {
+    h1 {{
         margin-bottom: 10px;
         font-size: 26px;
-    }
+    }}
 
-    p {
+    p {{
         opacity: 0.85;
         margin-bottom: 25px;
-    }
+    }}
 
-    .btn {
+    .btn {{
         display: inline-block;
         padding: 12px 22px;
         border-radius: 12px;
         background: linear-gradient(90deg, #38bdf8, #1d4ed8);
         color: white;
-        text-decoration: none;
         font-weight: bold;
-        transition: 0.3s;
         cursor: pointer;
         border: none;
-    }
+        transition: 0.3s;
+    }}
 
-    .btn:hover {
+    .btn:hover {{
         transform: scale(1.05);
         box-shadow: 0 0 15px rgba(56,189,248,0.6);
-    }
+    }}
 
-    .check {
+    .check {{
         font-size: 50px;
         margin-bottom: 10px;
-    }
+    }}
 
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
+    @keyframes fadeIn {{
+        from {{ opacity: 0; transform: translateY(20px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
+    }}
 </style>
 
 </head>
@@ -2998,10 +2997,20 @@ def google_callback():
     <h1>Login concluído</h1>
     <p>Agora que já fizeste login, podes voltar ao app.</p>
 
-    <button class="btn" onclick="window.close()">
-        Voltar ao app
+    <button class="btn" onclick="goApp()">
+        Voltar ao AERON
     </button>
 </div>
+
+<script>
+function goApp() {{
+    window.location.href = "myapp://login?token={user.google_token}";
+    
+    setTimeout(() => {{
+        window.close();
+    }}, 1000);
+}}
+</script>
 
 </body>
 </html>
