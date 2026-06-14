@@ -51,12 +51,11 @@ google = oauth.register(
     name="google",
     client_id=os.environ.get("GOOGLE_CLIENT_ID"),
     client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
-    access_token_url="https://oauth2.googleapis.com/token",
-    authorize_url="https://accounts.google.com/o/oauth2/auth",
-    api_base_url="https://www.googleapis.com/oauth2/v2/",
-    client_kwargs={"scope": "email profile"},
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={
+        "scope": "openid email profile"
+    }
 )
-
 # ================= MODELO USER =================
 class User(db.Model):
     __tablename__ = "users"
@@ -2871,9 +2870,15 @@ def apagar_comentario(comment_id):
 
 @app.route("/login/google")
 def login_google():
-    redirect_uri = url_for("google_callback", _external=True)
-    return google.authorize_redirect(redirect_uri)
 
+    redirect_uri = url_for(
+        "google_callback",
+        _external=True
+    )
+
+    return google.authorize_redirect(
+        redirect_uri
+    )
 
 @app.route("/auth/google/callback")
 def google_callback():
@@ -2884,30 +2889,16 @@ def google_callback():
     email = info["email"]
     google_name = info.get("name")
     google_picture = info.get("picture")
-    
+
     print("EMAIL GOOGLE:", email)
-    print("USER ENCONTRADO:", user.id if user else None)
-    
-    existing_email_user = User.query.filter_by(
-        email=email
-    ).first()
 
-    if existing_email_user and existing_email_user.provider != "google":
-        return jsonify(
-            error="Este email já está associado a uma conta normal"
-        ), 400
-
-    user = User.query.filter_by(
-        email=email,
-        provider="google"
-    ).first()
+    # 🔥 procurar por email apenas
+    user = User.query.filter_by(email=email).first()
 
     print("USER ENCONTRADO:", user.id if user else None)
 
     # ================= NOVA CONTA =================
     if not user:
-
-        temp_token = uuid.uuid4().hex
 
         user = User(
             username=None,
@@ -2916,7 +2907,7 @@ def google_callback():
             google_name=google_name,
             google_picture=google_picture,
             provider="google",
-            google_token=temp_token,
+            google_token=uuid.uuid4().hex,
             is_google_pending=True,
             role="user"
         )
@@ -2926,6 +2917,7 @@ def google_callback():
     # ================= CONTA EXISTENTE =================
     else:
 
+        user.provider = "google"
         user.google_name = google_name
         user.google_picture = google_picture
         user.google_token = uuid.uuid4().hex
@@ -2948,7 +2940,6 @@ def google_login_tk():
 
     user = User.query.filter_by(google_token=token).first()
     
-    print("EMAIL GOOGLE:", email)
     print("USER ENCONTRADO:", user.id if user else None)
 
     if not user:
@@ -2980,7 +2971,10 @@ def google_complete():
         return jsonify(status="error")
 
     user.username = username
-    user.password = hash_password(password)
+
+    if password:
+        user.password = hash_password(password)
+
     user.google_name = display_name or username
     user.is_google_pending = False
 
