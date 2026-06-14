@@ -2878,7 +2878,7 @@ def apagar_comentario(comment_id):
 def login_google():
     redirect_uri = url_for("google_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
-
+    
 @app.route("/auth/google/callback")
 def google_callback():
 
@@ -2893,10 +2893,11 @@ def google_callback():
 
     user = User.query.filter_by(email=email).first()
 
+    # 🔥 TOKEN ÚNICO PARA TKINTER
     app_token = uuid.uuid4().hex
 
-    # 🔥 guardar estado para Tkinter
     google_sessions[app_token] = {
+        "logged": True,
         "exists": user is not None,
         "id": user.id if user else None,
         "email": email,
@@ -2904,7 +2905,8 @@ def google_callback():
         "picture": google_picture
     }
 
-    # ================= CRIAR USER SE NÃO EXISTIR =================
+    # ⚠️ NÃO CRIAR CONTA COMPLETA AQUI
+    # só marca Google login
     if not user:
         user = User(
             username=None,
@@ -2935,32 +2937,31 @@ def google_callback():
 
 <style>
 body {{
-    margin: 0;
-    height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-family: Arial;
-    background: linear-gradient(135deg,#7dd3fc,#2563eb,#000);
-    color: white;
+    margin:0;
+    height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    font-family:Arial;
+    background:linear-gradient(135deg,#7dd3fc,#2563eb,#000);
+    color:white;
 }}
 
 .card {{
-    background: rgba(255,255,255,0.08);
-    backdrop-filter: blur(12px);
-    padding: 40px;
-    border-radius: 20px;
-    text-align: center;
+    background:rgba(255,255,255,0.08);
+    padding:40px;
+    border-radius:20px;
+    text-align:center;
 }}
 
 .btn {{
-    padding: 12px 22px;
-    border-radius: 12px;
-    border: none;
-    background: linear-gradient(90deg,#38bdf8,#1d4ed8);
-    color: white;
-    font-weight: bold;
-    cursor: pointer;
+    padding:12px 22px;
+    border:none;
+    border-radius:12px;
+    background:linear-gradient(90deg,#38bdf8,#1d4ed8);
+    color:white;
+    font-weight:bold;
+    cursor:pointer;
 }}
 </style>
 </head>
@@ -2971,21 +2972,21 @@ body {{
     <h1>Login concluído</h1>
     <p>Enviar dados para o AERON?</p>
 
-    <button class="btn" onclick="send()">
+    <button class="btn" onclick="sendToApp()">
         Enviar para o app
     </button>
 </div>
 
 <script>
-function send() {{
+function sendToApp() {{
     window.location.href = "myapp://google-login?token={app_token}";
-    setTimeout(() => window.close(), 800);
 }}
 </script>
 
 </body>
 </html>
 """
+    
 @app.route("/google-login/complete", methods=["POST"])
 def google_complete():
     data = request.json
@@ -3024,7 +3025,7 @@ def google_get(token):
     data = google_sessions.get(token)
 
     if not data:
-        return jsonify({"status": "error"})
+        return jsonify({"logged": False})
 
     return jsonify(data)
 #================= START =================
