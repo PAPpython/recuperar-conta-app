@@ -33,6 +33,14 @@ os.makedirs(os.path.join(UPLOAD_FOLDER, "fotos"), exist_ok=True)
 # 🔥 ISTO É NOVO (essencial para o Tkinter)
 google_sessions = {}
 
+google_login_state = {
+    "logged": False,
+    "exists": False,
+    "id": None,
+    "email": None,
+    "username": None
+}
+
 # ================= SERVIR AVATARES =================
 @app.route('/avatar/<filename>')
 def servir_avatar(filename):
@@ -239,6 +247,12 @@ class ReportUser(db.Model):
     reporter_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     motivo = db.Column(db.Text)
 
+class GoogleLogin(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120))
+    username = db.Column(db.String(80))
+    logged = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime)
 # ================= CRIAR TABELAS =================
 with app.app_context():
     db.create_all()
@@ -2894,17 +2908,17 @@ def google_callback():
     user = User.query.filter_by(email=email).first()
 
     # 🔥 TOKEN ÚNICO PARA TKINTER
-    app_token = uuid.uuid4().hex
-
-    google_sessions[app_token] = {
+    global google_login_state
+    
+    google_login_state = {
         "logged": True,
-        "exists": user is not None,
+        "exists": user is not None and user.username is not None,
         "id": user.id if user else None,
         "email": email,
         "username": user.username if user else None,
         "picture": google_picture
     }
-
+    
     # ⚠️ NÃO CRIAR CONTA COMPLETA AQUI
     # só marca Google login
     if not user:
@@ -2972,16 +2986,9 @@ body {{
     <h1>Login concluído</h1>
     <p>Enviar dados para o AERON?</p>
 
-    <button class="btn" onclick="sendToApp()">
-        Enviar para o app
-    </button>
-</div>
-
-<script>
-function sendToApp() {{
-    window.location.href = "myapp://google-login?token={app_token}";
-}}
-</script>
+    <button class="btn">
+    Já podes voltar ao AERON
+</button>
 
 </body>
 </html>
@@ -3015,19 +3022,16 @@ def google_complete():
     db.session.add(user)
     db.session.commit()
 
-    session["user_id"] = user.id
+    if user.username:
+        session["user_id"] = user.id
     session.pop("google_pending", None)
 
     return jsonify(status="ok", id=user.id)
 
-@app.route("/google-login/get/<token>")
-def google_get(token):
-    data = google_sessions.get(token)
-
-    if not data:
-        return jsonify({"logged": False})
-
-    return jsonify(data)
+@app.route("/google-login/status")
+def google_login_status():
+    global google_login_state
+    return jsonify(google_login_state)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
