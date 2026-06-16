@@ -28,17 +28,15 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # garantir que a pasta existe (Render)
 os.makedirs(os.path.join(UPLOAD_FOLDER, "fotos"), exist_ok=True)
 
-
 # ================= GOOGLE LOGIN STATE =================
-# 🔥 ISTO É NOVO (essencial para o Tkinter)
-google_sessions = {}
 
 google_login_state = {
     "logged": False,
     "exists": False,
     "id": None,
     "email": None,
-    "username": None
+    "username": None,
+    "picture": None
 }
 
 # ================= SERVIR AVATARES =================
@@ -2920,8 +2918,16 @@ def google_callback():
 
     session["user_id"] = user.id
 
-    # 🔥 IMPORTANTE: mostra HTML, NÃO redirect aqui
-    return f"""
+    # 🔥 ISTO É O QUE O TKINTER VAI LER
+    global google_login_state
+
+    google_login_state["ready"] = True
+    google_login_state["email"] = email
+    google_login_state["name"] = google_name
+    google_login_state["picture"] = google_picture
+
+    # 🔥 HTML simples (SEM deep link)
+    return """
 <!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -2929,7 +2935,7 @@ def google_callback():
 <title>Login Google</title>
 
 <style>
-body {{
+body {
     margin:0;
     height:100vh;
     display:flex;
@@ -2938,43 +2944,36 @@ body {{
     font-family:Arial;
     background:linear-gradient(135deg,#7dd3fc,#2563eb,#000);
     color:white;
-}}
+}
 
-.card {{
+.card {
     background:rgba(255,255,255,0.08);
     padding:40px;
     border-radius:20px;
     text-align:center;
-}}
+}
 
-.btn {{
+.btn {
     padding:12px 22px;
     border:none;
     border-radius:12px;
     background:linear-gradient(90deg,#38bdf8,#1d4ed8);
     color:white;
     font-weight:bold;
-    cursor:pointer;
-}}
+}
 </style>
 </head>
 
 <body>
 
 <div class="card">
-    <h1>Login Google concluído</h1>
-    <p>Podes voltar ao AERON ou configurar a tua conta</p>
+    <h1>Login concluído</h1>
+    <p>Podes fechar esta janela e voltar ao AERON</p>
 
-    <button class="btn" onclick="openApp()">
-        Continuar no AERON
+    <button class="btn" onclick="window.close()">
+        Fechar
     </button>
 </div>
-
-<script>
-function openApp() {{
-    window.location.href = "aeron://setup-google?email={email}";
-}}
-</script>
 
 </body>
 </html>
@@ -3021,9 +3020,20 @@ def google_complete():
 
     return jsonify(status="ok", id=user.id)
     
+@app.route("/google-login/status")
 def google_login_status():
-    global google_login_state
     return jsonify(google_login_state)
+
+@app.route("/google-login/reset")
+def google_login_reset():
+    global google_login_state
+    google_login_state = {
+        "ready": False,
+        "email": None,
+        "name": None,
+        "picture": None
+    }
+    return jsonify(status="ok")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
