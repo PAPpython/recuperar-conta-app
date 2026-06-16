@@ -2921,7 +2921,7 @@ def google_callback():
     # 🔥 ISTO É O QUE O TKINTER VAI LER
     global google_login_state
 
-    google_login_state["ready"] = True
+    google_login_state["logged"] = True
     google_login_state["email"] = email
     google_login_state["name"] = google_name
     google_login_state["picture"] = google_picture
