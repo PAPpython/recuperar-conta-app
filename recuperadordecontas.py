@@ -2897,9 +2897,7 @@ def login_google():
 def google_callback():
 
     google.authorize_access_token()
-
-    resp = google.get("https://openidconnect.googleapis.com/v1/userinfo")
-    info = resp.json()
+    info = google.get("https://openidconnect.googleapis.com/v1/userinfo").json()
 
     email = info["email"]
     google_name = info.get("name")
@@ -2907,47 +2905,28 @@ def google_callback():
 
     user = User.query.filter_by(email=email).first()
 
-    # 🔥 TOKEN ÚNICO PARA TKINTER
-    global google_login_state
-    
-    google_login_state = {
-        "logged": True,
-        "exists": user is not None and user.username is not None,
-        "id": user.id if user else None,
-        "email": email,
-        "username": user.username if user else None,
-        "picture": google_picture
-    }
-    
-    # ⚠️ NÃO CRIAR CONTA COMPLETA AQUI
-    # só marca Google login
     if not user:
         user = User(
-            username=None,
             email=email,
+            username=None,
             password=None,
             google_name=google_name,
             google_picture=google_picture,
             provider="google",
-            is_google_pending=True,
-            role="user"
+            is_google_pending=True
         )
         db.session.add(user)
-    else:
-        user.provider = "google"
-        user.google_name = google_name
-        user.google_picture = google_picture
-
-    db.session.commit()
+        db.session.commit()
 
     session["user_id"] = user.id
 
+    # 🔥 IMPORTANTE: mostra HTML, NÃO redirect aqui
     return f"""
 <!DOCTYPE html>
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
-<title>Login concluído</title>
+<title>Login Google</title>
 
 <style>
 body {{
@@ -2983,12 +2962,19 @@ body {{
 <body>
 
 <div class="card">
-    <h1>Login concluído</h1>
-    <p>Enviar dados para o AERON?</p>
+    <h1>Login Google concluído</h1>
+    <p>Podes voltar ao AERON ou configurar a tua conta</p>
 
-    <button class="btn">
-    Já podes voltar ao AERON
-</button>
+    <button class="btn" onclick="openApp()">
+        Continuar no AERON
+    </button>
+</div>
+
+<script>
+function openApp() {{
+    window.location.href = "aeron://setup-google?email={email}";
+}}
+</script>
 
 </body>
 </html>
@@ -2996,39 +2982,45 @@ body {{
     
 @app.route("/google-login/complete", methods=["POST"])
 def google_complete():
+
     data = request.json
-
-    username = data.get("username")
+    username = (data.get("username") or "").strip().lower()
     password = data.get("password")
-    display_name = data.get("display_name")
+    email = (data.get("email") or "").strip().lower()
 
-    google_data = session.get("google_pending")
+    # 🚫 NÃO EXISTE USER PRÉVIO
+    # agora este endpoint CRIA a conta final
 
-    if not google_data:
-        return jsonify(status="error")
+    if User.query.filter_by(email=email).first():
+        return jsonify(status="error", msg="Email já existe"), 409
 
+    if User.query.filter_by(username=username).first():
+        return jsonify(status="error", msg="Username já existe"), 409
+
+    if not re.fullmatch(r"[A-Za-z0-9._]{4,15}", username):
+        return jsonify(status="error", msg="Username inválido"), 400
+
+    if len(re.findall(r"[A-Za-z]", username)) < 4:
+        return jsonify(status="error", msg="Username inválido"), 400
+
+    if not password or len(password) < 6:
+        return jsonify(status="error", msg="Password inválida"), 400
+
+    # 🔥 CRIA CONTA FINAL (SEM PENDING)
     user = User(
         username=username,
-        email=google_data["email"],
-        google_name=display_name or username,
-        google_picture=google_data["picture"],
+        email=email,
+        password=hash_password(password),
         provider="google",
-        is_google_pending=False
+        is_google_pending=False,
+        role="user"
     )
-
-    if password:
-        user.password = hash_password(password)
 
     db.session.add(user)
     db.session.commit()
 
-    if user.username:
-        session["user_id"] = user.id
-    session.pop("google_pending", None)
-
     return jsonify(status="ok", id=user.id)
-
-@app.route("/google-login/status")
+    
 def google_login_status():
     global google_login_state
     return jsonify(google_login_state)
