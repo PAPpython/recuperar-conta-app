@@ -28,15 +28,17 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # garantir que a pasta existe (Render)
 os.makedirs(os.path.join(UPLOAD_FOLDER, "fotos"), exist_ok=True)
 
+
 # ================= GOOGLE LOGIN STATE =================
+# 🔥 ISTO É NOVO (essencial para o Tkinter)
+google_sessions = {}
 
 google_login_state = {
     "logged": False,
     "exists": False,
     "id": None,
     "email": None,
-    "username": None,
-    "picture": None
+    "username": None
 }
 
 # ================= SERVIR AVATARES =================
@@ -2895,7 +2897,9 @@ def login_google():
 def google_callback():
 
     google.authorize_access_token()
-    info = google.get("https://openidconnect.googleapis.com/v1/userinfo").json()
+
+    resp = google.get("https://openidconnect.googleapis.com/v1/userinfo")
+    info = resp.json()
 
     email = info["email"]
     google_name = info.get("name")
@@ -2903,39 +2907,50 @@ def google_callback():
 
     user = User.query.filter_by(email=email).first()
 
+    # 🔥 TOKEN ÚNICO PARA TKINTER
+    global google_login_state
+    
+    google_login_state = {
+        "logged": True,
+        "exists": user is not None and user.username is not None,
+        "id": user.id if user else None,
+        "email": email,
+        "username": user.username if user else None,
+        "picture": google_picture
+    }
+    
+    # ⚠️ NÃO CRIAR CONTA COMPLETA AQUI
+    # só marca Google login
     if not user:
         user = User(
-            email=email,
             username=None,
+            email=email,
             password=None,
             google_name=google_name,
             google_picture=google_picture,
             provider="google",
-            is_google_pending=True
+            is_google_pending=True,
+            role="user"
         )
         db.session.add(user)
-        db.session.commit()
+    else:
+        user.provider = "google"
+        user.google_name = google_name
+        user.google_picture = google_picture
+
+    db.session.commit()
 
     session["user_id"] = user.id
 
-    # 🔥 ISTO É O QUE O TKINTER VAI LER
-    global google_login_state
-
-    google_login_state["logged"] = True
-    google_login_state["email"] = email
-    google_login_state["name"] = google_name
-    google_login_state["picture"] = google_picture
-
-    # 🔥 HTML simples (SEM deep link)
-    return """
+    return f"""
 <!DOCTYPE html>
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
-<title>Login Google</title>
+<title>Login concluído</title>
 
 <style>
-body {
+body {{
     margin:0;
     height:100vh;
     display:flex;
@@ -2944,23 +2959,24 @@ body {
     font-family:Arial;
     background:linear-gradient(135deg,#7dd3fc,#2563eb,#000);
     color:white;
-}
+}}
 
-.card {
+.card {{
     background:rgba(255,255,255,0.08);
     padding:40px;
     border-radius:20px;
     text-align:center;
-}
+}}
 
-.btn {
+.btn {{
     padding:12px 22px;
     border:none;
     border-radius:12px;
     background:linear-gradient(90deg,#38bdf8,#1d4ed8);
     color:white;
     font-weight:bold;
-}
+    cursor:pointer;
+}}
 </style>
 </head>
 
@@ -2968,12 +2984,11 @@ body {
 
 <div class="card">
     <h1>Login concluído</h1>
-    <p>Podes fechar esta janela e voltar ao AERON</p>
+    <p>Enviar dados para o AERON?</p>
 
-    <button class="btn" onclick="window.close()">
-        Fechar
-    </button>
-</div>
+    <button class="btn">
+    Já podes voltar ao AERON
+</button>
 
 </body>
 </html>
@@ -2983,57 +2998,44 @@ body {
 def google_complete():
 
     data = request.json
-    username = (data.get("username") or "").strip().lower()
+
+    username = data.get("username")
     password = data.get("password")
-    email = (data.get("email") or "").strip().lower()
+    token = data.get("token")
 
-    # 🚫 NÃO EXISTE USER PRÉVIO
-    # agora este endpoint CRIA a conta final
+    google_data = google_sessions.get(token)
 
-    if User.query.filter_by(email=email).first():
-        return jsonify(status="error", msg="Email já existe"), 409
+    if not google_data:
+        return jsonify(status="error")
 
-    if User.query.filter_by(username=username).first():
-        return jsonify(status="error", msg="Username já existe"), 409
-
-    if not re.fullmatch(r"[A-Za-z0-9._]{4,15}", username):
-        return jsonify(status="error", msg="Username inválido"), 400
-
-    if len(re.findall(r"[A-Za-z]", username)) < 4:
-        return jsonify(status="error", msg="Username inválido"), 400
-
-    if not password or len(password) < 6:
-        return jsonify(status="error", msg="Password inválida"), 400
-
-    # 🔥 CRIA CONTA FINAL (SEM PENDING)
+    # cria user
     user = User(
         username=username,
-        email=email,
-        password=hash_password(password),
+        email=google_data["email"],
+        google_name=username,
+        google_picture=google_data.get("picture"),
         provider="google",
-        is_google_pending=False,
-        role="user"
+        is_google_pending=False
     )
+
+    if password:
+        user.password = hash_password(password)
 
     db.session.add(user)
     db.session.commit()
 
+    # atualiza estado
+    google_data["username"] = username
+    google_data["exists"] = True
+    google_data["id"] = user.id
+
+    session["user_id"] = user.id
+
     return jsonify(status="ok", id=user.id)
-    
 @app.route("/google-login/status")
 def google_login_status():
-    return jsonify(google_login_state)
-
-@app.route("/google-login/reset")
-def google_login_reset():
     global google_login_state
-    google_login_state = {
-        "ready": False,
-        "email": None,
-        "name": None,
-        "picture": None
-    }
-    return jsonify(status="ok")
+    return jsonify(google_login_state)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
