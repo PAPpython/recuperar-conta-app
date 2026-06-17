@@ -2987,69 +2987,38 @@ body {{
 </body>
 </html>
 """
-    
 @app.route("/google-login/complete", methods=["POST"])
 def google_complete():
 
-    data = request.json
+    try:
 
-    username = (data.get("username") or "").strip().lower()
-    password = data.get("password")
-    email = (data.get("email") or "").strip().lower()
+        data = request.json
 
-    user = User.query.filter_by(email=email).first()
+        username = (data.get("username") or "").strip().lower()
+        password = data.get("password")
+        email = (data.get("email") or "").strip().lower()
 
-    if not user:
+        print("EMAIL:", email)
+        print("USERNAME:", username)
+
+        user = User.query.filter_by(email=email).first()
+
+        if not user:
+            return jsonify(
+                status="error",
+                msg="Email Google não encontrado"
+            ), 404
+
+        # resto do código...
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
         return jsonify(
             status="error",
-            msg="Email Google não encontrado"
-        ), 404
-
-    # username já existe
-    if User.query.filter_by(username=username).first():
-        return jsonify(
-            status="error",
-            msg="Username já existe"
-        ), 409
-
-    # mesmas regras do register
-
-    if not re.fullmatch(r"[A-Za-z0-9._]{4,15}", username):
-        return jsonify(
-            status="error",
-            msg="Username inválido"
-        ), 400
-
-    if len(re.findall(r"[A-Za-z]", username)) < 4:
-        return jsonify(
-            status="error",
-            msg="Username inválido"
-        ), 400
-
-    # usa a tua função real
-    if not password_segura(password):
-        return jsonify(
-            status="error",
-            msg="Password inválida"
-        ), 400
-
-    user.username = username
-    user.password = hash_password(password)
-
-    user.provider = "google"
-    user.is_google_pending = False
-
-    db.session.commit()
-
-    google_login_state["exists"] = True
-    google_login_state["id"] = user.id
-    google_login_state["username"] = username
-
-    return jsonify(
-        status="ok",
-        id=user.id,
-        email=user.email
-    )
+            msg=str(e)
+        ), 500
     
 @app.route("/google-login/status")
 def google_login_status():
