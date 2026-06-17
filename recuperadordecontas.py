@@ -2987,12 +2987,15 @@ body {{
 </body>
 </html>
 """
+    
 @app.route("/google-login/complete", methods=["POST"])
 def google_complete():
 
     try:
 
         data = request.json
+
+        print("DATA:", data)
 
         username = (data.get("username") or "").strip().lower()
         password = data.get("password")
@@ -3003,11 +3006,7 @@ def google_complete():
 
         user = User.query.filter_by(email=email).first()
 
-        if not user:
-            return jsonify(
-                status="error",
-                msg="Email Google não encontrado"
-            ), 404
+        print("USER:", user)
 
         # resto do código...
 
