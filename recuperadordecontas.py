@@ -2907,34 +2907,23 @@ def google_callback():
     
     google_login_state = {
         "logged": True,
-        "exists": user is not None and user.username is not None,
-        "id": user.id if user and user.username else None,
+        "exists": (
+            user is not None
+            and user.username is not None
+        ),
+        "id": (
+            user.id
+            if user and user.username
+            else None
+        ),
         "email": email,
-        "username": user.username if user else None,
-        "picture": google_picture
+        "username": (
+            user.username
+            if user else None
+        ),
+        "picture": google_picture,
+        "google_name": google_name
     }
-    # ⚠️ NÃO CRIAR CONTA COMPLETA AQUI
-    # só marca Google login
-    if not user:
-        user = User(
-            username=None,
-            email=email,
-            password=None,
-            google_name=google_name,
-            google_picture=google_picture,
-            provider="google",
-            is_google_pending=True,
-            role="user"
-        )
-        db.session.add(user)
-    else:
-        user.provider = "google"
-        user.google_name = google_name
-        user.google_picture = google_picture
-
-    db.session.commit()
-
-    session["user_id"] = user.id
 
     return f"""
 <!DOCTYPE html>
@@ -2988,82 +2977,79 @@ body {{
 </html>
 """
     
-@app.route("/google-login/complete", methods=["POST"])
-def google_complete():
+@app.route("/google-login/status")
+def google_login_status():
+    global google_login_state
+    return jsonify(google_login_state)
 
-    print("ENTROU NO COMPLETE")
+@app.route("/register-google", methods=["POST"])
+def register_google():
 
-    data = request.json
+    data = request.get_json(force=True)
 
     username = (data.get("username") or "").strip().lower()
-    password = data.get("password")
     email = (data.get("email") or "").strip().lower()
+    password = data.get("password")
 
-    print("EMAIL:", email)
-    print("USERNAME:", username)
-
-    user = User.query.filter_by(email=email).first()
-
-    print("USER:", user)
-
-    if not user:
-        print("EMAIL NÃO ENCONTRADO")
+    if not username or not email or not password:
         return jsonify(
             status="error",
-            msg="Email Google não encontrado"
-        ), 404
+            msg="Dados inválidos"
+        ), 400
 
-    print("PASSOU USER")
+    banido_email = User.query.filter_by(
+        email=email,
+        email_banido=True
+    ).first()
+
+    if banido_email:
+        return jsonify(
+            status="error",
+            msg="Este email foi permanentemente banido"
+        ), 403
 
     if User.query.filter_by(username=username).first():
-        print("USERNAME EXISTE")
         return jsonify(
             status="error",
             msg="Username já existe"
         ), 409
 
-    print("PASSOU USERNAME")
-
-    if not re.fullmatch(r"[A-Za-z0-9._]{4,15}", username):
-        print("REGRA 1")
+    if User.query.filter_by(email=email).first():
         return jsonify(
             status="error",
-            msg="Username inválido"
-        ), 400
+            msg="Email já existe"
+        ), 409
 
-    print("PASSOU REGRA 1")
+    user = User(
+        username=username,
+        email=email,
+        password=hash_password(password),
 
-    if len(re.findall(r"[A-Za-z]", username)) < 4:
-        print("REGRA 2")
-        return jsonify(
-            status="error",
-            msg="Username inválido"
-        ), 400
+        provider="google",
 
-    print("PASSOU REGRA 2")
+        google_name=data.get("google_name"),
+        google_picture=data.get("google_picture"),
 
-    print("PASSWORD:", password)
+        avatar="default",
+        banner="bannerdefault",
 
-    user.username = username
-    user.password = hash_password(password)
+        avatares_comprados=json.dumps([]),
+        banners_comprados=json.dumps([]),
 
-    user.provider = "google"
-    user.is_google_pending = False
-
-    db.session.commit()
-
-    print("CONTA CRIADA")
-
-    return jsonify(
-        status="ok",
-        id=user.id,
-        email=user.email
+        moedas=0
     )
     
-@app.route("/google-login/status")
-def google_login_status():
-    global google_login_state
-    return jsonify(google_login_state)
+    db.session.add(user)
+    db.session.commit()
+    
+    google_login_state["exists"] = True
+    google_login_state["id"] = user.id
+    google_login_state["username"] = username
+    
+    return jsonify(
+        status="ok",
+        id=user.id
+    )
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
