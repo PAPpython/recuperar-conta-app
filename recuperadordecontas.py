@@ -28,11 +28,6 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # garantir que a pasta existe (Render)
 os.makedirs(os.path.join(UPLOAD_FOLDER, "fotos"), exist_ok=True)
 
-
-# ================= GOOGLE LOGIN STATE =================
-# 🔥 ISTO É NOVO (essencial para o Tkinter)
-google_sessions = {}
-
 google_login_state = {
     "logged": False,
     "exists": False,
@@ -2913,12 +2908,11 @@ def google_callback():
     google_login_state = {
         "logged": True,
         "exists": user is not None and user.username is not None,
-        "id": user.id if user else None,
+        "id": user.id if user and user.username else None,
         "email": email,
         "username": user.username if user else None,
         "picture": google_picture
     }
-    
     # ⚠️ NÃO CRIAR CONTA COMPLETA AQUI
     # só marca Google login
     if not user:
@@ -2999,39 +2993,64 @@ def google_complete():
 
     data = request.json
 
-    username = data.get("username")
+    username = (data.get("username") or "").strip().lower()
     password = data.get("password")
-    token = data.get("token")
+    email = (data.get("email") or "").strip().lower()
 
-    google_data = google_sessions.get(token)
+    user = User.query.filter_by(email=email).first()
 
-    if not google_data:
-        return jsonify(status="error")
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Email Google não encontrado"
+        ), 404
 
-    # cria user
-    user = User(
-        username=username,
-        email=google_data["email"],
-        google_name=username,
-        google_picture=google_data.get("picture"),
-        provider="google",
-        is_google_pending=False
-    )
+    # username já existe
+    if User.query.filter_by(username=username).first():
+        return jsonify(
+            status="error",
+            msg="Username já existe"
+        ), 409
 
-    if password:
-        user.password = hash_password(password)
+    # mesmas regras do register
 
-    db.session.add(user)
+    if not re.fullmatch(r"[A-Za-z0-9._]{4,15}", username):
+        return jsonify(
+            status="error",
+            msg="Username inválido"
+        ), 400
+
+    if len(re.findall(r"[A-Za-z]", username)) < 4:
+        return jsonify(
+            status="error",
+            msg="Username inválido"
+        ), 400
+
+    # usa a tua função real
+    if not password_segura(password):
+        return jsonify(
+            status="error",
+            msg="Password inválida"
+        ), 400
+
+    user.username = username
+    user.password = hash_password(password)
+
+    user.provider = "google"
+    user.is_google_pending = False
+
     db.session.commit()
 
-    # atualiza estado
-    google_data["username"] = username
-    google_data["exists"] = True
-    google_data["id"] = user.id
+    google_login_state["exists"] = True
+    google_login_state["id"] = user.id
+    google_login_state["username"] = username
 
-    session["user_id"] = user.id
-
-    return jsonify(status="ok", id=user.id)
+    return jsonify(
+        status="ok",
+        id=user.id,
+        email=user.email
+    )
+    
 @app.route("/google-login/status")
 def google_login_status():
     global google_login_state
