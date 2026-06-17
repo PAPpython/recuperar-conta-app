@@ -2991,33 +2991,74 @@ body {{
 @app.route("/google-login/complete", methods=["POST"])
 def google_complete():
 
-    try:
+    print("ENTROU NO COMPLETE")
 
-        data = request.json
+    data = request.json
 
-        print("DATA:", data)
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password")
+    email = (data.get("email") or "").strip().lower()
 
-        username = (data.get("username") or "").strip().lower()
-        password = data.get("password")
-        email = (data.get("email") or "").strip().lower()
+    print("EMAIL:", email)
+    print("USERNAME:", username)
 
-        print("EMAIL:", email)
-        print("USERNAME:", username)
+    user = User.query.filter_by(email=email).first()
 
-        user = User.query.filter_by(email=email).first()
+    print("USER:", user)
 
-        print("USER:", user)
-
-        # resto do código...
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-
+    if not user:
+        print("EMAIL NÃO ENCONTRADO")
         return jsonify(
             status="error",
-            msg=str(e)
-        ), 500
+            msg="Email Google não encontrado"
+        ), 404
+
+    print("PASSOU USER")
+
+    if User.query.filter_by(username=username).first():
+        print("USERNAME EXISTE")
+        return jsonify(
+            status="error",
+            msg="Username já existe"
+        ), 409
+
+    print("PASSOU USERNAME")
+
+    if not re.fullmatch(r"[A-Za-z0-9._]{4,15}", username):
+        print("REGRA 1")
+        return jsonify(
+            status="error",
+            msg="Username inválido"
+        ), 400
+
+    print("PASSOU REGRA 1")
+
+    if len(re.findall(r"[A-Za-z]", username)) < 4:
+        print("REGRA 2")
+        return jsonify(
+            status="error",
+            msg="Username inválido"
+        ), 400
+
+    print("PASSOU REGRA 2")
+
+    print("PASSWORD:", password)
+
+    user.username = username
+    user.password = hash_password(password)
+
+    user.provider = "google"
+    user.is_google_pending = False
+
+    db.session.commit()
+
+    print("CONTA CRIADA")
+
+    return jsonify(
+        status="ok",
+        id=user.id,
+        email=user.email
+    )
     
 @app.route("/google-login/status")
 def google_login_status():
