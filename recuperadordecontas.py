@@ -16,6 +16,8 @@ import base64
 import json
 import uuid
 from flask import session
+from flask import redirect
+import secrets
 # ================= APP =================
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -112,6 +114,86 @@ class User(db.Model):
     avatar = db.Column(db.String(50), nullable=True)  # ✅ AVATAR (ID DO AVATAR)
     ultima_recompensa_post = db.Column(db.DateTime, nullable=True)
 
+class UserSession(db.Model):
+    __tablename__ = "user_sessions"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    session_token = db.Column(
+        db.String(128),
+        unique=True,
+        nullable=False
+    )
+
+    platform = db.Column(
+        db.String(30),
+        default="Desktop"
+    )
+
+    ip_address = db.Column(db.String(100))
+
+    location = db.Column(
+        db.String(100),
+        default="Desconhecida"
+    )
+
+    remember_me = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    active = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    last_seen = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+class LoginHistory(db.Model):
+    __tablename__ = "login_history"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id")
+    )
+
+    ip_address = db.Column(db.String(100))
+
+    location = db.Column(
+        db.String(100),
+        default="Desconhecida"
+    )
+
+    platform = db.Column(
+        db.String(30),
+        default="Desktop"
+    )
+
+    success = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    login_time = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+    
 class Post(db.Model):
     __tablename__ = "posts"
 
@@ -487,6 +569,40 @@ def login():
             status="error",
             msg="Conta banida"
         ), 403
+
+    remember_me = data.get("remember_me", False)
+platform = data.get("platform", "Desktop")
+
+ip = request.headers.get(
+    "X-Forwarded-For",
+    request.remote_addr
+)
+
+token = secrets.token_hex(64)
+
+sessao = UserSession(
+    user_id=user.id,
+    session_token=token,
+    platform=platform,
+    ip_address=ip,
+    location="Desconhecida",
+    remember_me=remember_me,
+    active=True
+)
+
+db.session.add(sessao)
+
+historico = LoginHistory(
+    user_id=user.id,
+    ip_address=ip,
+    location="Desconhecida",
+    platform=platform,
+    success=True
+)
+
+db.session.add(historico)
+
+db.session.commit()
         
     return jsonify(
     status="ok",
@@ -496,13 +612,17 @@ def login():
     avatar=user.avatar,
     banner=user.banner,
     moedas=user.moedas,
-
-    # 🔥 ADMIN ROLE
     role=user.role,
 
-    # 🔥 COMPRADOS
-    avatares_comprados=json.loads(user.avatares_comprados or "[]"),
-    banners_comprados=json.loads(user.banners_comprados or "[]")
+    session_token=token,
+
+    avatares_comprados=json.loads(
+        user.avatares_comprados or "[]"
+    ),
+
+    banners_comprados=json.loads(
+        user.banners_comprados or "[]"
+    )
 )
 
 # ================= API PARA DELETAR CONTA =================
@@ -3049,6 +3169,83 @@ def register_google():
     return jsonify(
         status="ok",
         id=user.id
+    )
+
+@app.route("/sessions/<int:user_id>")
+def get_sessions(user_id):
+
+    sessoes = UserSession.query.filter_by(
+        user_id=user_id,
+        active=True
+    ).all()
+
+    resultado = []
+
+    for s in sessoes:
+
+        resultado.append({
+            "id": s.id,
+            "platform": s.platform,
+            "ip": s.ip_address,
+            "location": s.location,
+            "remember_me": s.remember_me,
+            "created_at": str(s.created_at)
+        })
+
+    return jsonify(resultado)
+
+@app.route("/terminate-session", methods=["POST"])
+def terminate_session():
+
+    data = request.get_json(force=True)
+
+    session_id = data.get("session_id")
+
+    sessao = UserSession.query.get(session_id)
+
+    if not sessao:
+        return jsonify(
+            status="error"
+        ), 404
+
+    sessao.active = False
+
+    db.session.commit()
+
+    return jsonify(
+        status="ok"
+    )
+
+@app.route("/auto-login", methods=["POST"])
+def auto_login():
+
+    data = request.get_json(force=True)
+
+    token = data.get("session_token")
+
+    sessao = UserSession.query.filter_by(
+        session_token=token,
+        active=True
+    ).first()
+
+    if not sessao:
+        return jsonify(
+            status="error"
+        ), 401
+
+    user = User.query.get(sessao.user_id)
+
+    if not user:
+        return jsonify(
+            status="error"
+        ), 404
+
+    return jsonify(
+        status="ok",
+        id=user.id,
+        username=user.username,
+        avatar=user.avatar,
+        role=user.role
     )
 #================= START =================
 if __name__ == "__main__":
