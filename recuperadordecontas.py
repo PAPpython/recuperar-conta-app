@@ -3209,6 +3209,7 @@ def terminate_session_web(session_id):
         return redirect("/security-sessions")
 
     sessao.active = False
+    sessao.terminated_at = datetime.utcnow()
 
     db.session.commit()
 
@@ -3340,6 +3341,26 @@ def security_sessions():
         "security_sessions.html",
         user=user,
         sessoes=lista_sessoes
+    )
+
+@app.route("/check-session", methods=["POST"])
+def check_session():
+
+    data = request.get_json(force=True)
+    token = data.get("session_token")
+
+    sessao = UserSession.query.filter_by(
+        session_token=token
+    ).first()
+
+    if not sessao:
+        return jsonify(
+            active=False,
+            msg="Sessão inexistente"
+        )
+
+    return jsonify(
+        active=sessao.active
     )
 #================= START =================
 if __name__ == "__main__":
