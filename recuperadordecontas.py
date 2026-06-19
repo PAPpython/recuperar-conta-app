@@ -3253,54 +3253,47 @@ def security_login():
     if request.method == "GET":
         return render_template("security_login.html")
 
-    identificador = (
-        request.form.get("username", "")
-        .strip()
-        .lower()
-    )
+    data = request.form
 
-    password = request.form.get("password")
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password")
 
-    if not identificador or not password:
+    if not username or not password:
         return render_template(
             "security_login.html",
-            erro="Preencha todos os campos."
+            erro="Preencha todos os campos"
         )
 
-    user = (
-        User.query.filter_by(username=identificador).first()
-        or User.query.filter_by(email=identificador).first()
-        or User.query.filter_by(email_recuperacao=identificador).first()
-    )
+    user = User.query.filter_by(username=username).first()
 
     if not user:
         return render_template(
             "security_login.html",
-            erro="Utilizador não encontrado."
+            erro="Utilizador não encontrado"
         )
 
     if user.password != hash_password(password):
         return render_template(
             "security_login.html",
-            erro="Password inválida."
-        )
-
-    if user.apagado:
-        return render_template(
-            "security_login.html",
-            erro="Conta apagada."
+            erro="Password inválida"
         )
 
     if user.banido:
         return render_template(
             "security_login.html",
-            erro="Conta banida."
+            erro="Conta banida"
+        )
+
+    if user.apagado:
+        return render_template(
+            "security_login.html",
+            erro="Conta apagada"
         )
 
     session["security_user"] = user.id
 
     return redirect("/security-sessions")
-
+    
 @app.route("/security-sessions")
 def security_sessions():
 
