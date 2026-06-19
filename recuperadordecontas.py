@@ -3250,6 +3250,7 @@ def auto_login():
 @app.route("/security-login", methods=["GET", "POST"])
 def security_login():
 
+    # 🔹 Apenas mostra a página no GET (sem erros)
     if request.method == "GET":
         return render_template("security_login.html")
 
@@ -3258,12 +3259,14 @@ def security_login():
     username = (data.get("username") or "").strip().lower()
     password = data.get("password")
 
+    # 🔴 validação básica
     if not username or not password:
         return render_template(
             "security_login.html",
             erro="Preencha todos os campos"
         )
 
+    # 🔍 procurar utilizador
     user = User.query.filter_by(username=username).first()
 
     if not user:
@@ -3272,24 +3275,28 @@ def security_login():
             erro="Utilizador não encontrado"
         )
 
+    # 🔒 password
     if user.password != hash_password(password):
         return render_template(
             "security_login.html",
             erro="Password inválida"
         )
 
+    # 🚫 conta banida
     if user.banido:
         return render_template(
             "security_login.html",
             erro="Conta banida"
         )
 
+    # 🗑 conta apagada
     if user.apagado:
         return render_template(
             "security_login.html",
             erro="Conta apagada"
         )
 
+    # ✅ login OK
     session["security_user"] = user.id
 
     return redirect("/security-sessions")
