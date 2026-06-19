@@ -612,12 +612,11 @@ def login():
     avatar=user.avatar,
     banner=user.banner,
     moedas=user.moedas,
-    session_token=sessao.session_token
 
-    # 🔥 ADMIN ROLE
+    session_token=sessao.session_token,  # <- ok agora
+
     role=user.role,
 
-    # 🔥 COMPRADOS
     avatares_comprados=json.loads(user.avatares_comprados or "[]"),
     banners_comprados=json.loads(user.banners_comprados or "[]")
 )
