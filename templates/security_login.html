@@ -91,48 +91,37 @@ button:hover {
     padding: 12px 20px;
     text-align: center;
     color: white;
-    font-family: Arial, sans-serif;
 }
 
 .footer-buttons {
-    margin-bottom: 8px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .footer-btn {
-    display: inline-block;
-    margin: 0 6px;
     padding: 6px 12px;
     background: #1e40af;
     color: white;
     text-decoration: none;
     border-radius: 6px;
     font-size: 13px;
-    transition: 0.2s;
 }
 
 .footer-btn:hover {
     background: #2563eb;
 }
 
-.footer-info p {
-    margin: 3px 0;
+.footer-text {
     font-size: 12px;
     opacity: 0.85;
 }
 
-.footer-info a {
-    color: #60a5fa;
-    text-decoration: none;
-}
-
-.footer-info a:hover {
-    text-decoration: underline;
-}
-
-.credits {
-    margin-top: 6px;
-    font-size: 11px;
-    opacity: 0.7;
+.sep {
+    opacity: 0.4;
+    margin: 0 5px;
 }
 </style>
 
@@ -166,7 +155,7 @@ function info() {
 
     </form>
 
-    {% if erro %}
+    {% if erro is defined and erro %}
         <div class="error">{{ erro }}</div>
     {% endif %}
 
