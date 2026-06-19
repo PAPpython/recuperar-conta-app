@@ -3355,6 +3355,21 @@ def check_session():
     return jsonify(
         active=sessao.active
     )
+
+@app.route("/check-session-status", methods=["POST"])
+def check_session_status():
+
+    data = request.get_json(force=True)
+    token = data.get("session_token")
+
+    sessao = UserSession.query.filter_by(
+        session_token=token
+    ).first()
+
+    if not sessao:
+        return jsonify(active=False)
+
+    return jsonify(active=sessao.active)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
