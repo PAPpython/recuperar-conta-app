@@ -1,65 +1,126 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt">
 <head>
-    <title>Sessões</title>
+<meta charset="UTF-8">
+<title>Sessões Ativas</title>
 
-    <style>
-        body {
-            font-family: Arial;
-            background: #121212;
-            color: white;
-        }
+<style>
+body {
+    margin: 0;
+    font-family: Arial;
+    background: #0b1220;
+    color: white;
+}
 
-        .card {
-            background: #1f1f1f;
-            padding: 15px;
-            margin: 10px;
-            border-radius: 10px;
-        }
+/* HEADER */
+.header {
+    background: linear-gradient(90deg, #111827, #1e3a8a);
+    padding: 20px;
+    text-align: center;
+}
 
-        button {
-            padding: 8px;
-            cursor: pointer;
-        }
+/* CONTAINER */
+.container {
+    padding: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    justify-content: center;
+}
 
-        .ok { color: lime; }
-        .bad { color: red; }
-    </style>
+/* CARD */
+.card {
+    width: 320px;
+    background: #111827;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+
+/* TEXTOS */
+.card p {
+    margin: 6px 0;
+    font-size: 14px;
+}
+
+/* STATUS */
+.ok {
+    color: #22c55e;
+    font-weight: bold;
+}
+
+.bad {
+    color: #ef4444;
+    font-weight: bold;
+}
+
+/* BOTÃO TERMINAR */
+button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 10px;
+    background: #ef4444;
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #dc2626;
+}
+
+/* USER TITLE */
+.user {
+    text-align: center;
+    font-size: 20px;
+    margin-top: 10px;
+}
+</style>
+
 </head>
 
 <body>
 
-<h2>Conta: {{ user.username }}</h2>
-
-<h3>Sessões Ativas</h3>
-
-{% for s in sessoes %}
-
-<div class="card">
-
-    <p>📱 Plataforma: {{ s.platform }}</p>
-    <p>🌍 IP: {{ s.ip }}</p>
-    <p>📍 Local: {{ s.location }}</p>
-    <p>⏰ Data: {{ s.created_at }}</p>
-
-    <p>
-        Status:
-        {% if s.active %}
-            <span class="ok">Ativa</span>
-        {% else %}
-            <span class="bad">Terminada</span>
-        {% endif %}
-    </p>
-
-    {% if s.active %}
-    <form method="POST" action="/terminate-session/{{ s.id }}">
-        <button type="submit">Terminar Sessão</button>
-    </form>
-    {% endif %}
-
+<div class="header">
+    <h2>🛡 PAINEL DE SESSÕES</h2>
 </div>
 
-{% endfor %}
+<div class="user">
+    Conta: {{ user.username }}
+</div>
+
+<div class="container">
+
+    {% for s in sessoes %}
+
+    <div class="card">
+
+        <p>📱 Plataforma: {{ s.platform }}</p>
+        <p>🌍 IP: {{ s.ip }}</p>
+        <p>📍 Local: {{ s.location }}</p>
+        <p>⏰ Criada: {{ s.created_at }}</p>
+
+        <p>
+            Status:
+            {% if s.active %}
+                <span class="ok">ATIVA</span>
+            {% else %}
+                <span class="bad">TERMINADA</span>
+            {% endif %}
+        </p>
+
+        {% if s.active %}
+        <form method="POST" action="/terminate-session/{{ s.id }}">
+            <button type="submit">Terminar Sessão</button>
+        </form>
+        {% endif %}
+
+    </div>
+
+    {% endfor %}
+
+</div>
 
 </body>
 </html>
