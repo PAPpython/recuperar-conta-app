@@ -603,21 +603,16 @@ def login():
     db.session.add(historico)
 
     db.session.commit()
-
+        
     return jsonify(
-        status="ok",
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        avatar=user.avatar,
-        banner=user.banner,
-        moedas=user.moedas,
-        role=user.role,
-        session_token=token,
-        avatares_comprados=json.loads(user.avatares_comprados or "[]"),
-        banners_comprados=json.loads(user.banners_comprados or "[]")
-    )
-    
+    status="ok",
+    id=user.id,
+    username=user.username,
+    email=user.email,
+    avatar=user.avatar,
+    banner=user.banner,
+    moedas=user.moedas,
+
     # 🔥 ADMIN ROLE
     role=user.role,
 
@@ -625,8 +620,6 @@ def login():
     avatares_comprados=json.loads(user.avatares_comprados or "[]"),
     banners_comprados=json.loads(user.banners_comprados or "[]")
 )
-
-
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
 def delete_account():
