@@ -80,6 +80,60 @@ button:hover {
     border-radius: 50%;
     cursor: pointer;
 }
+
+/* FOOTER */
+.app-footer {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(10px);
+    padding: 12px 20px;
+    text-align: center;
+    color: white;
+    font-family: Arial, sans-serif;
+}
+
+.footer-buttons {
+    margin-bottom: 8px;
+}
+
+.footer-btn {
+    display: inline-block;
+    margin: 0 6px;
+    padding: 6px 12px;
+    background: #1e40af;
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 13px;
+    transition: 0.2s;
+}
+
+.footer-btn:hover {
+    background: #2563eb;
+}
+
+.footer-info p {
+    margin: 3px 0;
+    font-size: 12px;
+    opacity: 0.85;
+}
+
+.footer-info a {
+    color: #60a5fa;
+    text-decoration: none;
+}
+
+.footer-info a:hover {
+    text-decoration: underline;
+}
+
+.credits {
+    margin-top: 6px;
+    font-size: 11px;
+    opacity: 0.7;
+}
 </style>
 
 <script>
@@ -87,7 +141,7 @@ function info() {
     alert(
         "Caso se esqueça dos seus dados, use a opção de Recuperação de Conta dentro da aplicação para repor o acesso.\n\n" +
         "Evite manter a sessão ativa em dispositivos públicos ou partilhados.\n\n" +
-        "Este site existe para terminar sessões exatamente nesses dispositivos de forma segura."
+        "Este sistema permite terminar sessões ativas nesses dispositivos de forma segura."
     );
 }
 </script>
@@ -118,6 +172,38 @@ function info() {
     {% endif %}
 
 </div>
+
+<!-- FOOTER -->
+<footer class="app-footer">
+
+    <div class="footer-buttons">
+        <a href="/recover_username" class="footer-btn">
+            Recuperar Username
+        </a>
+
+        <a href="/recover_password" class="footer-btn">
+            Recuperar Password
+        </a>
+    </div>
+
+    <div class="footer-info">
+        <p>
+            Instagram:
+            <a href="https://instagram.com/the.beh_" target="_blank">
+                @the.beh_
+            </a>
+        </p>
+
+        <p>
+            Contacto: beh.contacto@gmail.com
+        </p>
+
+        <p class="credits">
+            AERON © 2026 — Criado por Rúben Cordeiro
+        </p>
+    </div>
+
+</footer>
 
 </body>
 </html>
