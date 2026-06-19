@@ -3349,34 +3349,23 @@ def check_session():
     data = request.get_json(force=True)
     token = data.get("session_token")
 
-    sessao = UserSession.query.filter_by(
-        session_token=token
-    ).first()
-
-    if not sessao:
-        return jsonify(
-            active=False,
-            msg="Sessão inexistente"
-        )
-
-    return jsonify(
-        active=sessao.active
-    )
-
-@app.route("/check-session-status", methods=["POST"])
-def check_session_status():
-
-    data = request.get_json(force=True)
-    token = data.get("session_token")
+    if not token:
+        return jsonify(active=False), 400
 
     sessao = UserSession.query.filter_by(
         session_token=token
     ).first()
 
+    # ❌ sessão não existe
     if not sessao:
+        return jsonify(active=False), 404
+
+    # ❌ sessão existe mas está terminada
+    if not sessao.active:
         return jsonify(active=False)
 
-    return jsonify(active=sessao.active)
+    # ✅ sessão válida
+    return jsonify(active=True)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
