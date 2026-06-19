@@ -1,1 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sessões</title>
 
+    <style>
+        body {
+            font-family: Arial;
+            background: #121212;
+            color: white;
+        }
+
+        .card {
+            background: #1f1f1f;
+            padding: 15px;
+            margin: 10px;
+            border-radius: 10px;
+        }
+
+        button {
+            padding: 8px;
+            cursor: pointer;
+        }
+
+        .ok { color: lime; }
+        .bad { color: red; }
+    </style>
+</head>
+
+<body>
+
+<h2>Conta: {{ user.username }}</h2>
+
+<h3>Sessões Ativas</h3>
+
+{% for s in sessoes %}
+
+<div class="card">
+
+    <p>📱 Plataforma: {{ s.platform }}</p>
+    <p>🌍 IP: {{ s.ip }}</p>
+    <p>📍 Local: {{ s.location }}</p>
+    <p>⏰ Data: {{ s.created_at }}</p>
+
+    <p>
+        Status:
+        {% if s.active %}
+            <span class="ok">Ativa</span>
+        {% else %}
+            <span class="bad">Terminada</span>
+        {% endif %}
+    </p>
+
+    {% if s.active %}
+    <form method="POST" action="/terminate-session/{{ s.id }}">
+        <button type="submit">Terminar Sessão</button>
+    </form>
+    {% endif %}
+
+</div>
+
+{% endfor %}
+
+</body>
+</html>
