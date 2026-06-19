@@ -1,21 +1,123 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt">
 <head>
-    <title>Login</title>
+<meta charset="UTF-8">
+<title>Security Login</title>
+
+<style>
+body {
+    margin: 0;
+    height: 100vh;
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg, #000000, #1e40af);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* CARD CENTRAL */
+.card {
+    width: 380px;
+    background: #000000;
+    padding: 30px;
+    border-radius: 14px;
+    box-shadow: 0 0 30px rgba(0,0,0,0.7);
+    color: white;
+}
+
+/* TITULO */
+.card h2 {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+/* INPUTS */
+input {
+    width: 100%;
+    padding: 12px;
+    margin-top: 6px;
+    margin-bottom: 14px;
+    border: none;
+    border-radius: 6px;
+    background: #1e293b;
+    color: white;
+    outline: none;
+}
+
+/* BOTÃO */
+button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: #1e40af;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+button:hover {
+    background: #2563eb;
+}
+
+/* ERRO */
+.error {
+    color: #ff4d4d;
+    text-align: center;
+    margin-top: 10px;
+}
+
+/* INFO BUTTON */
+.info {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    background: #1e3a8a;
+    border: none;
+    color: white;
+    padding: 10px 12px;
+    border-radius: 50%;
+    cursor: pointer;
+}
+</style>
+
+<script>
+function info() {
+    alert(
+        "Caso se esqueça da password ou username, use recuperação de conta.\n\n" +
+        "Evite manter sessão ativa em dispositivos públicos."
+    );
+}
+</script>
+
 </head>
+
 <body>
 
-<h2>Login</h2>
+<button class="info" onclick="info()">ⓘ</button>
 
-<form method="POST">
-    <input name="username" placeholder="Username"><br><br>
-    <input name="password" type="password" placeholder="Password"><br><br>
-    <button type="submit">Entrar</button>
-</form>
+<div class="card">
 
-{% if erro %}
-<p style="color:red">{{ erro }}</p>
-{% endif %}
+    <h2>INICIAR SESSÃO</h2>
+
+    <form method="POST">
+
+        <label>Username ou Email</label>
+        <input name="username" type="text" required>
+
+        <label>Password</label>
+        <input name="password" type="password" required>
+
+        <button type="submit">Entrar</button>
+
+    </form>
+
+    {% if erro %}
+        <div class="error">{{ erro }}</div>
+    {% endif %}
+
+</div>
 
 </body>
 </html>
