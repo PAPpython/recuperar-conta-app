@@ -612,6 +612,7 @@ def login():
     avatar=user.avatar,
     banner=user.banner,
     moedas=user.moedas,
+    session_token=sessao.session_token
 
     # 🔥 ADMIN ROLE
     role=user.role,
