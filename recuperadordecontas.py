@@ -3194,28 +3194,31 @@ def get_sessions(user_id):
 
     return jsonify(resultado)
 
-@app.route("/terminate-session", methods=["POST"])
-def terminate_session():
+@app.route(
+    "/terminate-session/<int:session_id>",
+    methods=["POST"]
+)
+def terminate_session_web(session_id):
 
-    data = request.get_json(force=True)
+    user_id = session.get("security_user")
 
-    session_id = data.get("session_id")
+    if not user_id:
+        return redirect("/security-login")
 
     sessao = UserSession.query.get(session_id)
 
     if not sessao:
-        return jsonify(
-            status="error"
-        ), 404
+        return redirect("/security-sessions")
+
+    if sessao.user_id != user_id:
+        return redirect("/security-sessions")
 
     sessao.active = False
 
     db.session.commit()
 
-    return jsonify(
-        status="ok"
-    )
-
+    return redirect("/security-sessions")
+    
 @app.route("/auto-login", methods=["POST"])
 def auto_login():
 
@@ -3246,6 +3249,102 @@ def auto_login():
         username=user.username,
         avatar=user.avatar,
         role=user.role
+    )
+
+@app.route("/security-login", methods=["GET", "POST"])
+def security_login():
+
+    if request.method == "GET":
+        return render_template("security_login.html")
+
+    identificador = (
+        request.form.get("username", "")
+        .strip()
+        .lower()
+    )
+
+    password = request.form.get("password")
+
+    if not identificador or not password:
+        return render_template(
+            "security_login.html",
+            erro="Preencha todos os campos."
+        )
+
+    user = (
+        User.query.filter_by(username=identificador).first()
+        or User.query.filter_by(email=identificador).first()
+        or User.query.filter_by(email_recuperacao=identificador).first()
+    )
+
+    if not user:
+        return render_template(
+            "security_login.html",
+            erro="Utilizador não encontrado."
+        )
+
+    if user.password != hash_password(password):
+        return render_template(
+            "security_login.html",
+            erro="Password inválida."
+        )
+
+    if user.apagado:
+        return render_template(
+            "security_login.html",
+            erro="Conta apagada."
+        )
+
+    if user.banido:
+        return render_template(
+            "security_login.html",
+            erro="Conta banida."
+        )
+
+    session["security_user"] = user.id
+
+    return redirect("/security-sessions")
+
+@app.route("/security-sessions")
+def security_sessions():
+
+    user_id = session.get("security_user")
+
+    if not user_id:
+        return redirect("/security-login")
+
+    user = User.query.get(user_id)
+
+    if not user:
+        session.clear()
+        return redirect("/security-login")
+
+    sessoes = UserSession.query.filter_by(
+        user_id=user_id
+    ).order_by(
+        UserSession.created_at.desc()
+    ).all()
+
+    lista_sessoes = []
+
+    for s in sessoes:
+
+        lista_sessoes.append({
+            "id": s.id,
+            "platform": s.platform,
+            "ip": s.ip_address,
+            "location": s.location,
+            "remember_me": s.remember_me,
+            "active": s.active,
+            "created_at": s.created_at.strftime(
+                "%d/%m/%Y %H:%M:%S"
+            ) if s.created_at else "-"
+        })
+
+    return render_template(
+        "security_sessions.html",
+        user=user,
+        sessoes=lista_sessoes
     )
 #================= START =================
 if __name__ == "__main__":
