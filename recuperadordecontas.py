@@ -604,7 +604,7 @@ db.session.add(historico)
 
 db.session.commit()
         
-    return jsonify(
+return jsonify(
     status="ok",
     id=user.id,
     username=user.username,
@@ -612,18 +612,15 @@ db.session.commit()
     avatar=user.avatar,
     banner=user.banner,
     moedas=user.moedas,
+
+    # 🔥 ADMIN ROLE
     role=user.role,
 
-    session_token=token,
-
-    avatares_comprados=json.loads(
-        user.avatares_comprados or "[]"
-    ),
-
-    banners_comprados=json.loads(
-        user.banners_comprados or "[]"
-    )
+    # 🔥 COMPRADOS
+    avatares_comprados=json.loads(user.avatares_comprados or "[]"),
+    banners_comprados=json.loads(user.banners_comprados or "[]")
 )
+
 
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
