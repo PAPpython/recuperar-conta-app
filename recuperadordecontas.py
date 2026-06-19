@@ -563,7 +563,7 @@ def login():
             status="error",
             msg="Essa conta foi apagada. Não é possível fazer login."
         ), 403
-        
+
     if user.banido:
         return jsonify(
             status="error",
@@ -571,48 +571,53 @@ def login():
         ), 403
 
     remember_me = data.get("remember_me", False)
-platform = data.get("platform", "Desktop")
+    platform = data.get("platform", "Desktop")
 
-ip = request.headers.get(
-    "X-Forwarded-For",
-    request.remote_addr
-)
+    ip = request.headers.get(
+        "X-Forwarded-For",
+        request.remote_addr
+    )
 
-token = secrets.token_hex(64)
+    token = secrets.token_hex(64)
 
-sessao = UserSession(
-    user_id=user.id,
-    session_token=token,
-    platform=platform,
-    ip_address=ip,
-    location="Desconhecida",
-    remember_me=remember_me,
-    active=True
-)
+    sessao = UserSession(
+        user_id=user.id,
+        session_token=token,
+        platform=platform,
+        ip_address=ip,
+        location="Desconhecida",
+        remember_me=remember_me,
+        active=True
+    )
 
-db.session.add(sessao)
+    db.session.add(sessao)
 
-historico = LoginHistory(
-    user_id=user.id,
-    ip_address=ip,
-    location="Desconhecida",
-    platform=platform,
-    success=True
-)
+    historico = LoginHistory(
+        user_id=user.id,
+        ip_address=ip,
+        location="Desconhecida",
+        platform=platform,
+        success=True
+    )
 
-db.session.add(historico)
+    db.session.add(historico)
 
-db.session.commit()
-        
-return jsonify(
-    status="ok",
-    id=user.id,
-    username=user.username,
-    email=user.email,
-    avatar=user.avatar,
-    banner=user.banner,
-    moedas=user.moedas,
+    db.session.commit()
 
+    return jsonify(
+        status="ok",
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        avatar=user.avatar,
+        banner=user.banner,
+        moedas=user.moedas,
+        role=user.role,
+        session_token=token,
+        avatares_comprados=json.loads(user.avatares_comprados or "[]"),
+        banners_comprados=json.loads(user.banners_comprados or "[]")
+    )
+    
     # 🔥 ADMIN ROLE
     role=user.role,
 
