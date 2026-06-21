@@ -3448,6 +3448,7 @@ def check_email_exists():
     return jsonify({
         "exists": user is not None
     })
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
