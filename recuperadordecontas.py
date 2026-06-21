@@ -3442,7 +3442,7 @@ def send_verification():
     })
 
 @app.route("/check-email", methods=["POST"])
-def check_email():
+def check_email_exists():
     data = request.json
     email = data.get("email")
 
