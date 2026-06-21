@@ -578,10 +578,10 @@ def login():
         return jsonify(status="error", msg="Utilizador não encontrado"), 404
 
     if not user.email_verificado:
-    return jsonify(
-        status="error",
-        msg="Email não verificado"
-    ), 403
+        return jsonify(
+            status="error",
+            msg="Email não verificado"
+        ), 403
 
     if user.password != hash_password(password):
         return jsonify(status="error", msg="Password inválida"), 401
