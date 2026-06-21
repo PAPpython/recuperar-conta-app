@@ -483,7 +483,7 @@ def check_email():
     return jsonify(
         exists=User.query.filter_by(email=email).first() is not None
     )
-# ================= REGISTRAR =================
+    
 # ================= REGISTRAR =================
 @app.route("/register", methods=["POST"])
 def register():
@@ -501,12 +501,7 @@ def register():
         ), 400
 
     # 🚫 EMAIL PERMANENTEMENTE BANIDO
-    banido_email = User.query.filter_by(
-        email=email,
-        email_banido=True
-    ).first()
-
-    if banido_email:
+    if User.query.filter_by(email=email, email_banido=True).first():
         return jsonify(
             status="error",
             msg="Este email foi permanentemente banido"
@@ -550,9 +545,13 @@ def register():
     db.session.add(user)
     db.session.commit()
 
-    # 📧 ENVIAR EMAIL DE VERIFICAÇÃO
-    enviar_email_verificacao(user)
+    # 📧 EMAIL (NÃO BLOQUEIA REGISTO)
+    try:
+        enviar_email_verificacao(user)
+    except Exception as e:
+        print("EMAIL FALHOU:", e)
 
+    # ✅ SEMPRE RESPONDE SUCESSO
     return jsonify(
         status="ok",
         msg="Conta criada. Verifique o seu email."
