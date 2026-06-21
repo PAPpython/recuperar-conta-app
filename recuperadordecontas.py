@@ -3448,6 +3448,21 @@ def check_email_exists():
         "exists": user is not None
     })
 
+@app.route("/get-user", methods=["POST"])
+def get_user():
+    data = request.get_json(force=True)
+    email = data.get("email")
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return jsonify({"status": "error"}), 404
+
+    return jsonify({
+        "status": "ok",
+        "username": user.username,
+        "email": user.email
+    })
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
