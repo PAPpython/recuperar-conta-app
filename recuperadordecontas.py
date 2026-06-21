@@ -3403,14 +3403,18 @@ def verify_email(token):
     ).first()
 
     if not user:
-        return render_template("email_invalid.html")
+        return render_template(
+            "email_invalid.html"
+        )
 
     user.email_verificado = True
     user.email_token = None
 
     db.session.commit()
 
-    return render_template("email_verified.html")
+    return render_template(
+        "email_verified.html"
+    )
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
