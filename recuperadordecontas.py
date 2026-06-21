@@ -3418,28 +3418,25 @@ def verify_email(token):
 
 @app.route("/send-verification", methods=["POST"])
 def send_verification():
-    data = request.json
+    data = request.get_json(force=True)
     email = data.get("email")
+
+    if not email:
+        return jsonify({"status": "error", "msg": "Email obrigatório"}), 400
 
     user = User.query.filter_by(email=email).first()
 
     if not user:
-        return jsonify({
-            "status": "error",
-            "msg": "Utilizador não encontrado"
-        }), 404
+        # NÃO reveles demasiado (boa prática)
+        return jsonify({"status": "ok"}), 200
 
-    # gerar token novo sempre que envia
     token = secrets.token_hex(32)
     user.email_token = token
-
     db.session.commit()
 
     enviar_email_verificacao(user)
 
-    return jsonify({
-        "status": "ok"
-    })
+    return jsonify({"status": "ok"})
 
 @app.route("/check-email", methods=["POST"])
 def check_email_exists():
