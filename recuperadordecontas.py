@@ -18,6 +18,7 @@ import uuid
 from flask import session
 from flask import redirect
 import secrets
+from flask_mail import Mail, Message
 # ================= APP =================
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -113,6 +114,8 @@ class User(db.Model):
     apagado = db.Column(db.Boolean, default=False)  # Marca se a conta foi apagada
     avatar = db.Column(db.String(50), nullable=True)  # ✅ AVATAR (ID DO AVATAR)
     ultima_recompensa_post = db.Column(db.DateTime, nullable=True)
+    email_verificado = db.Column(db.Boolean, default=False)
+    email_token = db.Column(db.String(128))
 
 class UserSession(db.Model):
     __tablename__ = "user_sessions"
@@ -481,6 +484,7 @@ def check_email():
         exists=User.query.filter_by(email=email).first() is not None
     )
 # ================= REGISTRAR =================
+# ================= REGISTRAR =================
 @app.route("/register", methods=["POST"])
 def register():
 
@@ -491,7 +495,10 @@ def register():
     password = data.get("password")
 
     if not username or not email or not password:
-        return jsonify(status="error", msg="Dados inválidos"), 400
+        return jsonify(
+            status="error",
+            msg="Dados inválidos"
+        ), 400
 
     # 🚫 EMAIL PERMANENTEMENTE BANIDO
     banido_email = User.query.filter_by(
@@ -519,22 +526,37 @@ def register():
             msg="Email já existe"
         ), 409
 
+    # 🔑 TOKEN DE VERIFICAÇÃO
+    token = secrets.token_urlsafe(64)
+
     # ✅ CRIAR CONTA
     user = User(
         username=username,
         email=email,
         password=hash_password(password),
+
         avatar="default",
         banner="bannerdefault",
+
         avatares_comprados=json.dumps([]),
         banners_comprados=json.dumps([]),
+
+        email_verificado=False,
+        email_token=token,
+
         moedas=0
     )
 
     db.session.add(user)
     db.session.commit()
 
-    return jsonify(status="ok")
+    # 📧 ENVIAR EMAIL DE VERIFICAÇÃO
+    enviar_email_verificacao(user)
+
+    return jsonify(
+        status="ok",
+        msg="Conta criada. Verifique o seu email."
+    )
 # ================= LOGIN =================
 @app.route("/login", methods=["POST"])
 def login():
@@ -554,6 +576,12 @@ def login():
 
     if not user:
         return jsonify(status="error", msg="Utilizador não encontrado"), 404
+
+    if not user.email_verificado:
+    return jsonify(
+        status="error",
+        msg="Email não verificado"
+    ), 403
 
     if user.password != hash_password(password):
         return jsonify(status="error", msg="Password inválida"), 401
@@ -3366,6 +3394,23 @@ def check_session():
 
     # ✅ sessão válida
     return jsonify(active=True)
+
+@app.route("/verify-email/<token>")
+def verify_email(token):
+
+    user = User.query.filter_by(
+        email_token=token
+    ).first()
+
+    if not user:
+        return render_template("email_invalid.html")
+
+    user.email_verificado = True
+    user.email_token = None
+
+    db.session.commit()
+
+    return render_template("email_verified.html")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
