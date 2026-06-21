@@ -578,10 +578,10 @@ def login():
         return jsonify(status="error", msg="Utilizador não encontrado"), 404
 
     if not user.email_verificado:
-        return jsonify(
-            status="error",
-            msg="Email não verificado"
-        ), 403
+        return jsonify({
+            "status": "error",
+            "msg": "Email não verificado, verifique para poder avançar para AERON"
+        }), 403
 
     if user.password != hash_password(password):
         return jsonify(status="error", msg="Password inválida"), 401
@@ -3415,6 +3415,42 @@ def verify_email(token):
     return render_template(
         "email_verified.html"
     )
+
+@app.route("/send-verification", methods=["POST"])
+def send_verification():
+    data = request.json
+    email = data.get("email")
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return jsonify({
+            "status": "error",
+            "msg": "Utilizador não encontrado"
+        }), 404
+
+    # gerar token novo sempre que envia
+    token = secrets.token_hex(32)
+    user.email_token = token
+
+    db.session.commit()
+
+    enviar_email_verificacao(user)
+
+    return jsonify({
+        "status": "ok"
+    })
+
+@app.route("/check-email", methods=["POST"])
+def check_email():
+    data = request.json
+    email = data.get("email")
+
+    user = User.query.filter_by(email=email).first()
+
+    return jsonify({
+        "exists": user is not None
+    })
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
