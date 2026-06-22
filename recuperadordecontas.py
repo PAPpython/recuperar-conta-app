@@ -3433,8 +3433,6 @@ def send_verification():
     user.email_token = token
     db.session.commit()
 
-    enviar_email_verificacao(user)
-
     return jsonify({"status": "ok"})
 
 @app.route("/check-email", methods=["POST"])
