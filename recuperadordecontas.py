@@ -3487,22 +3487,34 @@ def check_email_exists():
         "exists": user is not None
     })
 
-@app.route("/get-user", methods=["POST"])
-def get_user():
-    data = request.get_json(force=True)
-    email = data.get("email")
+@app.route("/get-user-data", methods=["POST"])
+def get_user_data():
 
-    user = User.query.filter_by(email=email).first()
+    user_id = request.json.get("user_id")
+
+    user = User.query.get(user_id)
 
     if not user:
-        return jsonify({"status": "error"}), 404
+        return {"status": "error"}
 
-    return jsonify({
+    perguntas = json.loads(user.perguntas_recuperacao or "[]")
+
+    return {
         "status": "ok",
-        "username": user.username,
-        "email": user.email
-    })
-
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "email_recuperacao": user.email_recuperacao,
+            "role": user.role,
+            "moedas": user.moedas,
+            "banido": user.banido,
+            "bloqueado": user.bloqueado,
+            "avisos": user.avisos,
+            "perguntas": perguntas
+        }
+    }
+    
 @app.route("/confirm-data/<int:user_id>")
 def confirm_data(user_id):
 
