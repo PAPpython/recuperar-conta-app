@@ -3873,6 +3873,21 @@ def get_feedbacks():
             for f in feedbacks
         ]
     }
+
+@app.route("/get-user-by-email", methods=["POST"])
+def get_user_by_email():
+
+    email = request.json.get("email")
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return {"status": "error"}, 404
+
+    return {
+        "status": "ok",
+        "user_id": user.id
+    }
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
