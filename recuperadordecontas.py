@@ -3680,7 +3680,60 @@ def submit_feedback():
     db.session.add(fb)
     db.session.commit()
 
-    return "Feedback enviado com sucesso!"
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Feedback enviado</title>
+</head>
+
+<body style="
+    margin:0;
+    background:linear-gradient(135deg,#0f172a,#1e293b);
+    font-family:Arial;
+    color:white;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+">
+
+    <div style="
+        background:#111827;
+        padding:40px;
+        border-radius:16px;
+        text-align:center;
+        box-shadow:0 0 30px rgba(0,0,0,0.5);
+        width:420px;
+    ">
+
+        <div style="font-size:60px;">✅</div>
+
+        <h2>Feedback enviado com sucesso</h2>
+
+        <p style="color:#9ca3af;">
+            A equipa de administração vai analisar o teu pedido.
+        </p>
+
+        <a href="/" style="
+            display:inline-block;
+            margin-top:20px;
+            padding:12px 20px;
+            background:#2563eb;
+            color:white;
+            text-decoration:none;
+            border-radius:10px;
+            font-weight:bold;
+        ">
+            Voltar
+        </a>
+
+    </div>
+
+</body>
+</html>
+"""
 
 @app.route("/admin/feedback/<int:feedback_id>")
 def open_feedback(feedback_id):
@@ -3709,10 +3762,17 @@ def open_feedback(feedback_id):
     <p><b>Utilizador:</b> {user.username}</p>
     <p><b>Email:</b> {user.email}</p>
     <p><b>Mensagem:</b> {fb.message}</p>
-    <p><b>Status:</b> {fb.status}</p>
+
+    <p>
+        <b>Status:</b>
+        <span style="color:{'#facc15' if fb.status=='open' else '#22c55e'};">
+            {fb.status.upper()}
+        </span>
+    </p>
 
     <hr style="margin:20px 0;border:1px solid #1f2937;">
 
+    <!-- FORMULARIO RESOLVER -->
     <form method="POST" action="/admin/resolve/{fb.id}">
 
         <input type="text" name="admin_name" placeholder="Nome do admin" required
@@ -3723,17 +3783,64 @@ def open_feedback(feedback_id):
 
         <button type="submit"
             style="width:100%;padding:12px;background:#22c55e;color:black;font-weight:bold;border-radius:10px;border:none;">
-            Resolver feedback
+            ✔ Resolver feedback
         </button>
 
     </form>
+
+    <hr style="margin:20px 0;border:1px solid #1f2937;">
+
+    <!-- BOTÕES DE NAVEGAÇÃO -->
+
+    <a href="/admin/feedbacks"
+       style="
+       display:block;
+       text-align:center;
+       padding:12px;
+       background:#2563eb;
+       color:white;
+       border-radius:10px;
+       text-decoration:none;
+       font-weight:bold;
+       margin-bottom:10px;
+       ">
+       📊 Ir para painel de feedbacks
+    </a>
+
+    <a href="/admin/feedbacks?filter=closed"
+       style="
+       display:block;
+       text-align:center;
+       padding:12px;
+       background:#22c55e;
+       color:black;
+       border-radius:10px;
+       text-decoration:none;
+       font-weight:bold;
+       margin-bottom:10px;
+       ">
+       🟢 Ver feedbacks resolvidos
+    </a>
+
+    <a href="/admin/feedbacks?filter=open"
+       style="
+       display:block;
+       text-align:center;
+       padding:12px;
+       background:#facc15;
+       color:black;
+       border-radius:10px;
+       text-decoration:none;
+       font-weight:bold;
+       ">
+       🟡 Ver feedbacks pendentes
+    </a>
 
 </div>
 
 </body>
 </html>
 """
-
 @app.route("/admin/resolve/<int:feedback_id>", methods=["POST"])
 def resolve_feedback(feedback_id):
 
@@ -3808,8 +3915,19 @@ def edit_user(user_id):
 @app.route("/admin/feedbacks")
 def admin_feedbacks():
 
-    open_fb = Feedback.query.filter_by(status="open").order_by(Feedback.id.desc()).all()
-    closed_fb = Feedback.query.filter_by(status="closed").order_by(Feedback.id.desc()).all()
+    filter_type = request.args.get("filter", "all")
+
+    if filter_type == "open":
+        open_fb = Feedback.query.filter_by(status="open").order_by(Feedback.id.desc()).all()
+        closed_fb = []
+
+    elif filter_type == "closed":
+        open_fb = []
+        closed_fb = Feedback.query.filter_by(status="closed").order_by(Feedback.id.desc()).all()
+
+    else:
+        open_fb = Feedback.query.filter_by(status="open").order_by(Feedback.id.desc()).all()
+        closed_fb = Feedback.query.filter_by(status="closed").order_by(Feedback.id.desc()).all()
 
     def card(f, color):
         return f"""
@@ -3839,6 +3957,23 @@ def admin_feedbacks():
 
     <div style="text-align:center;padding:20px;">
         <h1>📊 Painel Admin</h1>
+
+        <div style="margin-top:10px;">
+            <a href="/admin/feedbacks"
+               style="margin:5px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;text-decoration:none;">
+               Todos
+            </a>
+
+            <a href="/admin/feedbacks?filter=open"
+               style="margin:5px;padding:8px 12px;background:#facc15;color:black;border-radius:8px;text-decoration:none;">
+               Pendentes
+            </a>
+
+            <a href="/admin/feedbacks?filter=closed"
+               style="margin:5px;padding:8px 12px;background:#22c55e;color:black;border-radius:8px;text-decoration:none;">
+               Resolvidos
+            </a>
+        </div>
     </div>
 
     <div style="display:flex;gap:20px;padding:20px;">
