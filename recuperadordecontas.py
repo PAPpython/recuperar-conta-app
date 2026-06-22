@@ -3589,80 +3589,7 @@ def confirm_data(user_id):
     </html>
     """
 
-@app.route("/admin/feedbacks")
-def admin_feedbacks():
 
-    open_fb = Feedback.query.filter_by(status="open").all()
-    closed_fb = Feedback.query.filter_by(status="closed").all()
-
-    def card(f, color):
-        return f"""
-        <div style="
-            background:#0b1220;
-            border:1px solid rgba(255,255,255,0.08);
-            padding:15px;
-            border-radius:14px;
-            margin-bottom:10px;
-        ">
-            <p><b>Utilizador ID:</b> {f.user_id}</p>
-            <p>{f.message}</p>
-            <a href="/admin/feedback/{f.id}"
-               style="
-               display:inline-block;
-               margin-top:10px;
-               padding:8px 14px;
-               background:{color};
-               color:white;
-               border-radius:8px;
-               text-decoration:none;
-               font-weight:bold;
-               ">
-               Abrir
-            </a>
-        </div>
-        """
-
-    open_html = "".join(card(f, "#facc15") for f in open_fb)
-    closed_html = "".join(card(f, "#22c55e") for f in closed_fb)
-
-    return f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Painel Admin</title>
-</head>
-
-<body style="
-    margin:0;
-    font-family:Arial;
-    background:linear-gradient(135deg,#38bdf8,#1e3a8a);
-    color:white;
-">
-
-    <div style="text-align:center;padding:20px;">
-        <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png"
-             style="width:140px;">
-        <h1>Painel Admin AERON</h1>
-    </div>
-
-    <div style="display:flex;gap:20px;padding:20px;">
-
-        <div style="flex:1;">
-            <h2>🟡 Pendentes</h2>
-            {open_html if open_html else "<p>Nenhum feedback</p>"}
-        </div>
-
-        <div style="flex:1;">
-            <h2>🟢 Resolvidos</h2>
-            {closed_html if closed_html else "<p>Nenhum feedback</p>"}
-        </div>
-
-    </div>
-
-</body>
-</html>
-"""
 @app.route("/feedback/<int:user_id>")
 def feedback_page(user_id):
 
@@ -3721,6 +3648,209 @@ def feedback_page(user_id):
 </html>
 """
 
+@app.route("/feedback-submit", methods=["POST"])
+def submit_feedback():
+
+    user_id = request.form.get("user_id")
+    message = request.form.get("message")
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return "Utilizador inválido", 404
+
+    fb = Feedback(
+        user_id=user_id,
+        message=message,
+        status="open"
+    )
+
+    db.session.add(fb)
+    db.session.commit()
+
+    return "Feedback enviado com sucesso!"
+
+@app.route("/admin/feedback/<int:feedback_id>")
+def open_feedback(feedback_id):
+
+    fb = Feedback.query.get(feedback_id)
+
+    if not fb:
+        return "Feedback não encontrado", 404
+
+    user = User.query.get(fb.user_id)
+
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Feedback</title>
+</head>
+
+<body style="margin:0;background:#0f172a;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+
+<div style="width:700px;background:#111827;padding:25px;border-radius:16px;border:1px solid #1f2937;">
+
+    <h2>📩 Feedback</h2>
+
+    <p><b>Utilizador:</b> {user.username}</p>
+    <p><b>Email:</b> {user.email}</p>
+    <p><b>Mensagem:</b> {fb.message}</p>
+    <p><b>Status:</b> {fb.status}</p>
+
+    <hr style="margin:20px 0;border:1px solid #1f2937;">
+
+    <form method="POST" action="/admin/resolve/{fb.id}">
+
+        <input type="text" name="admin_name" placeholder="Nome do admin" required
+            style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;border:none;">
+
+        <input type="number" name="rating" min="0" max="5" placeholder="Rating (0-5)" required
+            style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;border:none;">
+
+        <button type="submit"
+            style="width:100%;padding:12px;background:#22c55e;color:black;font-weight:bold;border-radius:10px;border:none;">
+            Resolver feedback
+        </button>
+
+    </form>
+
+</div>
+
+</body>
+</html>
+"""
+
+@app.route("/admin/resolve/<int:feedback_id>", methods=["POST"])
+def resolve_feedback(feedback_id):
+
+    fb = Feedback.query.get(feedback_id)
+
+    if not fb:
+        return "Feedback não encontrado", 404
+
+    fb.status = "closed"
+    fb.admin_name = request.form.get("admin_name")
+    fb.rating = int(request.form.get("rating"))
+
+    db.session.commit()
+
+    return "Feedback resolvido com sucesso!"
+
+@app.route("/admin/user/<int:user_id>/edit", methods=["GET", "POST"])
+def edit_user(user_id):
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return "User not found", 404
+
+    if request.method == "POST":
+
+        user.email = request.form.get("email")
+        user.email_recuperacao = request.form.get("email_recuperacao")
+        user.password = request.form.get("password")  # ideal: hash depois
+        user.perguntas_recuperacao = request.form.get("perguntas")
+
+        db.session.commit()
+
+        return "Utilizador atualizado com sucesso!"
+
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Editar Utilizador</title>
+</head>
+
+<body style="margin:0;background:#0f172a;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+
+<div style="width:600px;background:#111827;padding:20px;border-radius:12px;">
+
+<h2>Editar utilizador</h2>
+
+<form method="POST">
+
+    <input name="email" value="{user.email}" style="width:100%;padding:10px;margin:5px 0;">
+    <input name="email_recuperacao" value="{user.email_recuperacao}" style="width:100%;padding:10px;margin:5px 0;">
+    <input name="password" placeholder="Nova password" style="width:100%;padding:10px;margin:5px 0;">
+
+    <textarea name="perguntas" style="width:100%;height:120px;">
+{user.perguntas_recuperacao}
+    </textarea>
+
+    <button type="submit" style="width:100%;padding:12px;background:#22c55e;">
+        Atualizar
+    </button>
+
+</form>
+
+</div>
+
+</body>
+</html>
+"""
+
+@app.route("/admin/feedbacks")
+def admin_feedbacks():
+
+    open_fb = Feedback.query.filter_by(status="open").order_by(Feedback.id.desc()).all()
+    closed_fb = Feedback.query.filter_by(status="closed").order_by(Feedback.id.desc()).all()
+
+    def card(f, color):
+        return f"""
+        <div style="background:#0b1220;padding:12px;border-radius:12px;margin-bottom:10px;border:1px solid #1f2937;">
+            <p><b>User ID:</b> {f.user_id}</p>
+            <p>{f.message}</p>
+
+            <a href="/admin/feedback/{f.id}"
+               style="display:inline-block;margin-top:10px;padding:8px 12px;background:{color};color:white;border-radius:8px;text-decoration:none;">
+               Abrir
+            </a>
+        </div>
+        """
+
+    open_html = "".join(card(f, "#facc15") for f in open_fb)
+    closed_html = "".join(card(f, "#22c55e") for f in closed_fb)
+
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Panel</title>
+</head>
+
+<body style="margin:0;font-family:Arial;background:#0f172a;color:white;">
+
+    <div style="text-align:center;padding:20px;">
+        <h1>📊 Painel Admin</h1>
+    </div>
+
+    <div style="display:flex;gap:20px;padding:20px;">
+
+        <div style="flex:1;">
+            <h2>🟡 Pendentes</h2>
+            {open_html if open_html else "<p>Sem feedbacks</p>"}
+        </div>
+
+        <div style="flex:1;">
+            <h2>🟢 Resolvidos</h2>
+            {closed_html if closed_html else "<p>Sem feedbacks</p>"}
+        </div>
+
+    </div>
+
+</body>
+</html>
+"""
+
+def stars(n):
+    if not n:
+        return "☆☆☆☆☆"
+    return "★" * n + "☆" * (5 - n)
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
