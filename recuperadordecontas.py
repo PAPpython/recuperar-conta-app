@@ -722,7 +722,7 @@ def save_recovery_data():
         if pergunta and resposta:
             perguntas_guardar.append({
                 "pergunta": pergunta,
-                "hash": hash_resposta(resposta)
+                "resposta": resposta
             })
 
     user.perguntas_recuperacao = (
