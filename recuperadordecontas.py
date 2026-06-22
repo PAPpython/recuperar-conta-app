@@ -18,7 +18,7 @@ import uuid
 from flask import session
 from flask import redirect
 import secrets
-from flask_mail import Mail, Message
+from datetime import datetime, timedelta
 # ================= APP =================
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -116,6 +116,8 @@ class User(db.Model):
     ultima_recompensa_post = db.Column(db.DateTime, nullable=True)
     email_verificado = db.Column(db.Boolean, default=False)
     email_token = db.Column(db.String(128))
+    email_verification_attempts = db.Column(db.Integer, default=0)
+    last_verification_request = db.Column(db.DateTime, nullable=True)
 
 class UserSession(db.Model):
     __tablename__ = "user_sessions"
@@ -535,26 +537,16 @@ def register():
 
         avatares_comprados=json.dumps([]),
         banners_comprados=json.dumps([]),
-
-        email_verificado=False,
-        email_token=token,
-
         moedas=0
     )
 
     db.session.add(user)
     db.session.commit()
 
-    # 📧 EMAIL (NÃO BLOQUEIA REGISTO)
-    try:
-        enviar_email_verificacao(user)
-    except Exception as e:
-        print("EMAIL FALHOU:", e)
-
     # ✅ SEMPRE RESPONDE SUCESSO
     return jsonify(
         status="ok",
-        msg="Conta criada. Verifique o seu email."
+        msg="Conta criada com sucesso."
     )
 # ================= LOGIN =================
 @app.route("/login", methods=["POST"])
@@ -3397,24 +3389,24 @@ def check_session():
 @app.route("/verify-email/<token>")
 def verify_email(token):
 
-    user = User.query.filter_by(
-        email_token=token
-    ).first()
+    user = User.query.filter_by(email_token=token).first()
 
+    # ❌ token não existe ou já foi apagado
     if not user:
-        return render_template(
-            "email_invalid.html"
-        )
+        return render_template("email_invalid.html")
 
+    # ❌ já foi verificado antes (segurança extra)
+    if user.email_verificado:
+        return render_template("email_invalid.html")
+
+    # ✔️ primeira verificação válida
     user.email_verificado = True
     user.email_token = None
 
     db.session.commit()
 
-    return render_template(
-        "email_verified.html"
-    )
-
+    return render_template("email_verified.html")
+    
 @app.route("/send-verification", methods=["POST"])
 def send_verification():
     data = request.get_json(force=True)
@@ -3426,15 +3418,45 @@ def send_verification():
     user = User.query.filter_by(email=email).first()
 
     if not user:
-        # NÃO reveles demasiado (boa prática)
         return jsonify({"status": "ok"}), 200
+
+    # se já verificado não faz nada
+    if user.email_verificado:
+        return jsonify({"status": "ok"}), 200
+
+    now = datetime.utcnow()
+
+    # verifica cooldown de 30 segundos
+    if user.last_verification_request:
+        diff = now - user.last_verification_request
+        if diff < timedelta(seconds=30):
+            return jsonify({
+                "status": "error",
+                "msg": "Aguarda 30 segundos antes de reenviar"
+            }), 429
+
+    # limite de tentativas
+    if user.email_verification_attempts >= 5:
+        return jsonify({
+            "status": "error",
+            "msg": "Limite de tentativas atingido"
+        }), 429
+
+    # atualizar estado
+    user.email_verification_attempts += 1
+    user.last_verification_request = now
 
     token = secrets.token_hex(32)
     user.email_token = token
+
     db.session.commit()
 
-    return jsonify({"status": "ok"})
-
+    return jsonify({
+        "status": "ok",
+        "token": token,
+        "username": user.username
+    })
+    
 @app.route("/check-email", methods=["POST"])
 def check_email_exists():
     data = request.json
