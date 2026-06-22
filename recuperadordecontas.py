@@ -167,6 +167,25 @@ class UserSession(db.Model):
         db.DateTime,
         default=datetime.utcnow
     )
+
+class Feedback(db.Model):
+    __tablename__ = "feedbacks"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    message = db.Column(db.Text)
+
+    status = db.Column(db.String(20), default="open")  # open / closed
+
+    admin_name = db.Column(db.String(80), nullable=True)
+    admin_id = db.Column(db.Integer, nullable=True)
+
+    rating = db.Column(db.Integer, nullable=True)  # 0-5 estrelas
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
 class LoginHistory(db.Model):
     __tablename__ = "login_history"
 
@@ -3483,6 +3502,225 @@ def get_user():
         "username": user.username,
         "email": user.email
     })
+
+@app.route("/confirm-data/<int:user_id>")
+def confirm_data(user_id):
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return "Utilizador não encontrado", 404
+
+    user.dados_confirmados = True
+    db.session.commit()
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Confirmação AERON</title>
+    </head>
+
+    <body style="
+        margin:0;
+        background:linear-gradient(135deg,#0f172a,#111827);
+        font-family:Arial;
+        color:white;
+        display:flex;
+        justify-content:center;
+        align-items:center;
+        height:100vh;
+    ">
+
+        <div style="
+            width:520px;
+            background:#111827;
+            border:1px solid #1f2937;
+            border-radius:18px;
+            padding:35px;
+            text-align:center;
+            box-shadow:0 0 40px rgba(0,0,0,0.6);
+        ">
+
+            <!-- LOGO -->
+            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png"
+                 style="width:140px;margin-bottom:20px;">
+
+            <div style="font-size:60px;">✅</div>
+
+            <h1 style="margin-top:10px;">
+                Dados confirmados
+            </h1>
+
+            <p style="color:#9ca3af;line-height:1.6;">
+                A tua conta foi validada com sucesso.<br>
+                Nenhuma ação adicional é necessária.
+            </p>
+
+            <div style="
+                margin-top:25px;
+                padding:15px;
+                background:#0b1220;
+                border-radius:12px;
+                border:1px solid #1f2937;
+            ">
+                <p style="margin:0;color:#22c55e;">
+                    ✔ Conta ativa e verificada
+                </p>
+            </div>
+
+            <a href="javascript:window.close()" style="
+                display:inline-block;
+                margin-top:25px;
+                padding:12px 22px;
+                background:#2563eb;
+                color:white;
+                text-decoration:none;
+                border-radius:10px;
+                font-weight:bold;
+            ">
+                Fechar
+            </a>
+
+        </div>
+
+    </body>
+    </html>
+    """
+
+@app.route("/admin/feedbacks")
+def admin_feedbacks():
+
+    open_fb = Feedback.query.filter_by(status="open").all()
+    closed_fb = Feedback.query.filter_by(status="closed").all()
+
+    def card(f, color):
+        return f"""
+        <div style="
+            background:#0b1220;
+            border:1px solid rgba(255,255,255,0.08);
+            padding:15px;
+            border-radius:14px;
+            margin-bottom:10px;
+        ">
+            <p><b>Utilizador ID:</b> {f.user_id}</p>
+            <p>{f.message}</p>
+            <a href="/admin/feedback/{f.id}"
+               style="
+               display:inline-block;
+               margin-top:10px;
+               padding:8px 14px;
+               background:{color};
+               color:white;
+               border-radius:8px;
+               text-decoration:none;
+               font-weight:bold;
+               ">
+               Abrir
+            </a>
+        </div>
+        """
+
+    open_html = "".join(card(f, "#facc15") for f in open_fb)
+    closed_html = "".join(card(f, "#22c55e") for f in closed_fb)
+
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Painel Admin</title>
+</head>
+
+<body style="
+    margin:0;
+    font-family:Arial;
+    background:linear-gradient(135deg,#38bdf8,#1e3a8a);
+    color:white;
+">
+
+    <div style="text-align:center;padding:20px;">
+        <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png"
+             style="width:140px;">
+        <h1>Painel Admin AERON</h1>
+    </div>
+
+    <div style="display:flex;gap:20px;padding:20px;">
+
+        <div style="flex:1;">
+            <h2>🟡 Pendentes</h2>
+            {open_html if open_html else "<p>Nenhum feedback</p>"}
+        </div>
+
+        <div style="flex:1;">
+            <h2>🟢 Resolvidos</h2>
+            {closed_html if closed_html else "<p>Nenhum feedback</p>"}
+        </div>
+
+    </div>
+
+</body>
+</html>
+"""
+@app.route("/feedback/<int:user_id>")
+def feedback_page(user_id):
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return "Utilizador não encontrado", 404
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Feedback AERON</title>
+</head>
+
+<body style="margin:0;background:linear-gradient(135deg,#0f172a,#0b1220);font-family:Arial;color:white;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+
+    <div style="width:650px;background:#111827;border:1px solid #1f2937;border-radius:18px;padding:30px;box-shadow:0 0 40px rgba(0,0,0,0.6);">
+
+        <div style="text-align:center;margin-bottom:10px;">
+            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" style="width:140px;">
+        </div>
+
+        <h1>⚠ Reportar problema nos dados</h1>
+
+        <p style="color:#9ca3af;margin-bottom:25px;">
+            Conta: <b>{user.username}</b> • {user.email}
+        </p>
+
+        <form method="POST" action="/feedback-submit">
+
+            <input type="hidden" name="user_id" value="{user_id}">
+
+            <textarea name="message" required
+                style="width:100%;height:140px;background:#0b1220;border:1px solid #1f2937;color:white;border-radius:12px;padding:12px;outline:none;resize:none;"
+                placeholder="Descreve o problema..."></textarea>
+
+            <br><br>
+
+            <button type="submit"
+                style="width:100%;padding:14px;background:#ef4444;border:none;color:white;font-weight:bold;border-radius:12px;cursor:pointer;font-size:15px;">
+                Enviar feedback
+            </button>
+
+        </form>
+
+        <div style="margin-top:20px;padding:15px;background:#0b1220;border-radius:12px;border:1px solid #1f2937;">
+            <p style="margin:0;color:#facc15;font-size:13px;">
+                ⚠ A equipa AERON irá analisar o teu pedido manualmente.
+            </p>
+        </div>
+
+    </div>
+
+</body>
+</html>
+"""
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
