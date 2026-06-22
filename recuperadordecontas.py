@@ -3851,6 +3851,16 @@ def stars(n):
     if not n:
         return "☆☆☆☆☆"
     return "★" * n + "☆" * (5 - n)
+
+@app.route("/api/feedbacks/open")
+def get_feedbacks():
+    feedbacks = Feedback.query.filter_by(status="open").all()
+    return {
+        "data": [
+            {"id": f.id, "user_id": f.user_id, "message": f.message}
+            for f in feedbacks
+        ]
+    }
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
