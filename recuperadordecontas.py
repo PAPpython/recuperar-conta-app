@@ -118,6 +118,29 @@ class User(db.Model):
     email_token = db.Column(db.String(128))
     email_verification_attempts = db.Column(db.Integer, default=0)
     last_verification_request = db.Column(db.DateTime, nullable=True)
+    account_status = db.Column(db.String(20), default="active")
+    status_reason = db.Column(db.String(255), nullable=True)
+    status_until = db.Column(db.DateTime, nullable=True)
+    ia_status = db.Column(db.String(20), default="ok")
+    email_status = db.Column(db.String(20), default="ok")
+
+class Ticket(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer)
+
+    title = db.Column(db.String(120))
+    status = db.Column(db.String(20), default="open")  # open / closed
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class TicketMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"))
+    sender = db.Column(db.String(20))  # user / admin
+
+    message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class UserSession(db.Model):
     __tablename__ = "user_sessions"
@@ -3601,280 +3624,49 @@ def confirm_data(user_id):
     </html>
     """
 
-
-@app.route("/feedback/<int:user_id>")
-def feedback_page(user_id):
-
-    user = User.query.get(user_id)
-
-    if not user:
-        return "Utilizador não encontrado", 404
-
-    return f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Feedback AERON</title>
-</head>
-
-<body style="margin:0;background:linear-gradient(135deg,#0f172a,#0b1220);font-family:Arial;color:white;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-
-    <div style="width:650px;background:#111827;border:1px solid #1f2937;border-radius:18px;padding:30px;box-shadow:0 0 40px rgba(0,0,0,0.6);">
-
-        <div style="text-align:center;margin-bottom:10px;">
-            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" style="width:140px;">
-        </div>
-
-        <h1>⚠ Reportar problema nos dados</h1>
-
-        <p style="color:#9ca3af;margin-bottom:25px;">
-            Conta: <b>{user.username}</b> • {user.email}
-        </p>
-
-        <form method="POST" action="/feedback-submit">
-
-            <input type="hidden" name="user_id" value="{user_id}">
-
-            <textarea name="message" required
-                style="width:100%;height:140px;background:#0b1220;border:1px solid #1f2937;color:white;border-radius:12px;padding:12px;outline:none;resize:none;"
-                placeholder="Descreve o problema..."></textarea>
-
-            <br><br>
-
-            <button type="submit"
-                style="width:100%;padding:14px;background:#ef4444;border:none;color:white;font-weight:bold;border-radius:12px;cursor:pointer;font-size:15px;">
-                Enviar feedback
-            </button>
-
-        </form>
-
-        <div style="margin-top:20px;padding:15px;background:#0b1220;border-radius:12px;border:1px solid #1f2937;">
-            <p style="margin:0;color:#facc15;font-size:13px;">
-                ⚠ A equipa AERON irá analisar o teu pedido manualmente.
-            </p>
-        </div>
-
-    </div>
-
-</body>
-</html>
-"""
-
-@app.route("/feedback-submit", methods=["POST"])
-def submit_feedback():
-
-    user_id = request.form.get("user_id")
-    message = request.form.get("message")
-
-    user = User.query.get(user_id)
-
-    if not user:
-        return "Utilizador inválido", 404
-
-    fb = Feedback(
-        user_id=user_id,
-        message=message,
-        status="open"
-    )
-
-    db.session.add(fb)
-    db.session.commit()
-
-    return """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Feedback enviado</title>
-</head>
-
-<body style="
-    margin:0;
-    background:linear-gradient(135deg,#0f172a,#1e293b);
-    font-family:Arial;
-    color:white;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    height:100vh;
-">
-
-    <div style="
-        background:#111827;
-        padding:40px;
-        border-radius:16px;
-        text-align:center;
-        box-shadow:0 0 30px rgba(0,0,0,0.5);
-        width:420px;
-    ">
-
-        <div style="font-size:60px;">✅</div>
-
-        <h2>Feedback enviado com sucesso</h2>
-
-        <p style="color:#9ca3af;">
-            A equipa de administração vai analisar o teu pedido.
-        </p>
-
-        <a href="/" style="
-            display:inline-block;
-            margin-top:20px;
-            padding:12px 20px;
-            background:#2563eb;
-            color:white;
-            text-decoration:none;
-            border-radius:10px;
-            font-weight:bold;
-        ">
-            Voltar
-        </a>
-
-    </div>
-
-</body>
-</html>
-"""
-
-@app.route("/admin/feedback/<int:feedback_id>")
-def open_feedback(feedback_id):
-
-    fb = Feedback.query.get(feedback_id)
-
-    if not fb:
-        return "Feedback não encontrado", 404
-
-    user = User.query.get(fb.user_id)
-
-    return f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Feedback</title>
-</head>
-
-<body style="margin:0;background:#0f172a;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-
-<div style="width:700px;background:#111827;padding:25px;border-radius:16px;border:1px solid #1f2937;">
-
-    <h2>📩 Feedback</h2>
-
-    <p><b>Utilizador:</b> {user.username}</p>
-    <p><b>Email:</b> {user.email}</p>
-    <p><b>Mensagem:</b> {fb.message}</p>
-
-    <p>
-        <b>Status:</b>
-        <span style="color:{'#facc15' if fb.status=='open' else '#22c55e'};">
-            {fb.status.upper()}
-        </span>
-    </p>
-
-    <hr style="margin:20px 0;border:1px solid #1f2937;">
-
-    <!-- FORMULARIO RESOLVER -->
-    <form method="POST" action="/admin/resolve/{fb.id}">
-
-        <input type="text" name="admin_name" placeholder="Nome do admin" required
-            style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;border:none;">
-
-        <input type="number" name="rating" min="0" max="5" placeholder="Rating (0-5)" required
-            style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;border:none;">
-
-        <button type="submit"
-            style="width:100%;padding:12px;background:#22c55e;color:black;font-weight:bold;border-radius:10px;border:none;">
-            ✔ Resolver feedback
-        </button>
-
-    </form>
-
-    <hr style="margin:20px 0;border:1px solid #1f2937;">
-
-    <!-- BOTÕES DE NAVEGAÇÃO -->
-
-    <a href="/admin/feedbacks"
-       style="
-       display:block;
-       text-align:center;
-       padding:12px;
-       background:#2563eb;
-       color:white;
-       border-radius:10px;
-       text-decoration:none;
-       font-weight:bold;
-       margin-bottom:10px;
-       ">
-       📊 Ir para painel de feedbacks
-    </a>
-
-    <a href="/admin/feedbacks?filter=closed"
-       style="
-       display:block;
-       text-align:center;
-       padding:12px;
-       background:#22c55e;
-       color:black;
-       border-radius:10px;
-       text-decoration:none;
-       font-weight:bold;
-       margin-bottom:10px;
-       ">
-       🟢 Ver feedbacks resolvidos
-    </a>
-
-    <a href="/admin/feedbacks?filter=open"
-       style="
-       display:block;
-       text-align:center;
-       padding:12px;
-       background:#facc15;
-       color:black;
-       border-radius:10px;
-       text-decoration:none;
-       font-weight:bold;
-       ">
-       🟡 Ver feedbacks pendentes
-    </a>
-
-</div>
-
-</body>
-</html>
-"""
-@app.route("/admin/resolve/<int:feedback_id>", methods=["POST"])
-def resolve_feedback(feedback_id):
-
-    fb = Feedback.query.get(feedback_id)
-
-    if not fb:
-        return "Feedback não encontrado", 404
-
-    fb.status = "closed"
-    fb.admin_name = request.form.get("admin_name")
-    fb.rating = int(request.form.get("rating"))
-
-    db.session.commit()
-
-    return "Feedback resolvido com sucesso!"
-
 @app.route("/admin/user/<int:user_id>/edit", methods=["GET", "POST"])
 def edit_user(user_id):
 
     user = User.query.get(user_id)
-
     if not user:
         return "User not found", 404
 
     if request.method == "POST":
 
-        user.email = request.form.get("email")
-        user.email_recuperacao = request.form.get("email_recuperacao")
-        user.password = request.form.get("password")  # ideal: hash depois
-        user.perguntas_recuperacao = request.form.get("perguntas")
+        data = request.form
+
+        # ================= BASIC =================
+        user.username = data.get("username", user.username)
+        user.email = data.get("email", user.email)
+        user.email_recuperacao = data.get("email_recuperacao", user.email_recuperacao)
+
+        password = data.get("password")
+        if password:
+            user.password = password
+
+        # ================= RECOVERY =================
+        user.perguntas_recuperacao = data.get("perguntas", user.perguntas_recuperacao)
+
+        # ================= BOOL SYSTEM (SAFE) =================
+        user.banido = "banido" in data
+        user.bloqueado = "bloqueado" in data
+        user.ativo = "ativo" in data
+
+        user.email_banido = "email_banido" in data
+        user.ia_banido = "ia_banido" in data
+
+        # ================= SUSPENSIONS (FIX NULL SAFE) =================
+        user.suspenso_ate = data.get("suspenso_ate") or None
+        user.ia_suspenso_ate = data.get("ia_suspenso_ate") or None
+        user.bloqueado_ate = data.get("bloqueado_ate") or None
+
+        # ================= REASONS =================
+        user.ban_reason = data.get("ban_reason", user.ban_reason)
+        user.ia_ban_reason = data.get("ia_ban_reason", user.ia_ban_reason)
 
         db.session.commit()
 
-        return "Utilizador atualizado com sucesso!"
+        return "✔ Utilizador atualizado com sucesso!"
 
     return f"""
 <!DOCTYPE html>
@@ -3886,23 +3678,59 @@ def edit_user(user_id):
 
 <body style="margin:0;background:#0f172a;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;min-height:100vh;">
 
-<div style="width:600px;background:#111827;padding:20px;border-radius:12px;">
+<div style="width:750px;background:#111827;padding:20px;border-radius:12px;">
 
-<h2>Editar utilizador</h2>
+<h2>⚙ Painel de Controlo do Utilizador</h2>
 
 <form method="POST">
 
-    <input name="email" value="{user.email}" style="width:100%;padding:10px;margin:5px 0;">
-    <input name="email_recuperacao" value="{user.email_recuperacao}" style="width:100%;padding:10px;margin:5px 0;">
-    <input name="password" placeholder="Nova password" style="width:100%;padding:10px;margin:5px 0;">
+<h3>👤 Dados</h3>
 
-    <textarea name="perguntas" style="width:100%;height:120px;">
-{user.perguntas_recuperacao}
-    </textarea>
+<input name="username" value="{user.username}" placeholder="Username" style="width:100%;padding:10px;margin:5px 0;">
+<input name="email" value="{user.email}" placeholder="Email" style="width:100%;padding:10px;margin:5px 0;">
+<input name="email_recuperacao" value="{user.email_recuperacao or ''}" placeholder="Email recuperação" style="width:100%;padding:10px;margin:5px 0;">
+<input name="password" placeholder="Nova password" style="width:100%;padding:10px;margin:5px 0;">
 
-    <button type="submit" style="width:100%;padding:12px;background:#22c55e;">
-        Atualizar
-    </button>
+<hr>
+
+<h3>🔐 Recuperação</h3>
+<textarea name="perguntas" style="width:100%;height:100px;">{user.perguntas_recuperacao or ''}</textarea>
+
+<hr>
+
+<h3>🚫 Ban / Bloqueios</h3>
+
+<label><input type="checkbox" name="banido" {"checked" if user.banido else ""}> Banido</label><br>
+<label><input type="checkbox" name="bloqueado" {"checked" if user.bloqueado else ""}> Bloqueado</label><br>
+<label><input type="checkbox" name="ativo" {"checked" if user.ativo else ""}> Ativo</label><br>
+<label><input type="checkbox" name="email_banido" {"checked" if user.email_banido else ""}> Email Banido</label><br>
+<label><input type="checkbox" name="ia_banido" {"checked" if user.ia_banido else ""}> IA Banido</label><br>
+
+<hr>
+
+<h3>⏳ Suspensões</h3>
+
+<p>Conta suspensa até:</p>
+<input name="suspenso_ate" value="{user.suspenso_ate or ''}" style="width:100%;padding:10px;">
+
+<p>IA suspensa até:</p>
+<input name="ia_suspenso_ate" value="{user.ia_suspenso_ate or ''}" style="width:100%;padding:10px;">
+
+<p>Bloqueado até:</p>
+<input name="bloqueado_ate" value="{user.bloqueado_ate or ''}" style="width:100%;padding:10px;">
+
+<hr>
+
+<h3>📌 Motivos</h3>
+
+<input name="ban_reason" value="{user.ban_reason or ''}" style="width:100%;padding:10px;margin:5px 0;">
+<input name="ia_ban_reason" value="{user.ia_ban_reason or ''}" style="width:100%;padding:10px;margin:5px 0;">
+
+<hr>
+
+<button type="submit" style="width:100%;padding:12px;background:#22c55e;color:black;font-weight:bold;border-radius:10px;">
+💾 Guardar alterações
+</button>
 
 </form>
 
@@ -3912,117 +3740,342 @@ def edit_user(user_id):
 </html>
 """
 
-@app.route("/admin/feedbacks")
-def admin_feedbacks():
+@app.route("/admin/tickets")
+def admin_tickets():
 
     filter_type = request.args.get("filter", "all")
 
     if filter_type == "open":
-        open_fb = Feedback.query.filter_by(status="open").order_by(Feedback.id.desc()).all()
-        closed_fb = []
+        open_tickets = Ticket.query.filter_by(status="open").order_by(Ticket.id.desc()).all()
+        closed_tickets = []
 
     elif filter_type == "closed":
-        open_fb = []
-        closed_fb = Feedback.query.filter_by(status="closed").order_by(Feedback.id.desc()).all()
+        open_tickets = []
+        closed_tickets = Ticket.query.filter_by(status="closed").order_by(Ticket.id.desc()).all()
 
     else:
-        open_fb = Feedback.query.filter_by(status="open").order_by(Feedback.id.desc()).all()
-        closed_fb = Feedback.query.filter_by(status="closed").order_by(Feedback.id.desc()).all()
+        open_tickets = Ticket.query.filter_by(status="open").order_by(Ticket.id.desc()).all()
+        closed_tickets = Ticket.query.filter_by(status="closed").order_by(Ticket.id.desc()).all()
 
-    def card(f, color):
+    def card(t, color):
+        user = User.query.get(t.user_id)
+
         return f"""
         <div style="background:#0b1220;padding:12px;border-radius:12px;margin-bottom:10px;border:1px solid #1f2937;">
-            <p><b>User ID:</b> {f.user_id}</p>
-            <p>{f.message}</p>
 
-            <a href="/admin/feedback/{f.id}"
+            <p><b>Ticket:</b> #{t.id}</p>
+            <p><b>User:</b> {user.username if user else "Desconhecido"}</p>
+            <p><b>Status:</b> {t.status.upper()}</p>
+
+            <a href="/admin/ticket/{t.id}"
                style="display:inline-block;margin-top:10px;padding:8px 12px;background:{color};color:white;border-radius:8px;text-decoration:none;">
                Abrir
             </a>
         </div>
         """
 
-    open_html = "".join(card(f, "#facc15") for f in open_fb)
-    closed_html = "".join(card(f, "#22c55e") for f in closed_fb)
+    open_html = "".join(card(t, "#facc15") for t in open_tickets)
+    closed_html = "".join(card(t, "#22c55e") for t in closed_tickets)
 
     return f"""
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Admin Panel</title>
+    <title>Admin Tickets</title>
 </head>
 
 <body style="margin:0;font-family:Arial;background:#0f172a;color:white;">
 
-    <div style="text-align:center;padding:20px;">
-        <h1>📊 Painel Admin</h1>
+<div style="text-align:center;padding:20px;">
+    <h1>🎫 Sistema de Tickets</h1>
 
-        <div style="margin-top:10px;">
-            <a href="/admin/feedbacks"
-               style="margin:5px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;text-decoration:none;">
-               Todos
-            </a>
+    <div style="margin-top:10px;">
+        <a href="/admin/tickets" style="margin:5px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;text-decoration:none;">Todos</a>
+        <a href="/admin/tickets?filter=open" style="margin:5px;padding:8px 12px;background:#facc15;color:black;border-radius:8px;text-decoration:none;">Abertos</a>
+        <a href="/admin/tickets?filter=closed" style="margin:5px;padding:8px 12px;background:#22c55e;color:black;border-radius:8px;text-decoration:none;">Fechados</a>
+    </div>
+</div>
 
-            <a href="/admin/feedbacks?filter=open"
-               style="margin:5px;padding:8px 12px;background:#facc15;color:black;border-radius:8px;text-decoration:none;">
-               Pendentes
-            </a>
+<div style="display:flex;gap:20px;padding:20px;">
 
-            <a href="/admin/feedbacks?filter=closed"
-               style="margin:5px;padding:8px 12px;background:#22c55e;color:black;border-radius:8px;text-decoration:none;">
-               Resolvidos
-            </a>
-        </div>
+    <div style="flex:1;">
+        <h2>🟡 Abertos</h2>
+        {open_html if open_html else "<p>Sem tickets</p>"}
     </div>
 
-    <div style="display:flex;gap:20px;padding:20px;">
-
-        <div style="flex:1;">
-            <h2>🟡 Pendentes</h2>
-            {open_html if open_html else "<p>Sem feedbacks</p>"}
-        </div>
-
-        <div style="flex:1;">
-            <h2>🟢 Resolvidos</h2>
-            {closed_html if closed_html else "<p>Sem feedbacks</p>"}
-        </div>
-
+    <div style="flex:1;">
+        <h2>🟢 Fechados</h2>
+        {closed_html if closed_html else "<p>Sem tickets</p>"}
     </div>
+
+</div>
 
 </body>
 </html>
 """
 
-def stars(n):
-    if not n:
-        return "☆☆☆☆☆"
-    return "★" * n + "☆" * (5 - n)
+@app.route("/admin/ticket/<int:ticket_id>")
+def open_ticket(ticket_id):
 
-@app.route("/api/feedbacks/open")
-def get_feedbacks():
-    feedbacks = Feedback.query.filter_by(status="open").all()
-    return {
-        "data": [
-            {"id": f.id, "user_id": f.user_id, "message": f.message}
-            for f in feedbacks
-        ]
-    }
+    ticket = Ticket.query.get(ticket_id)
+    if not ticket:
+        return "Ticket não encontrado", 404
 
-@app.route("/get-user-by-email", methods=["POST"])
-def get_user_by_email():
+    user = User.query.get(ticket.user_id)
 
-    email = request.json.get("email")
+    messages = TicketMessage.query.filter_by(ticket_id=ticket_id).order_by(TicketMessage.id.asc()).all()
 
-    user = User.query.filter_by(email=email).first()
+    html_msgs = ""
 
+    for m in messages:
+        is_admin = (m.sender == "admin")
+
+        html_msgs += f"""
+        <div style="margin-bottom:10px;padding:10px;background:#0b1220;border-radius:10px;">
+            <b style="color:{'#22c55e' if is_admin else '#2563eb'}">{m.sender.upper()}</b>
+            <p>{m.message}</p>
+        </div>
+        """
+
+    is_closed = ticket.status == "closed"
+
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ticket #{ticket.id}</title>
+</head>
+
+<body style="margin:0;background:#0f172a;color:white;font-family:Arial;display:flex;justify-content:center;">
+
+<div style="width:800px;margin-top:40px;background:#111827;padding:25px;border-radius:16px;border:1px solid #1f2937;">
+
+    <h2>🎫 Ticket #{ticket.id}</h2>
+
+    <p><b>User:</b> {user.username if user else "?"}</p>
+    <p><b>Status:</b> {"🔴 FECHADO" if is_closed else "🟢 ABERTO"}</p>
+
+    <hr>
+
+    <div style="max-height:350px;overflow:auto;">
+        {html_msgs}
+    </div>
+
+    <hr>
+"""
+
+    # 🔴 se fechado → não deixa responder
+    + ("""
+    <p style="color:#ef4444;">Este ticket está fechado.</p>
+    """ if is_closed else f"""
+    
+    <form method="POST" action="/ticket/{ticket.id}/reply">
+        <textarea name="message" required style="width:100%;height:90px;"></textarea>
+        <button style="width:100%;padding:12px;background:#2563eb;color:white;">
+            Responder
+        </button>
+    </form>
+    """)
+
+    + f"""
+
+    <form method="POST" action="/ticket/{ticket.id}/close">
+        <button style="width:100%;margin-top:10px;padding:12px;background:#ef4444;color:white;">
+            Fechar Ticket
+        </button>
+    </form>
+
+"""
+
+    + (f"""
+    <form method="POST" action="/ticket/{ticket.id}/reopen">
+        <button style="width:100%;margin-top:10px;padding:12px;background:#22c55e;color:black;">
+            Reabrir Ticket
+        </button>
+    </form>
+    """ if is_closed else "")
+
+    + """
+    <a href="/admin/tickets" style="display:block;margin-top:15px;text-align:center;padding:10px;background:#22c55e;color:black;border-radius:10px;">
+        Voltar
+    </a>
+
+</div>
+
+</body>
+</html>
+"""
+
+@app.route("/ticket/<int:ticket_id>/reply", methods=["POST"])
+def reply_ticket(ticket_id):
+
+    ticket = Ticket.query.get(ticket_id)
+
+    if not ticket:
+        return "Ticket não encontrado", 404
+
+    if ticket.status == "closed":
+        return "Ticket fechado"
+
+    message = request.form.get("message")
+
+    sender = request.form.get("sender")  # "admin" ou "user"
+
+    msg = TicketMessage(
+        ticket_id=ticket_id,
+        sender=sender,
+        message=message
+    )
+
+    db.session.add(msg)
+    db.session.commit()
+
+    return redirect(f"/ticket/{ticket_id}")
+
+@app.route("/ticket/<int:ticket_id>/close", methods=["POST"])
+def close_ticket(ticket_id):
+
+    ticket = Ticket.query.get(ticket_id)
+
+    if not ticket:
+        return "Ticket não encontrado", 404
+
+    ticket.status = "closed"
+
+    try:
+        from datetime import datetime
+        ticket.closed_at = datetime.utcnow()
+    except:
+        ticket.closed_at = None
+
+    db.session.commit()
+
+    return redirect("/admin/tickets")
+
+@app.route("/ticket/<int:ticket_id>/reopen", methods=["POST"])
+def reopen_ticket(ticket_id):
+
+    ticket = Ticket.query.get(ticket_id)
+
+    if not ticket:
+        return "Ticket não encontrado", 404
+
+    ticket.status = "open"
+
+    db.session.commit()
+
+    return redirect(f"/admin/ticket/{ticket_id}")
+
+@app.route("/suporte")
+def user_tickets():
+
+    user_id = request.args.get("user_id")
+
+    user = User.query.get(user_id)
     if not user:
-        return {"status": "error"}, 404
+        return "User não encontrado", 404
 
-    return {
-        "status": "ok",
-        "user_id": user.id
-    }
+    tickets = Ticket.query.filter_by(user_id=user_id).order_by(Ticket.id.desc()).all()
+
+    def card(t):
+        status_color = "#22c55e" if t.status == "open" else "#ef4444"
+
+        return f"""
+        <div style="background:#111827;padding:12px;margin-bottom:10px;border-radius:10px;">
+            <p><b>Ticket #{t.id}</b></p>
+            <p>Status: <span style="color:{status_color}">{t.status.upper()}</span></p>
+
+            <a href="/ticket/{t.id}"
+               style="display:inline-block;margin-top:8px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;text-decoration:none;">
+               Abrir
+            </a>
+        </div>
+        """
+
+    html = "".join(card(t) for t in tickets)
+
+    return f"""
+    <html>
+    <body style="background:#0f172a;color:white;font-family:Arial;">
+
+    <div style="max-width:700px;margin:auto;margin-top:40px;">
+
+        <h2>🎫 Os teus tickets</h2>
+
+        <a href="/suporte/new?user_id={user_id}"
+           style="display:inline-block;margin-bottom:15px;padding:10px 12px;background:#22c55e;color:black;border-radius:8px;text-decoration:none;">
+           + Criar novo ticket
+        </a>
+
+        {html if html else "<p>Sem tickets ainda</p>"}
+
+    </div>
+
+    </body>
+    </html>
+    """
+
+@app.route("/suporte/new", methods=["GET", "POST"])
+def create_user_ticket():
+
+    user_id = request.args.get("user_id")
+
+    user = User.query.get(user_id)
+    if not user:
+        return "User não encontrado", 404
+
+    if request.method == "POST":
+
+        message = request.form.get("message")
+
+        ticket = Ticket(user_id=user_id, status="open")
+
+        db.session.add(ticket)
+        db.session.commit()
+
+        msg = TicketMessage(
+            ticket_id=ticket.id,
+            sender="user",
+            message=message
+        )
+
+        db.session.add(msg)
+        db.session.commit()
+
+        return redirect(f"/ticket/{ticket.id}")
+
+    return f"""
+    <html>
+    <body style="background:#0f172a;color:white;font-family:Arial;">
+
+    <div style="max-width:600px;margin:auto;margin-top:60px;">
+
+        <h2>🆘 Criar Ticket</h2>
+
+        <form method="POST">
+
+            <textarea name="message" required
+                style="width:100%;height:120px;padding:10px;">
+            </textarea>
+
+            <button style="width:100%;margin-top:10px;padding:12px;background:#22c55e;color:black;">
+                Enviar
+            </button>
+
+        </form>
+
+        <a href="/suporte?user_id={user_id}"
+           style="display:block;margin-top:15px;text-align:center;color:white;">
+           Voltar
+        </a>
+
+    </div>
+
+    </body>
+    </html>
+    """
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
