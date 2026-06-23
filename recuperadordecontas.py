@@ -4076,6 +4076,35 @@ def create_user_ticket():
     </body>
     </html>
     """
+
+@app.route("/get-user-by-email", methods=["POST"])
+def get_user_by_email():
+
+    data = request.get_json()
+    email = data.get("email")
+
+    if not email:
+        return {"status": "error", "msg": "Email required"}, 400
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return {"status": "error", "msg": "User not found"}, 404
+
+    return {
+        "status": "ok",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "email_recuperacao": user.email_recuperacao,
+
+            "account_status": user.account_status,
+            "ia_status": user.ia_status,
+            "email_status": user.email_status,
+            "status_reason": user.status_reason
+        }
+    }
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
