@@ -4431,9 +4431,27 @@ def follow_request():
 
     data = request.get_json(force=True)
 
+    from_user = data["from"]
+    to_user = data["to"]
+
+    # ❌ evitar auto-follow
+    if str(from_user) == str(to_user):
+        return jsonify(error="Inválido"), 400
+
+    # 🚫 já existe pedido pendente?
+    existing = FollowRequest.query.filter_by(
+        from_user=from_user,
+        to_user=to_user,
+        status="pending"
+    ).first()
+
+    if existing:
+        return jsonify(status="already_pending")
+
+    # ➕ criar pedido
     fr = FollowRequest(
-        from_user=data["from"],
-        to_user=data["to"],
+        from_user=from_user,
+        to_user=to_user,
         status="pending"
     )
 
