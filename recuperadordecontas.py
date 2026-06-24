@@ -125,23 +125,46 @@ class User(db.Model):
     email_status = db.Column(db.String(20), default="ok")
 
 class Ticket(db.Model):
+
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer)
 
-    title = db.Column(db.String(120))
-    status = db.Column(db.String(20), default="open")  # open / closed
+    user_id = db.Column(db.Integer, nullable=False)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # TÍTULO
+    title = db.Column(db.String(200))
 
+    # PRIORIDADE
+    priority = db.Column(db.String(50), default="normal")
+
+    # STATUS
+    status = db.Column(db.String(30), default="open")
+
+    # ADMIN RESPONSÁVEL
+    admin_id = db.Column(db.Integer)
+
+    # PEDIDOS DE FECHO
+    user_requested_close = db.Column(db.Boolean, default=False)
+    admin_requested_close = db.Column(db.Boolean, default=False)
+
+    # AVALIAÇÃO
+    stars = db.Column(db.Integer)
+
+    created_at = db.Column(db.DateTime)
+    closed_at = db.Column(db.DateTime)
+    
 class TicketMessage(db.Model):
+
     id = db.Column(db.Integer, primary_key=True)
 
-    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"))
-    sender = db.Column(db.String(20))  # user / admin
+    ticket_id = db.Column(db.Integer)
+
+    sender = db.Column(db.String(20))
+    sender_id = db.Column(db.Integer)
 
     message = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    created_at = db.Column(db.DateTime)
+    
 class UserSession(db.Model):
     __tablename__ = "user_sessions"
 
@@ -3764,7 +3787,9 @@ def admin_tickets():
         <div style="background:#0b1220;padding:12px;border-radius:12px;margin-bottom:10px;border:1px solid #1f2937;">
 
             <p><b>Ticket:</b> #{t.id}</p>
-            <p><b>User:</b> {user.username if user else "Desconhecido"}</p>
+            <p><b>Assunto:</b> {t.title}</p>
+            <p><b>User:</b> {user.username}</p>
+            <p><b>Prioridade:</b> {t.priority}</p>
             <p><b>Status:</b> {t.status.upper()}</p>
 
             <a href="/admin/ticket/{t.id}"
@@ -3840,7 +3865,32 @@ def open_ticket(ticket_id):
 
     is_closed = ticket.status == "closed"
 
-    return f"""
+    @app.route("/admin/ticket/<int:ticket_id>")
+def open_ticket(ticket_id):
+
+    ticket = Ticket.query.get(ticket_id)
+    if not ticket:
+        return "Ticket não encontrado", 404
+
+    user = User.query.get(ticket.user_id)
+
+    messages = TicketMessage.query.filter_by(ticket_id=ticket_id).order_by(TicketMessage.id.asc()).all()
+
+    html_msgs = ""
+
+    for m in messages:
+        is_admin = (m.sender == "admin")
+
+        html_msgs += f"""
+        <div style="margin-bottom:10px;padding:10px;background:#0b1220;border-radius:10px;">
+            <b style="color:{'#22c55e' if is_admin else '#2563eb'}">{m.sender.upper()}</b>
+            <p>{m.message}</p>
+        </div>
+        """
+
+    is_closed = ticket.status == "closed"
+
+    html = f"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -3866,20 +3916,27 @@ def open_ticket(ticket_id):
     <hr>
 """
 
-    # 🔴 se fechado → não deixa responder
-    + ("""
-    <p style="color:#ef4444;">Este ticket está fechado.</p>
-    """ if is_closed else f"""
-    
-    <form method="POST" action="/ticket/{ticket.id}/reply">
-        <textarea name="message" required style="width:100%;height:90px;"></textarea>
-        <button style="width:100%;padding:12px;background:#2563eb;color:white;">
-            Responder
-        </button>
-    </form>
-    """)
+    # 🔴 responder ou bloquear
+    if is_closed:
+        html += """
+        <p style="color:#ef4444;">Este ticket está fechado.</p>
+        """
+    else:
+        html += f"""
+        <form method="POST" action="/ticket/{ticket.id}/reply">
 
-    + f"""
+            <input type="hidden" name="sender" value="admin">
+
+            <textarea name="message" required style="width:100%;height:90px;"></textarea>
+
+            <button style="width:100%;padding:12px;background:#2563eb;color:white;">
+                Responder
+            </button>
+
+        </form>
+        """
+
+    html += f"""
 
     <form method="POST" action="/ticket/{ticket.id}/close">
         <button style="width:100%;margin-top:10px;padding:12px;background:#ef4444;color:white;">
@@ -3889,15 +3946,16 @@ def open_ticket(ticket_id):
 
 """
 
-    + (f"""
-    <form method="POST" action="/ticket/{ticket.id}/reopen">
-        <button style="width:100%;margin-top:10px;padding:12px;background:#22c55e;color:black;">
-            Reabrir Ticket
-        </button>
-    </form>
-    """ if is_closed else "")
+    if is_closed:
+        html += f"""
+        <form method="POST" action="/ticket/{ticket.id}/reopen">
+            <button style="width:100%;margin-top:10px;padding:12px;background:#22c55e;color:black;">
+                Reabrir Ticket
+            </button>
+        </form>
+        """
 
-    + """
+    html += """
     <a href="/admin/tickets" style="display:block;margin-top:15px;text-align:center;padding:10px;background:#22c55e;color:black;border-radius:10px;">
         Voltar
     </a>
@@ -3908,6 +3966,7 @@ def open_ticket(ticket_id):
 </html>
 """
 
+    return html
 @app.route("/ticket/<int:ticket_id>/reply", methods=["POST"])
 def reply_ticket(ticket_id):
 
@@ -4028,10 +4087,18 @@ def create_user_ticket():
 
     if request.method == "POST":
 
+        title = request.form.get("title")
+        priority = request.form.get("priority")
+        
         message = request.form.get("message")
-
-        ticket = Ticket(user_id=user_id, status="open")
-
+        
+        ticket = Ticket(
+        user_id=user_id,
+        title=title,
+        priority=priority,
+        status="open"
+        )
+        
         db.session.add(ticket)
         db.session.commit()
 
@@ -4046,36 +4113,89 @@ def create_user_ticket():
 
         return redirect(f"/ticket/{ticket.id}")
 
-    return f"""
-    <html>
-    <body style="background:#0f172a;color:white;font-family:Arial;">
+return f"""
+<html>
+<body style="background:#0f172a;color:white;font-family:Arial;">
 
-    <div style="max-width:600px;margin:auto;margin-top:60px;">
+<div style="max-width:600px;margin:auto;margin-top:60px;">
 
-        <h2>🆘 Criar Ticket</h2>
+    <h2>🆘 Criar Ticket</h2>
 
-        <form method="POST">
+    <form method="POST">
 
-            <textarea name="message" required
-                style="width:100%;height:120px;padding:10px;">
-            </textarea>
+        <input
+            name="title"
+            placeholder="Assunto do Ticket"
+            required
+            style="
+                width:100%;
+                padding:10px;
+                margin-bottom:10px;
+                border-radius:8px;
+            "
+        >
 
-            <button style="width:100%;margin-top:10px;padding:12px;background:#22c55e;color:black;">
-                Enviar
-            </button>
+        <select
+            name="priority"
+            style="
+                width:100%;
+                padding:10px;
+                margin-bottom:10px;
+                border-radius:8px;
+            "
+        >
+            <option value="urgent">🔴 Urgente</option>
+            <option value="high">🟠 Alta</option>
+            <option value="normal" selected>🟡 Normal</option>
+            <option value="low">🟢 Baixa</option>
+        </select>
 
-        </form>
+        <textarea
+            name="message"
+            required
+            placeholder="Descreve o problema..."
+            style="
+                width:100%;
+                height:120px;
+                padding:10px;
+                border-radius:8px;
+            "
+        ></textarea>
 
-        <a href="/suporte?user_id={user_id}"
-           style="display:block;margin-top:15px;text-align:center;color:white;">
-           Voltar
-        </a>
+        <button
+            style="
+                width:100%;
+                margin-top:10px;
+                padding:12px;
+                background:#22c55e;
+                color:black;
+                border:none;
+                border-radius:8px;
+                font-weight:bold;
+            "
+        >
+            🎫 Enviar Ticket
+        </button>
 
-    </div>
+    </form>
 
-    </body>
-    </html>
-    """
+    <a
+        href="/suporte?user_id={user_id}"
+        style="
+            display:block;
+            margin-top:15px;
+            text-align:center;
+            color:white;
+        "
+    >
+        Voltar
+    </a>
+
+</div>
+
+</body>
+</html>
+"""
 
 @app.route("/get-user-by-email", methods=["POST"])
 def get_user_by_email():
@@ -4115,6 +4235,30 @@ def get_user_by_email():
             "email_status": getattr(user, "email_status", "ok"),
             "status_reason": getattr(user, "status_reason", "")
         }
+    }
+
+@app.route("/api/tickets/open")
+def api_tickets_open():
+
+    tickets = Ticket.query.filter_by(
+        status="open"
+    ).all()
+
+    data = []
+
+    for t in tickets:
+
+        data.append({
+            "id": t.id,
+            "user_id": t.user_id,
+            "title": t.title,
+            "priority": t.priority,
+            "status": t.status
+        })
+
+    return {
+        "status": "ok",
+        "data": data
     }
 #================= START =================
 if __name__ == "__main__":
