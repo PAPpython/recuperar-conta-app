@@ -4080,29 +4080,40 @@ def create_user_ticket():
 @app.route("/get-user-by-email", methods=["POST"])
 def get_user_by_email():
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
+
     email = data.get("email")
 
     if not email:
-        return {"status": "error", "msg": "Email required"}, 400
+        return {
+            "status": "error",
+            "msg": "Email required"
+        }, 400
 
     user = User.query.filter_by(email=email).first()
 
     if not user:
-        return {"status": "error", "msg": "User not found"}, 404
+        return {
+            "status": "error",
+            "msg": "User not found"
+        }, 404
 
     return {
         "status": "ok",
+
+        # 🔥 para poderes usar data["user_id"]
+        "user_id": user.id,
+
         "user": {
             "id": user.id,
             "username": user.username,
             "email": user.email,
             "email_recuperacao": user.email_recuperacao,
 
-            "account_status": user.account_status,
-            "ia_status": user.ia_status,
-            "email_status": user.email_status,
-            "status_reason": user.status_reason
+            "account_status": getattr(user, "account_status", "active"),
+            "ia_status": getattr(user, "ia_status", "ok"),
+            "email_status": getattr(user, "email_status", "ok"),
+            "status_reason": getattr(user, "status_reason", "")
         }
     }
 #================= START =================
