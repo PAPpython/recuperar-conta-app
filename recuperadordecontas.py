@@ -101,6 +101,7 @@ class User(db.Model):
     provider = db.Column(db.String(20), default="local")
     google_token = db.Column(db.String(64), unique=True)
     is_google_pending = db.Column(db.Boolean, default=False)
+    admin_code = db.Column(db.String(10), unique=True, nullable=True)
     
      # 🔐 Recuperação
     email_recuperacao = db.Column(db.String(120), nullable=True)
@@ -123,6 +124,13 @@ class User(db.Model):
     status_until = db.Column(db.DateTime, nullable=True)
     ia_status = db.Column(db.String(20), default="ok")
     email_status = db.Column(db.String(20), default="ok")
+    is_private = db.Column(db.Boolean, default=False)
+
+class FollowRequest(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    from_user = db.Column(db.Integer)
+    to_user = db.Column(db.Integer)
+    status = db.Column(db.String, default="pending")
 
 class Ticket(db.Model):
 
@@ -145,6 +153,10 @@ class Ticket(db.Model):
     # PEDIDOS DE FECHO
     user_requested_close = db.Column(db.Boolean, default=False)
     admin_requested_close = db.Column(db.Boolean, default=False)
+
+    rating = db.Column(db.Integer, nullable=True)
+    rating_comment = db.Column(db.Text, nullable=True)
+    admin_id = db.Column(db.Integer, nullable=True)
 
     # AVALIAÇÃO
     stars = db.Column(db.Integer)
@@ -214,24 +226,6 @@ class UserSession(db.Model):
         default=datetime.utcnow
     )
 
-class Feedback(db.Model):
-    __tablename__ = "feedbacks"
-
-    id = db.Column(db.Integer, primary_key=True)
-
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
-
-    message = db.Column(db.Text)
-
-    status = db.Column(db.String(20), default="open")  # open / closed
-
-    admin_name = db.Column(db.String(80), nullable=True)
-    admin_id = db.Column(db.Integer, nullable=True)
-
-    rating = db.Column(db.Integer, nullable=True)  # 0-5 estrelas
-
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
 class LoginHistory(db.Model):
     __tablename__ = "login_history"
 
@@ -357,6 +351,10 @@ class Notification(db.Model):
     comment_id = db.Column(db.String, db.ForeignKey("comments.id"))
     lida = db.Column(db.Boolean, default=False)
     data = db.Column(db.DateTime, default=datetime.utcnow)
+    unique_key = db.Column(db.String, index=True)
+    thread_id = db.Column(db.String, nullable=True)
+    count = db.Column(db.Integer, default=1)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Message(db.Model):
     __tablename__ = "messages"
@@ -408,6 +406,31 @@ SIGN_SECRET = b"recuperacao-super-secreta"
 CODE_EXPIRATION = 300  # 5 minutos
 
 # ================= UTILS =================
+def create_or_update_notification(user_id, tipo, origem_id=None, post_id=None, comment_id=None, thread_id=None):
+
+    notif = Notification.query.filter_by(
+        user_id=user_id,
+        tipo=tipo,
+        thread_id=thread_id
+    ).first()
+
+    if notif:
+        notif.lida = False
+        notif.data = datetime.utcnow()
+    else:
+        notif = Notification(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            tipo=tipo,
+            origem_id=origem_id,
+            post_id=post_id,
+            comment_id=comment_id,
+            thread_id=thread_id
+        )
+        db.session.add(notif)
+
+    db.session.commit()
+    
 def hash_password(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
@@ -1071,7 +1094,6 @@ def like(post_id):
     if not post:
         return jsonify(error="Post não encontrado"), 404
 
-    # 🚫 BLOQUEIO
     if existe_bloqueio(user_id, post.autor_id):
         return jsonify(error="Utilizador bloqueado"), 403
 
@@ -1082,11 +1104,10 @@ def like(post_id):
         user_id=user_id
     ).first()
 
-    # ❌ DESCURTIR
+    # ❌ DESLIKE
     if existente:
         db.session.delete(existente)
 
-        # 🧹 remover notificação de like
         Notification.query.filter_by(
             tipo="like",
             origem_id=user_id,
@@ -1096,7 +1117,7 @@ def like(post_id):
         db.session.commit()
         return jsonify(liked=False)
 
-    # ❤️ CURTIR
+    # ❤️ LIKE
     like = Like(
         id=str(uuid.uuid4()),
         post_id=real_id,
@@ -1104,19 +1125,18 @@ def like(post_id):
     )
     db.session.add(like)
 
-    # 🔔 NOTIFICAÇÃO (se não for o próprio autor)
+    # 🔔 NOTIFICAÇÃO INTELIGENTE
     if post.autor_id != user_id:
-        db.session.add(Notification(
-            id=str(uuid.uuid4()),
+        create_or_update_notification(
             user_id=post.autor_id,
             tipo="like",
             origem_id=user_id,
-            post_id=real_id
-        ))
+            post_id=real_id,
+            thread_id=f"post_{real_id}"
+        )
 
     db.session.commit()
     return jsonify(liked=True)
-
 #================= COMPARTILHAR =================
 @app.route("/posts/<post_id>/share", methods=["POST"])
 def share_post(post_id):
@@ -1198,135 +1218,64 @@ def inbox(user_id):
 
     return jsonify(res)
     
-# ================= comentário =================
+# ================= COMENTÁRIO =================
 @app.route("/posts/<post_id>/comment", methods=["POST"])
 def comentar(post_id):
 
-    # ==========================================
-    # JSON OU FORM-DATA
-    # ==========================================
-
-    if request.form:
-        data = request.form
-    else:
-        data = request.get_json(force=True)
+    data = request.form if request.form else request.get_json(force=True)
 
     user_id = data.get("user_id")
-
-    texto = (
-        data.get("texto") or ""
-    ).strip()
-
+    texto = (data.get("texto") or "").strip()
     parent_id = data.get("parent_id")
 
-    # ==========================================
-    # USER
-    # ==========================================
+    if not user_id or not texto:
+        return jsonify(error="Dados inválidos"), 400
 
     autor = User.query.get(user_id)
-
     if not autor:
-        return jsonify(
-            error="User não encontrado"
-        ), 404
-
-    # ==========================================
-    # 🔒 BLOQUEADO
-    # ==========================================
+        return jsonify(error="User não encontrado"), 404
 
     if autor.bloqueado:
-        return jsonify(
-            error="Conta bloqueada"
-        ), 403
-
-    # ==========================================
-    # POST
-    # ==========================================
+        return jsonify(error="Conta bloqueada"), 403
 
     post = Post.query.get(post_id)
-
     if not post:
-        return jsonify(
-            error="Post não encontrado"
-        ), 404
+        return jsonify(error="Post não encontrado"), 404
 
-    # 🚫 BLOQUEIO COM AUTOR DO POST
-    if existe_bloqueio(
-        user_id,
-        post.autor_id
-    ):
-        return jsonify(
-            error="Não podes comentar neste post"
-        ), 403
+    if existe_bloqueio(user_id, post.autor_id):
+        return jsonify(error="Não podes comentar neste post"), 403
 
-    # ==========================================
-    # IMAGEM
-    # ==========================================
-
-    imagem = data.get("imagem")
+    # ================= IMAGEM =================
+    imagem = None
 
     if "imagem" in request.files:
-
         file = request.files["imagem"]
 
-        if file.filename != "":
-
+        if file and file.filename:
             nome = f"{uuid.uuid4()}.png"
 
-            pasta = os.path.join(
-                "static",
-                "comments"
-            )
+            pasta = os.path.join("static", "comments")
+            os.makedirs(pasta, exist_ok=True)
 
-            os.makedirs(
-                pasta,
-                exist_ok=True
-            )
-
-            caminho = os.path.join(
-                pasta,
-                nome
-            )
-
+            caminho = os.path.join(pasta, nome)
             file.save(caminho)
 
             imagem = f"/static/comments/{nome}"
 
-    # ==========================================
-    # RESPOSTA A COMENTÁRIO
-    # ==========================================
-
-    parent_comment = None
-
+    # ================= RESPOSTA =================
     if parent_id:
-
-        parent_comment = Comment.query.get(
-            parent_id
-        )
+        parent_comment = Comment.query.get(parent_id)
 
         if not parent_comment:
-            return jsonify(
-                error="Comentário pai não existe"
-            ), 404
+            return jsonify(error="Comentário pai não existe"), 404
 
         if parent_comment.post_id != post_id:
-            return jsonify(
-                error="Comentário inválido"
-            ), 400
+            return jsonify(error="Comentário inválido"), 400
 
-        # 🚫 BLOQUEIO
-        if existe_bloqueio(
-            user_id,
-            parent_comment.autor_id
-        ):
-            return jsonify(
-                error="Não podes responder"
-            ), 403
+        if existe_bloqueio(user_id, parent_comment.autor_id):
+            return jsonify(error="Não podes responder"), 403
 
-    # ==========================================
-    # CRIAR COMENTÁRIO
-    # ==========================================
-
+    # ================= CRIAR =================
     comment = Comment(
         id=str(uuid.uuid4()),
         post_id=post_id,
@@ -1337,53 +1286,59 @@ def comentar(post_id):
     )
 
     db.session.add(comment)
+    db.session.commit()
+
+    # ================= NOTIFICAÇÃO =================
+    if post.autor_id != user_id:
+
+        key = f"comment:{post_id}:{user_id}:{parent_id or 'root'}"
+
+        exists = Notification.query.filter_by(unique_key=key).first()
+
+        if not exists:
+            db.session.add(Notification(
+                id=str(uuid.uuid4()),
+                user_id=post.autor_id,
+                tipo="comment",
+                origem_id=user_id,
+                post_id=post_id,
+                comment_id=comment.id,
+                unique_key=key
+            ))
 
     db.session.commit()
 
-    # ==========================================
-    # RETORNO COMPLETO
-    # ==========================================
-
     return jsonify({
-
         "status": "ok",
-
         "comment": {
-
-            "id": comment.id,  # ✅ ID COMENTÁRIO
-
+            "id": comment.id,
             "post_id": comment.post_id,
-
             "texto": comment.texto,
-
             "imagem": comment.imagem,
-
             "parent_id": comment.parent_id,
-
             "autor": {
-
                 "id": autor.id,
-
                 "username": autor.username,
-
                 "avatar": autor.avatar
-
             }
-
         }
-
     })
-#================= CURTIR COMENTÁRIO =================
+
+
+# ================= CURTIR COMENTÁRIO =================
 @app.route("/comments/<comment_id>/like", methods=["POST"])
 def like_comment(comment_id):
+
     data = request.get_json(force=True)
-    user_id = data["user_id"]
+    user_id = data.get("user_id")
+
+    if not user_id:
+        return jsonify(error="User inválido"), 400
 
     comment = Comment.query.get(comment_id)
     if not comment:
         return jsonify(error="Comentário não encontrado"), 404
 
-    # 🚫 BLOQUEIO
     if existe_bloqueio(user_id, comment.autor_id):
         return jsonify(error="Não podes curtir este comentário"), 403
 
@@ -1392,31 +1347,41 @@ def like_comment(comment_id):
         user_id=user_id
     ).first()
 
+    # ================= UNLIKE =================
     if existente:
         db.session.delete(existente)
         db.session.commit()
         return jsonify(liked=False)
 
+    # ================= LIKE =================
     like = CommentLike(
         id=str(uuid.uuid4()),
         comment_id=comment_id,
         user_id=user_id
     )
+
     db.session.add(like)
 
-    # 🔔 NOTIFICAÇÃO (apenas se não houver bloqueio)
+    # ================= NOTIFICAÇÃO =================
     if comment.autor_id != user_id:
-        db.session.add(Notification(
-            id=str(uuid.uuid4()),
-            user_id=comment.autor_id,
-            tipo="like_comment",
-            origem_id=user_id,
-            comment_id=comment_id
-        ))
+
+        key = f"like_comment:{comment_id}:{user_id}"
+
+        exists = Notification.query.filter_by(unique_key=key).first()
+
+        if not exists:
+            db.session.add(Notification(
+                id=str(uuid.uuid4()),
+                user_id=comment.autor_id,
+                tipo="like_comment",
+                origem_id=user_id,
+                comment_id=comment_id,
+                unique_key=key
+            ))
 
     db.session.commit()
-    return jsonify(liked=True)
 
+    return jsonify(liked=True)
 #================= DENUNCIAR POST =================
 @app.route("/posts/<post_id>/report", methods=["POST"])
 def report_post(post_id):
@@ -1490,50 +1455,78 @@ def report_user(user_id):
 
     return jsonify(status="ok")
 
-#================= SEGUIR / DEIXAR DE SEGUIR =================
-@app.route("/users/<user_id>/follow", methods=["POST"])
+# ================= SEGUIR / DEIXAR DE SEGUIR =================
+@app.route("/users/<int:user_id>/follow", methods=["POST"])
 def follow_user(user_id):
+
     data = request.get_json(force=True)
     follower_id = data["user_id"]
 
-    # ❌ Não pode seguir a si próprio
     if str(follower_id) == str(user_id):
         return jsonify(error="Não podes seguir a ti próprio"), 400
 
-    # 🚫 BLOQUEIO (em qualquer sentido)
     if existe_bloqueio(follower_id, user_id):
         return jsonify(error="Não podes seguir este utilizador"), 403
 
-    existente = Follow.query.filter_by(
+    target = User.query.get(user_id)
+    if not target:
+        return jsonify(error="User não encontrado"), 404
+
+    # já segue?
+    existing_follow = Follow.query.filter_by(
         follower_id=follower_id,
         followed_id=user_id
     ).first()
 
-    # 🔁 Deixar de seguir
-    if existente:
-        db.session.delete(existente)
+    if existing_follow:
+        db.session.delete(existing_follow)
         db.session.commit()
         return jsonify(following=False)
 
-    # ➕ Seguir
-    db.session.add(Follow(
-        id=str(uuid.uuid4()),
-        follower_id=follower_id,
-        followed_id=user_id
+    # 🟢 CONTA PÚBLICA → FOLLOW DIRETO
+    if not target.is_private:
+
+        db.session.add(Follow(
+            id=str(uuid.uuid4()),
+            follower_id=follower_id,
+            followed_id=user_id
+        ))
+
+        db.session.add(Notification(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            tipo="follow",
+            origem_id=follower_id
+        ))
+
+        db.session.commit()
+        return jsonify(following=True, mode="direct")
+
+    # 🔒 CONTA PRIVADA → FOLLOW REQUEST
+    existing_request = FollowRequest.query.filter_by(
+        from_user=follower_id,
+        to_user=user_id
+    ).first()
+
+    if existing_request:
+        return jsonify(status="already_requested")
+
+    db.session.add(FollowRequest(
+        from_user=follower_id,
+        to_user=user_id,
+        status="pending"
     ))
 
-    # 🔔 Notificação
     db.session.add(Notification(
         id=str(uuid.uuid4()),
         user_id=user_id,
-        tipo="follow",
+        tipo="follow_request",
         origem_id=follower_id
     ))
 
     db.session.commit()
-    return jsonify(following=True)
 
-
+    return jsonify(status="requested")
 #================= BLOQUEAR UTILIZADOR =================
 @app.route("/users/<user_id>/block", methods=["POST"])
 def block_user(user_id):
@@ -1704,48 +1697,54 @@ def listar_comentarios(post_id):
 #================= LISTAR NOTIFICAÇÕES =================
 @app.route("/notifications/<int:user_id>", methods=["GET"])
 def listar_notificacoes(user_id):
+
     notifs = Notification.query.filter_by(
         user_id=user_id
     ).order_by(Notification.data.desc()).all()
 
     res = []
-    for n in notifs:
-        origem = User.query.get(n.origem_id)
 
-        # 🔒 IGNORAR NOTIFICAÇÕES DE UTILIZADORES BLOQUEADOS
+    for n in notifs:
+
+        origem = User.query.get(n.origem_id) if n.origem_id else None
+
+        # 🔒 ignorar bloqueados
         if origem and existe_bloqueio(user_id, origem.id):
             continue
 
         res.append({
             "id": n.id,
             "tipo": n.tipo,
-            "origem": origem.username if origem else None,
+            "origem": {
+                "id": origem.id if origem else None,
+                "username": origem.username if origem else None
+            },
             "post_id": n.post_id,
             "comment_id": n.comment_id,
             "lida": n.lida,
-            "data": n.data.strftime("%d/%m/%Y %H:%M")
+            "data": n.data.isoformat()
         })
 
     return jsonify(res)
-
 #================= MARCAR NOTIFICAÇÃO COMO LIDA =================
 @app.route("/notifications/<notif_id>/read", methods=["POST"])
 def marcar_notificacao_lida(notif_id):
+
     data = request.get_json(force=True)
     user_id = data.get("user_id")
 
     notif = Notification.query.get(notif_id)
+
     if not notif:
         return jsonify(error="Notificação não encontrada"), 404
 
-    # 🔒 Garantir que a notificação pertence ao utilizador
     if notif.user_id != user_id:
         return jsonify(error="Sem permissão"), 403
 
     notif.lida = True
     db.session.commit()
-    return jsonify(status="ok")
 
+    return jsonify(status="ok")
 #================= PERFIL COMPLETO =================
 @app.route("/users/<int:user_id>/profile", methods=["GET"])
 def perfil_completo(user_id):
@@ -1809,68 +1808,83 @@ def posts_perfil(user_id):
     return jsonify(res)
 
 #================= ENVIAR MENSAGEM =================
+# ================= ENVIAR MENSAGEM =================
 @app.route("/messages/send", methods=["POST"])
 def enviar_mensagem():
 
     data = request.get_json(force=True)
 
-    from_user = data["from_user_id"]
-    to_user = data["to_user_id"]
+    from_user = int(data.get("from_user_id"))
+    to_user = int(data.get("to_user_id"))
     texto = (data.get("texto") or "").strip()
 
     if not texto:
         return jsonify(error="Mensagem vazia"), 400
 
-    # 🔒 VER UTILIZADOR
+    # ================= USER CHECK =================
     user = User.query.get(from_user)
-
     if not user:
         return jsonify(error="User não encontrado"), 404
 
-    # 🚫 UTILIZADOR BLOQUEADO/SUSPENSO
     if user.bloqueado:
-        return jsonify(
-            error="Estás bloqueado e não podes enviar mensagens"
-        ), 403
+        return jsonify(error="Estás bloqueado e não podes enviar mensagens"), 403
 
-    # 🔒 BLOQUEIO TOTAL ENTRE USERS
+    # ================= BLOQUEIO =================
     if existe_bloqueio(from_user, to_user):
-        return jsonify(
-            error="Não é possível enviar mensagem a este utilizador"
-        ), 403
+        return jsonify(error="Não é possível enviar mensagem a este utilizador"), 403
 
+    # ================= CRIAR MENSAGEM =================
     msg = Message(
         id=str(uuid.uuid4()),
         from_user_id=from_user,
         to_user_id=to_user,
-        texto=texto
+        texto=texto,
+        lida=False,
+        data=datetime.utcnow()
     )
 
     db.session.add(msg)
 
-    # 🔔 NOTIFICAÇÃO
-    db.session.add(Notification(
-        id=str(uuid.uuid4()),
+    # ================= THREAD ID (AGRUPAMENTO) =================
+    thread_id = f"msg_{min(from_user, to_user)}_{max(from_user, to_user)}"
+
+    # ================= NOTIFICAÇÃO (UPDATE OU CREATE) =================
+    notif = Notification.query.filter_by(
         user_id=to_user,
         tipo="message",
-        origem_id=from_user
-    ))
+        thread_id=thread_id
+    ).first()
+
+    if notif:
+        notif.data = datetime.utcnow()
+        notif.lida = False
+    else:
+        db.session.add(Notification(
+            id=str(uuid.uuid4()),
+            user_id=to_user,
+            tipo="message",
+            origem_id=from_user,
+            thread_id=thread_id,
+            data=datetime.utcnow(),
+            lida=False
+        ))
 
     db.session.commit()
 
-    return jsonify(status="ok")
-    
+    return jsonify(status="ok", message_id=msg.id)
 #================= CONVERSA =================
 @app.route("/messages/<int:user1>/<int:user2>", methods=["GET"])
 def conversa(user1, user2):
+
     msgs = Message.query.filter(
         db.or_(
             db.and_(Message.from_user_id == user1, Message.to_user_id == user2),
             db.and_(Message.from_user_id == user2, Message.to_user_id == user1)
         )
-    ).order_by(Message.data).all()
+    ).order_by(Message.data.asc()).all()
 
     res = []
+
     for m in msgs:
         res.append({
             "id": m.id,
@@ -1882,30 +1896,26 @@ def conversa(user1, user2):
         })
 
     return jsonify(res)
-
 #================= MENSAGENS NÃO LIDAS =================
 @app.route("/messages/unread/<int:user_id>", methods=["GET"])
 def mensagens_nao_lidas(user_id):
 
-    # Buscar mensagens não lidas
     msgs = Message.query.filter_by(
         to_user_id=user_id,
         lida=False
     ).all()
 
     total = 0
+
     for m in msgs:
-        # 🔒 ignora mensagens de utilizadores bloqueados
         if not existe_bloqueio(user_id, m.from_user_id):
             total += 1
 
     return jsonify(total=total)
-
 #================= MARCAR COMO LIDAS =================
 @app.route("/messages/read/<int:user_id>/<int:from_user>", methods=["POST"])
 def marcar_lidas(user_id, from_user):
 
-    # 🔒 BLOQUEIO → não mexe nas mensagens
     if existe_bloqueio(user_id, from_user):
         return jsonify(status="bloqueado")
 
@@ -1915,9 +1925,18 @@ def marcar_lidas(user_id, from_user):
         lida=False
     ).update({"lida": True})
 
-    db.session.commit()
-    return jsonify(status="ok")
+    # também limpar notificação da thread
+    thread_id = f"msg_{min(user_id, from_user)}_{max(user_id, from_user)}"
 
+    Notification.query.filter_by(
+        user_id=user_id,
+        tipo="message",
+        thread_id=thread_id
+    ).update({"lida": True})
+
+    db.session.commit()
+
+    return jsonify(status="ok")
 # ================= OBTER PERFIL =================
 @app.route("/users/<int:user_id>", methods=["GET"])
 def obter_user(user_id):
@@ -2229,10 +2248,6 @@ def servir_banner(filename):
 
     return "Banner não encontrado", 404
 
-# =========================================================
-# ADMIN
-# =========================================================
-
 @app.route("/admin/promote", methods=["POST"])
 def promote_user():
 
@@ -2244,7 +2259,6 @@ def promote_user():
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
 
-    # 🔥 FORÇAR INT SEMPRE
     try:
         user_id = int(target)
     except:
@@ -2255,11 +2269,38 @@ def promote_user():
     if not user:
         return jsonify(error="User não encontrado"), 404
 
+    if user.role == "admin":
+        return jsonify(error="Já é admin"), 400
+
+    # =========================
+    # 🔥 GERAR ADMIN CODE (#0001)
+    # =========================
+
+    last_admin = User.query.filter(User.role == "admin")\
+        .order_by(User.id.desc()).first()
+
+    if last_admin and last_admin.admin_code:
+        last_number = int(last_admin.admin_code.replace("#", ""))
+        new_number = last_number + 1
+    else:
+        new_number = 1
+
+    admin_code = f"#{new_number:04d}"
+
+    # =========================
+    # PROMOTE
+    # =========================
+
     user.role = "admin"
+    user.admin_code = admin_code
+
     db.session.commit()
 
-    return jsonify(status="ok", msg=f"{user.username} agora é admin")
-    
+    return jsonify(
+        status="ok",
+        msg=f"{user.username} agora é admin {admin_code}",
+        admin_code=admin_code
+    )
 
 # =========================================================
 # REMOVER ADMIN
@@ -3849,7 +3890,8 @@ def open_ticket(ticket_id):
 
     user = User.query.get(ticket.user_id)
 
-    messages = TicketMessage.query.filter_by(ticket_id=ticket_id).order_by(TicketMessage.id.asc()).all()
+    messages = TicketMessage.query.filter_by(ticket_id=ticket_id)\
+        .order_by(TicketMessage.id.asc()).all()
 
     html_msgs = ""
 
@@ -3858,37 +3900,15 @@ def open_ticket(ticket_id):
 
         html_msgs += f"""
         <div style="margin-bottom:10px;padding:10px;background:#0b1220;border-radius:10px;">
-            <b style="color:{'#22c55e' if is_admin else '#2563eb'}">{m.sender.upper()}</b>
+            <b style="color:{'#22c55e' if is_admin else '#2563eb'}">
+                {m.sender.upper()}
+            </b>
             <p>{m.message}</p>
         </div>
         """
 
     is_closed = ticket.status == "closed"
-
-    @app.route("/admin/ticket/<int:ticket_id>")
-def open_ticket(ticket_id):
-
-    ticket = Ticket.query.get(ticket_id)
-    if not ticket:
-        return "Ticket não encontrado", 404
-
-    user = User.query.get(ticket.user_id)
-
-    messages = TicketMessage.query.filter_by(ticket_id=ticket_id).order_by(TicketMessage.id.asc()).all()
-
-    html_msgs = ""
-
-    for m in messages:
-        is_admin = (m.sender == "admin")
-
-        html_msgs += f"""
-        <div style="margin-bottom:10px;padding:10px;background:#0b1220;border-radius:10px;">
-            <b style="color:{'#22c55e' if is_admin else '#2563eb'}">{m.sender.upper()}</b>
-            <p>{m.message}</p>
-        </div>
-        """
-
-    is_closed = ticket.status == "closed"
+    close_pending = getattr(ticket, "close_pending", False)
 
     html = f"""
 <!DOCTYPE html>
@@ -3900,63 +3920,118 @@ def open_ticket(ticket_id):
 
 <body style="margin:0;background:#0f172a;color:white;font-family:Arial;display:flex;justify-content:center;">
 
-<div style="width:800px;margin-top:40px;background:#111827;padding:25px;border-radius:16px;border:1px solid #1f2937;">
+<div style="width:900px;margin-top:40px;background:#111827;padding:25px;border-radius:16px;border:1px solid #1f2937;">
 
     <h2>🎫 Ticket #{ticket.id}</h2>
 
-    <p><b>User:</b> {user.username if user else "?"}</p>
-    <p><b>Status:</b> {"🔴 FECHADO" if is_closed else "🟢 ABERTO"}</p>
+    <div style="display:flex;gap:20px;">
 
-    <hr>
+        <!-- LEFT INFO -->
+        <div style="width:30%;background:#0b1220;padding:10px;border-radius:10px;">
+            <h3>📌 Info</h3>
+            <p><b>Título:</b> {ticket.title}</p>
+            <p><b>Prioridade:</b> {ticket.priority}</p>
+            <p><b>User:</b> {user.username if user else "?"}</p>
+            <p><b>Status:</b> {"🔴 FECHADO" if is_closed else "🟢 ABERTO"}</p>
+        </div>
 
-    <div style="max-height:350px;overflow:auto;">
-        {html_msgs}
+        <!-- RIGHT CHAT -->
+        <div style="width:70%;">
+
+            <div style="max-height:350px;overflow:auto;background:#0b1220;padding:10px;border-radius:10px;">
+                {html_msgs}
+            </div>
+
+        </div>
+
     </div>
 
     <hr>
 """
 
-    # 🔴 responder ou bloquear
-    if is_closed:
-        html += """
-        <p style="color:#ef4444;">Este ticket está fechado.</p>
-        """
-    else:
+    # ================= ABERTO =================
+    if not is_closed:
+
+        # aviso de fecho pendente
+        if close_pending:
+            html += """
+            <p style="color:#facc15;">⚠️ Pedido de fecho pendente</p>
+            """
+
         html += f"""
+
+        <!-- RESPOSTA ADMIN -->
         <form method="POST" action="/ticket/{ticket.id}/reply">
 
             <input type="hidden" name="sender" value="admin">
 
-            <textarea name="message" required style="width:100%;height:90px;"></textarea>
+            <textarea name="message" required
+                style="width:100%;height:90px;margin-top:10px;"></textarea>
 
-            <button style="width:100%;padding:12px;background:#2563eb;color:white;">
+            <button style="width:100%;padding:12px;background:#2563eb;color:white;margin-top:5px;">
                 Responder
             </button>
 
         </form>
-        """
 
-    html += f"""
-
-    <form method="POST" action="/ticket/{ticket.id}/close">
-        <button style="width:100%;margin-top:10px;padding:12px;background:#ef4444;color:white;">
-            Fechar Ticket
-        </button>
-    </form>
-
-"""
-
-    if is_closed:
-        html += f"""
-        <form method="POST" action="/ticket/{ticket.id}/reopen">
-            <button style="width:100%;margin-top:10px;padding:12px;background:#22c55e;color:black;">
-                Reabrir Ticket
+        <!-- PEDIR FECHO -->
+        <form method="POST" action="/ticket/{ticket.id}/request-close/admin">
+            <button style="width:100%;margin-top:10px;padding:12px;background:#ef4444;color:white;">
+                Pedir Fecho
             </button>
         </form>
+
+        """
+    else:
+        html += "<p style='color:#ef4444;'>🔴 Ticket fechado</p>"
+
+        # ⭐ AVALIAÇÃO (USER)
+        html += f"""
+        <form method="POST" action="/ticket/{ticket.id}/rate">
+
+            <h3>⭐ Avaliar Atendimento</h3>
+
+            <input type="hidden" name="rating" id="rating-value">
+
+            <div id="stars" style="font-size:35px;cursor:pointer;">
+                <span onclick="setRating(1)">☆</span>
+                <span onclick="setRating(2)">☆</span>
+                <span onclick="setRating(3)">☆</span>
+                <span onclick="setRating(4)">☆</span>
+                <span onclick="setRating(5)">☆</span>
+            </div>
+
+            <textarea name="comment"
+                placeholder="Comentário..."
+                style="width:100%;height:80px;margin-top:10px;">
+            </textarea>
+
+            <button style="width:100%;margin-top:10px;padding:12px;background:#22c55e;color:black;">
+                Enviar Avaliação
+            </button>
+
+        </form>
+
+        <script>
+        let currentRating = 0;
+
+        function setRating(value) {{
+            currentRating = value;
+            document.getElementById("rating-value").value = value;
+
+            const stars = document.querySelectorAll("#stars span");
+
+            for (let i = 0; i < stars.length; i++) {{
+                stars[i].innerHTML = i < value ? "⭐" : "☆";
+                stars[i].style.color = i < value ? "#facc15" : "#ffffff";
+            }}
+        }}
+        </script>
         """
 
     html += """
-    <a href="/admin/tickets" style="display:block;margin-top:15px;text-align:center;padding:10px;background:#22c55e;color:black;border-radius:10px;">
+    <a href="/admin/tickets"
+        style="display:block;margin-top:15px;text-align:center;padding:10px;background:#22c55e;color:black;border-radius:10px;">
         Voltar
     </a>
 
@@ -3967,11 +4042,11 @@ def open_ticket(ticket_id):
 """
 
     return html
+    
 @app.route("/ticket/<int:ticket_id>/reply", methods=["POST"])
 def reply_ticket(ticket_id):
 
     ticket = Ticket.query.get(ticket_id)
-
     if not ticket:
         return "Ticket não encontrado", 404
 
@@ -3979,8 +4054,11 @@ def reply_ticket(ticket_id):
         return "Ticket fechado"
 
     message = request.form.get("message")
+    sender = request.form.get("sender")
 
-    sender = request.form.get("sender")  # "admin" ou "user"
+    # ✔ aqui corrigido (IMPORTANTE)
+    if sender == "admin":
+        ticket.admin_id = getattr(ticket, "admin_id", None)
 
     msg = TicketMessage(
         ticket_id=ticket_id,
@@ -3992,27 +4070,7 @@ def reply_ticket(ticket_id):
     db.session.commit()
 
     return redirect(f"/ticket/{ticket_id}")
-
-@app.route("/ticket/<int:ticket_id>/close", methods=["POST"])
-def close_ticket(ticket_id):
-
-    ticket = Ticket.query.get(ticket_id)
-
-    if not ticket:
-        return "Ticket não encontrado", 404
-
-    ticket.status = "closed"
-
-    try:
-        from datetime import datetime
-        ticket.closed_at = datetime.utcnow()
-    except:
-        ticket.closed_at = None
-
-    db.session.commit()
-
-    return redirect("/admin/tickets")
-
+    
 @app.route("/ticket/<int:ticket_id>/reopen", methods=["POST"])
 def reopen_ticket(ticket_id):
 
@@ -4082,6 +4140,10 @@ def create_user_ticket():
     user_id = request.args.get("user_id")
 
     user = User.query.get(user_id)
+    
+    if user.role == "admin":
+        return "Admins não podem criar tickets", 403
+
     if not user:
         return "User não encontrado", 404
 
@@ -4089,16 +4151,15 @@ def create_user_ticket():
 
         title = request.form.get("title")
         priority = request.form.get("priority")
-        
         message = request.form.get("message")
-        
+
         ticket = Ticket(
-        user_id=user_id,
-        title=title,
-        priority=priority,
-        status="open"
+            user_id=user_id,
+            title=title,
+            priority=priority,
+            status="open"
         )
-        
+
         db.session.add(ticket)
         db.session.commit()
 
@@ -4113,90 +4174,48 @@ def create_user_ticket():
 
         return redirect(f"/ticket/{ticket.id}")
 
-return f"""
-<html>
-<body style="background:#0f172a;color:white;font-family:Arial;">
+    # 👇 SÓ ESTE RETURN PARA GET
+    return f"""
+    <html>
+    <body style="background:#0f172a;color:white;font-family:Arial;">
 
-<div style="max-width:600px;margin:auto;margin-top:60px;">
+    <div style="max-width:600px;margin:auto;margin-top:60px;">
 
-    <h2>🆘 Criar Ticket</h2>
+        <h2>🆘 Criar Ticket</h2>
 
-    <form method="POST">
+        <form method="POST">
 
-        <input
-            name="title"
-            placeholder="Assunto do Ticket"
-            required
-            style="
-                width:100%;
-                padding:10px;
-                margin-bottom:10px;
-                border-radius:8px;
-            "
-        >
+            <input name="title" placeholder="Assunto do Ticket" required
+                style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;">
 
-        <select
-            name="priority"
-            style="
-                width:100%;
-                padding:10px;
-                margin-bottom:10px;
-                border-radius:8px;
-            "
-        >
-            <option value="urgent">🔴 Urgente</option>
-            <option value="high">🟠 Alta</option>
-            <option value="normal" selected>🟡 Normal</option>
-            <option value="low">🟢 Baixa</option>
-        </select>
+            <select name="priority"
+                style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;">
+                <option value="urgent">🔴 Urgente</option>
+                <option value="high">🟠 Alta</option>
+                <option value="normal" selected>🟡 Normal</option>
+                <option value="low">🟢 Baixa</option>
+            </select>
 
-        <textarea
-            name="message"
-            required
-            placeholder="Descreve o problema..."
-            style="
-                width:100%;
-                height:120px;
-                padding:10px;
-                border-radius:8px;
-            "
-        ></textarea>
+            <textarea name="message" required placeholder="Descreve o problema..."
+                style="width:100%;height:120px;padding:10px;border-radius:8px;"></textarea>
 
-        <button
-            style="
-                width:100%;
-                margin-top:10px;
-                padding:12px;
-                background:#22c55e;
-                color:black;
-                border:none;
-                border-radius:8px;
-                font-weight:bold;
-            "
-        >
-            🎫 Enviar Ticket
-        </button>
+            <button style="width:100%;margin-top:10px;padding:12px;
+                background:#22c55e;color:black;border:none;border-radius:8px;font-weight:bold;">
+                🎫 Enviar Ticket
+            </button>
 
-    </form>
+        </form>
 
-    <a
-        href="/suporte?user_id={user_id}"
-        style="
-            display:block;
-            margin-top:15px;
-            text-align:center;
-            color:white;
-        "
-    >
-        Voltar
-    </a>
+        <a href="/suporte?user_id={user_id}" style="display:block;margin-top:15px;text-align:center;color:white;">
+            Voltar
+        </a>
 
-</div>
+    </div>
 
-</body>
-</html>
-"""
-
+    </body>
+    </html>
+    """
+    
 @app.route("/get-user-by-email", methods=["POST"])
 def get_user_by_email():
 
@@ -4236,6 +4255,288 @@ def get_user_by_email():
             "status_reason": getattr(user, "status_reason", "")
         }
     }
+
+@app.route("/ticket/<int:ticket_id>/request-close/admin", methods=["POST"])
+def request_close_admin(ticket_id):
+
+    ticket = Ticket.query.get(ticket_id)
+    if not ticket:
+        return "Ticket não encontrado", 404
+
+    ticket.close_requested_by = "admin"
+    ticket.close_pending = True
+
+    db.session.commit()
+
+    return redirect(f"/admin/ticket/{ticket_id}")
+
+@app.route("/ticket/<int:ticket_id>/confirm-close", methods=["POST"])
+def confirm_close(ticket_id):
+
+    ticket = Ticket.query.get(ticket_id)
+    if not ticket:
+        return "Ticket não encontrado", 404
+
+    ticket.status = "closed"
+    ticket.close_pending = False
+
+    db.session.commit()
+
+    return redirect(f"/ticket/{ticket_id}")
+
+@app.route("/ticket/<int:ticket_id>/rate", methods=["POST"])
+def rate_admin(ticket_id):
+
+    ticket = Ticket.query.get(ticket_id)
+    if not ticket:
+        return "Ticket não encontrado", 404
+
+    ticket.rating = int(request.form["rating"])
+    ticket.rating_comment = request.form.get("comment")
+
+    db.session.commit()
+
+    return redirect(f"/ticket/{ticket_id}")
+
+@app.route("/ticket/<int:ticket_id>/messages")
+def get_messages(ticket_id):
+
+    messages = TicketMessage.query.filter_by(ticket_id=ticket_id)\
+        .order_by(TicketMessage.id.asc()).all()
+
+    html = """
+    <div style="display:flex;flex-direction:column;gap:10px;font-family:Arial;">
+    """
+
+    for m in messages:
+
+        is_admin = (m.sender == "admin")
+
+        align = "flex-end" if is_admin else "flex-start"
+        bubble_color = "#2563eb" if is_admin else "#0b1220"
+        text_color = "white"
+        name_color = "#22c55e" if is_admin else "#60a5fa"
+
+        html += f"""
+        <div style="display:flex;justify-content:{align};">
+
+            <div style="
+                max-width:70%;
+                background:{bubble_color};
+                padding:10px 12px;
+                border-radius:14px;
+                color:{text_color};
+                box-shadow:0 4px 12px rgba(0,0,0,0.25);
+                position:relative;
+            ">
+
+                <div style="font-size:12px;color:{name_color};margin-bottom:4px;font-weight:bold;">
+                    {m.sender.upper()}
+                </div>
+
+                <div style="font-size:14px;line-height:1.4;">
+                    {m.message}
+                </div>
+
+            </div>
+
+        </div>
+        """
+
+    html += "</div>"
+
+    return html
+    
+@app.route("/admin/stats")
+def admin_stats():
+
+    admins = User.query.filter_by(role="admin").all()
+
+    data = []
+
+    for a in admins:
+
+        tickets = Ticket.query.filter_by(admin_id=a.id).all()
+
+        ratings = [t.rating for t in tickets if t.rating]
+
+        avg = sum(ratings) / len(ratings) if ratings else 0
+
+        data.append({
+            "id": a.id,
+            "username": a.username,
+            "admin_code": a.admin_code,
+            "avg_rating": round(avg, 2),
+            "tickets": len(tickets)
+        })
+
+    return {"admins": data}
+
+@app.route("/ticket/<int:ticket_id>/messages/json")
+def messages_json(ticket_id):
+
+    messages = TicketMessage.query.filter_by(ticket_id=ticket_id)\
+        .order_by(TicketMessage.id.asc()).all()
+
+    return jsonify([
+        {
+            "sender": m.sender,
+            "message": m.message,
+            "id": m.id
+        }
+        for m in messages
+    ])
+
+@app.route("/ticket/<int:ticket_id>/messages/live")
+def messages_live(ticket_id):
+
+    last_id = request.args.get("last_id", 0)
+
+    messages = TicketMessage.query.filter(
+        TicketMessage.ticket_id == ticket_id,
+        TicketMessage.id > last_id
+    ).order_by(TicketMessage.id.asc()).all()
+
+    return jsonify([
+        {
+            "id": m.id,
+            "sender": m.sender,
+            "message": m.message
+        }
+        for m in messages
+    ])
+
+@app.route("/notifications/<int:user_id>")
+def notifications(user_id):
+
+    notifs = Notification.query.filter_by(
+        user_id=user_id
+    ).order_by(Notification.data.desc()).limit(50).all()
+
+    return jsonify([
+        {
+            "id": n.id,
+            "tipo": n.tipo,
+            "from": n.origem_id,
+            "post_id": n.post_id,
+            "comment_id": n.comment_id,
+            "lida": n.lida,
+            "data": n.data.isoformat()
+        }
+        for n in notifs
+    ])
+
+@app.route("/follow/request", methods=["POST"])
+def follow_request():
+
+    data = request.get_json(force=True)
+
+    fr = FollowRequest(
+        from_user=data["from"],
+        to_user=data["to"],
+        status="pending"
+    )
+
+    db.session.add(fr)
+    db.session.commit()
+
+    return jsonify(ok=True)
+
+@app.route("/follow/accept", methods=["POST"])
+def accept_follow():
+
+    data = request.get_json(force=True)
+
+    req = FollowRequest.query.get(data["id"])
+    if not req:
+        return jsonify(error="Request não existe"), 404
+
+    req.status = "accepted"
+
+    db.session.add(Follow(
+        id=str(uuid.uuid4()),
+        follower_id=req.from_user,
+        followed_id=req.to_user
+    ))
+
+    db.session.commit()
+
+    return jsonify(ok=True)
+
+@app.route("/follow/رفض", methods=["POST"])
+def reject_follow():
+
+    data = request.get_json(force=True)
+
+    req = FollowRequest.query.get(data["id"])
+    if not req:
+        return jsonify(error="Request não existe"), 404
+
+    db.session.delete(req)
+    db.session.commit()
+
+    return jsonify(ok=True)
+    
+@app.route("/user/heartbeat", methods=["POST"])
+def heartbeat():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data["user_id"])
+
+    if user:
+        user.last_seen = datetime.utcnow()
+        db.session.commit()
+
+    return jsonify(ok=True)
+
+@app.route("/follow/cancel", methods=["POST"])
+def cancel_follow_request():
+
+    data = request.get_json(force=True)
+
+    from_user = data["from_user_id"]
+    to_user = data["to_user_id"]
+
+    req = FollowRequest.query.filter_by(
+        from_user=from_user,
+        to_user=to_user,
+        status="pending"
+    ).first()
+
+    if not req:
+        return jsonify(error="Pedido não encontrado"), 404
+
+    db.session.delete(req)
+    db.session.commit()
+
+    return jsonify(status="cancelled")
+
+@app.route("/follow/pending/count/<int:user_id>")
+def pending_follow_count(user_id):
+
+    count = FollowRequest.query.filter_by(
+        to_user=user_id,
+        status="pending"
+    ).count()
+
+    return jsonify(count=count)
+
+@app.route("/follow/pending/<int:user_id>")
+def pending_follow_list(user_id):
+
+    requests = FollowRequest.query.filter_by(
+        to_user=user_id,
+        status="pending"
+    ).all()
+
+    return jsonify([
+        {
+            "id": r.id,
+            "from_user": r.from_user
+        }
+        for r in requests
+    ])
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
