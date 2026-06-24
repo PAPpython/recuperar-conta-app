@@ -4236,30 +4236,6 @@ def get_user_by_email():
             "status_reason": getattr(user, "status_reason", "")
         }
     }
-
-@app.route("/api/tickets/open")
-def api_tickets_open():
-
-    tickets = Ticket.query.filter_by(
-        status="open"
-    ).all()
-
-    data = []
-
-    for t in tickets:
-
-        data.append({
-            "id": t.id,
-            "user_id": t.user_id,
-            "title": t.title,
-            "priority": t.priority,
-            "status": t.status
-        })
-
-    return {
-        "status": "ok",
-        "data": data
-    }
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
