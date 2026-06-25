@@ -439,6 +439,14 @@ def generate_code(tipo):
     # 16 caracteres hex (compatível com o app)
     return os.urandom(16).hex()
 
+def admin_ticket_required(func):
+    def wrapper(*args, **kwargs):
+        if "admin_ticket_id" not in session:
+            return redirect("/admin/tickets/login")
+        return func(*args, **kwargs)
+    wrapper.__name__ = func.__name__
+    return wrapper
+
 def validate_code(token, tipo_esperado):
     if (
         not token
@@ -3829,21 +3837,19 @@ def edit_user(user_id):
 """
 
 @app.route("/admin/tickets")
+@admin_ticket_required
 def admin_tickets():
 
     filter_type = request.args.get("filter", "all")
 
     if filter_type == "open":
-        open_tickets = Ticket.query.filter_by(status="open").order_by(Ticket.id.desc()).all()
-        closed_tickets = []
+        tickets = Ticket.query.filter_by(status="open").order_by(Ticket.id.desc()).all()
 
     elif filter_type == "closed":
-        open_tickets = []
-        closed_tickets = Ticket.query.filter_by(status="closed").order_by(Ticket.id.desc()).all()
+        tickets = Ticket.query.filter_by(status="closed").order_by(Ticket.id.desc()).all()
 
     else:
-        open_tickets = Ticket.query.filter_by(status="open").order_by(Ticket.id.desc()).all()
-        closed_tickets = Ticket.query.filter_by(status="closed").order_by(Ticket.id.desc()).all()
+        tickets = Ticket.query.order_by(Ticket.id.desc()).all()
 
     def card(t, color):
         user = User.query.get(t.user_id)
@@ -3853,7 +3859,7 @@ def admin_tickets():
 
             <p><b>Ticket:</b> #{t.id}</p>
             <p><b>Assunto:</b> {t.title}</p>
-            <p><b>User:</b> {user.username}</p>
+            <p><b>User:</b> {user.username if user else "?"}</p>
             <p><b>Prioridade:</b> {t.priority}</p>
             <p><b>Status:</b> {t.status.upper()}</p>
 
@@ -3864,48 +3870,33 @@ def admin_tickets():
         </div>
         """
 
-    open_html = "".join(card(t, "#facc15") for t in open_tickets)
-    closed_html = "".join(card(t, "#22c55e") for t in closed_tickets)
+    html_cards = "".join(card(t, "#facc15") for t in tickets)
 
     return f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Admin Tickets</title>
-</head>
+    <html>
+    <body style="margin:0;font-family:Arial;background:#0f172a;color:white;">
 
-<body style="margin:0;font-family:Arial;background:#0f172a;color:white;">
+    <div style="text-align:center;padding:20px;">
+        <h1>🎫 Sistema de Tickets</h1>
 
-<div style="text-align:center;padding:20px;">
-    <h1>🎫 Sistema de Tickets</h1>
-
-    <div style="margin-top:10px;">
-        <a href="/admin/tickets" style="margin:5px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;text-decoration:none;">Todos</a>
-        <a href="/admin/tickets?filter=open" style="margin:5px;padding:8px 12px;background:#facc15;color:black;border-radius:8px;text-decoration:none;">Abertos</a>
-        <a href="/admin/tickets?filter=closed" style="margin:5px;padding:8px 12px;background:#22c55e;color:black;border-radius:8px;text-decoration:none;">Fechados</a>
-    </div>
-</div>
-
-<div style="display:flex;gap:20px;padding:20px;">
-
-    <div style="flex:1;">
-        <h2>🟡 Abertos</h2>
-        {open_html if open_html else "<p>Sem tickets</p>"}
+        <div>
+            <a href="/admin/tickets" style="margin:5px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;">Todos</a>
+            <a href="/admin/tickets?filter=open" style="margin:5px;padding:8px 12px;background:#facc15;color:black;border-radius:8px;">Abertos</a>
+            <a href="/admin/tickets?filter=closed" style="margin:5px;padding:8px 12px;background:#22c55e;color:black;border-radius:8px;">Fechados</a>
+        </div>
     </div>
 
-    <div style="flex:1;">
-        <h2>🟢 Fechados</h2>
-        {closed_html if closed_html else "<p>Sem tickets</p>"}
+    <div style="max-width:900px;margin:auto;">
+        {html_cards if html_cards else "<p>Sem tickets</p>"}
     </div>
 
-</div>
-
-</body>
-</html>
-"""
+    </body>
+    </html>
+    """
+    
 
 @app.route("/admin/ticket/<int:ticket_id>")
+@admin_ticket_required
 def open_ticket(ticket_id):
 
     ticket = Ticket.query.get(ticket_id)
@@ -3913,6 +3904,7 @@ def open_ticket(ticket_id):
         return "Ticket não encontrado", 404
 
     user = User.query.get(ticket.user_id)
+    admin = User.query.get(ticket.admin_id) if getattr(ticket, "admin_id", None) else None
 
     messages = TicketMessage.query.filter_by(ticket_id=ticket_id)\
         .order_by(TicketMessage.id.asc()).all()
@@ -3952,11 +3944,22 @@ def open_ticket(ticket_id):
 
         <!-- LEFT INFO -->
         <div style="width:30%;background:#0b1220;padding:10px;border-radius:10px;">
+
             <h3>📌 Info</h3>
+
             <p><b>Título:</b> {ticket.title}</p>
             <p><b>Prioridade:</b> {ticket.priority}</p>
             <p><b>User:</b> {user.username if user else "?"}</p>
             <p><b>Status:</b> {"🔴 FECHADO" if is_closed else "🟢 ABERTO"}</p>
+
+            <p><b>Admin responsável:</b> {admin.username if admin else "Ainda não atribuído"}</p>
+
+            <!-- 🔥 BOTÃO EDITAR UTILIZADOR -->
+            <a href="/admin/user/{user.id}/edit"
+               style="display:block;margin-top:10px;padding:10px;background:#2563eb;color:white;text-align:center;border-radius:8px;text-decoration:none;">
+               ⚙ Editar Utilizador
+            </a>
+
         </div>
 
         <!-- RIGHT CHAT -->
@@ -3976,7 +3979,6 @@ def open_ticket(ticket_id):
     # ================= ABERTO =================
     if not is_closed:
 
-        # aviso de fecho pendente
         if close_pending:
             html += """
             <p style="color:#facc15;">⚠️ Pedido de fecho pendente</p>
@@ -4006,10 +4008,10 @@ def open_ticket(ticket_id):
         </form>
 
         """
+
     else:
         html += "<p style='color:#ef4444;'>🔴 Ticket fechado</p>"
 
-        # ⭐ AVALIAÇÃO (USER)
         html += f"""
         <form method="POST" action="/ticket/{ticket.id}/rate">
 
@@ -4027,8 +4029,7 @@ def open_ticket(ticket_id):
 
             <textarea name="comment"
                 placeholder="Comentário..."
-                style="width:100%;height:80px;margin-top:10px;">
-            </textarea>
+                style="width:100%;height:80px;margin-top:10px;"></textarea>
 
             <button style="width:100%;margin-top:10px;padding:12px;background:#22c55e;color:black;">
                 Enviar Avaliação
@@ -4082,7 +4083,7 @@ def reply_ticket(ticket_id):
 
     # ✔ aqui corrigido (IMPORTANTE)
     if sender == "admin":
-        ticket.admin_id = getattr(ticket, "admin_id", None)
+        ticket.admin_id = session.get("admin_ticket_id")
 
     msg = TicketMessage(
         ticket_id=ticket_id,
@@ -4164,12 +4165,12 @@ def create_user_ticket():
     user_id = request.args.get("user_id")
 
     user = User.query.get(user_id)
-    
-    if user.role == "admin":
-        return "Admins não podem criar tickets", 403
 
     if not user:
         return "User não encontrado", 404
+
+    if user.role == "admin":
+        return "Admins não podem criar tickets", 403
 
     if request.method == "POST":
 
@@ -4196,9 +4197,9 @@ def create_user_ticket():
         db.session.add(msg)
         db.session.commit()
 
-        return redirect(f"/ticket/{ticket.id}")
+        # 🔥 IMPORTANTE: manda para página de sucesso (não direto para /ticket)
+        return redirect(f"/suporte/sucesso/{ticket.id}")
 
-    # 👇 SÓ ESTE RETURN PARA GET
     return f"""
     <html>
     <body style="background:#0f172a;color:white;font-family:Arial;">
@@ -4239,6 +4240,94 @@ def create_user_ticket():
     </body>
     </html>
     """
+
+@app.route("/suporte/sucesso/<int:ticket_id>")
+def ticket_success(ticket_id):
+
+    return f"""
+    <html>
+    <body style="background:#0f172a;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;">
+
+        <div style="text-align:center;background:#111827;padding:30px;border-radius:12px;width:420px;">
+
+            <h2>✔ Ticket enviado com sucesso!</h2>
+
+            <p>Deseja ver as atualizações do seu ticket?</p>
+
+            <a href="/ticket/{ticket_id}"
+               style="display:block;margin-top:15px;padding:10px;background:#22c55e;color:black;border-radius:8px;text-decoration:none;">
+               🔎 Abrir Ticket
+            </a>
+
+            <a href="/suporte?user_id=1"
+               style="display:block;margin-top:10px;color:white;">
+               ← Voltar
+            </a>
+
+        </div>
+
+    </body>
+    </html>
+    """
+
+@app.route("/admin/tickets/login", methods=["GET", "POST"])
+def admin_ticket_login():
+
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+
+        admin = User.query.filter_by(username=username, role="admin").first()
+
+        if not admin or admin.password != password:
+            return "❌ Login inválido"
+
+        # 🔐 sessão só para tickets admin
+        session["admin_ticket_id"] = admin.id
+
+        return redirect("/admin/tickets")
+
+    return """
+    <html>
+    <body style="background:#0f172a;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;">
+
+        <div style="background:#111827;padding:25px;border-radius:12px;width:350px;">
+
+            <h2>🔐 Admin Tickets Login</h2>
+
+            <form method="POST">
+
+                <input name="username" placeholder="Admin username"
+                    style="width:100%;padding:10px;margin:10px 0;border-radius:8px;">
+
+                <input name="password" type="password" placeholder="Password"
+                    style="width:100%;padding:10px;margin:10px 0;border-radius:8px;">
+
+                <button style="width:100%;padding:12px;background:#22c55e;color:black;border:none;border-radius:8px;">
+                    Entrar
+                </button>
+
+            </form>
+
+        </div>
+
+    </body>
+    </html>
+    """
+    
+@app.route("/ticket/<int:ticket_id>/request-close/user", methods=["POST"])
+def request_close_user(ticket_id):
+
+    ticket = Ticket.query.get(ticket_id)
+    if not ticket:
+        return "Ticket não encontrado", 404
+
+    ticket.close_requested_by = "user"
+    ticket.close_pending = True
+
+    db.session.commit()
+
+    return redirect(f"/ticket/{ticket_id}")
     
 @app.route("/get-user-by-email", methods=["POST"])
 def get_user_by_email():
@@ -4309,6 +4398,7 @@ def confirm_close(ticket_id):
     return redirect(f"/ticket/{ticket_id}")
 
 @app.route("/ticket/<int:ticket_id>/rate", methods=["POST"])
+@admin_ticket_required
 def rate_admin(ticket_id):
 
     ticket = Ticket.query.get(ticket_id)
