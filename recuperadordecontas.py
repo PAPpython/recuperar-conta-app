@@ -125,6 +125,7 @@ class User(db.Model):
     ia_status = db.Column(db.String(20), default="ok")
     email_status = db.Column(db.String(20), default="ok")
     is_private = db.Column(db.Boolean, default=False)
+    last_seen = db.Column(db.DateTime, nullable=True)
 
 class FollowRequest(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -4466,10 +4467,9 @@ def accept_follow():
     data = request.get_json(force=True)
 
     req = FollowRequest.query.get(data["id"])
+
     if not req:
         return jsonify(error="Request não existe"), 404
-
-    req.status = "accepted"
 
     db.session.add(Follow(
         id=str(uuid.uuid4()),
@@ -4477,11 +4477,13 @@ def accept_follow():
         followed_id=req.to_user
     ))
 
+    db.session.delete(req)
+
     db.session.commit()
 
     return jsonify(ok=True)
-
-@app.route("/follow/رفض", methods=["POST"])
+    
+@app.route("/follow/reject", methods=["POST"])
 def reject_follow():
 
     data = request.get_json(force=True)
@@ -4513,8 +4515,8 @@ def cancel_follow_request():
 
     data = request.get_json(force=True)
 
-    from_user = data["from_user_id"]
-    to_user = data["to_user_id"]
+    from_user = data["from"]
+    to_user = data["to"]
 
     req = FollowRequest.query.filter_by(
         from_user=from_user,
