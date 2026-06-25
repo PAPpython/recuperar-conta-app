@@ -468,9 +468,19 @@ def existe_bloqueio(a, b):
         )
     ).first() is not None
 
-def is_admin(user_id):
-    user = User.query.get(user_id)
-    return user and user.role == "admin"
+def is_admin(user_id=None):
+    if user_id is None:
+        user_id = session.get("user_id")
+
+    if not user_id:
+        return False
+
+    user = User.query.get(int(user_id))
+
+    if not user:
+        return False
+
+    return user.role == "admin"
 
 def admin_required(user_id):
     user = User.query.get(user_id)
@@ -4277,15 +4287,22 @@ def admin_ticket_login():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        admin = User.query.filter_by(username=username, role="admin").first()
+        # 1. procura user normal
+        user = User.query.filter_by(username=username).first()
 
-        if not admin:
-            return "❌ Admin não encontrado"
-
-        if admin.password != password:
+        if not user:
             return "❌ Login inválido"
 
-        session["admin_ticket_id"] = admin.id
+        # 2. verifica password
+        if user.password != hash_password(password):
+            return "❌ Login inválido"
+
+        # 3. verifica se é admin
+        if user.role != "admin":
+            return "❌ Sem permissão (não és admin)"
+
+        # 4. login OK
+        session["admin_ticket_id"] = user.id
 
         return redirect("/admin/tickets")
 
