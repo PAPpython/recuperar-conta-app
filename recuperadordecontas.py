@@ -468,15 +468,58 @@ def existe_bloqueio(a, b):
         )
     ).first() is not None
 
-def is_admin(user_id):
-    user = User.query.get(user_id)
-    return user and user.role == "admin"
+def is_admin(user_id=None):
+    """
+    Verifica se o utilizador é admin.
+    Se não receber user_id, usa a session automaticamente.
+    """
 
-def admin_required(user_id):
+    if user_id is None:
+        user_id = session.get("user_id")
+
+    if not user_id:
+        return False
+
+    try:
+        user_id = int(user_id)
+    except:
+        return False
+
     user = User.query.get(user_id)
-    if not user or user.role != "admin":
+
+    if not user:
+        return False
+
+    # 👑 OWNER FIXO (ID 1 sempre admin)
+    if user.id == 1:
+        return True
+
+    return user.role == "admin"
+
+def admin_required(user_id=None):
+    """
+    Validação de admin para rotas.
+    """
+
+    if user_id is None:
+        user_id = session.get("user_id")
+
+    if not user_id:
         return False, jsonify(error="Sem permissão"), 403
-    return True, user
+
+    try:
+        user = User.query.get(int(user_id))
+    except:
+        return False, jsonify(error="Sem permissão"), 403
+
+    if not user:
+        return False, jsonify(error="Sem permissão"), 403
+
+    # 👑 OWNER FIXO
+    if user.id == 1 or user.role == "admin":
+        return True, user
+
+    return False, jsonify(error="Sem permissão"), 403
 
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
@@ -686,13 +729,14 @@ def login():
             msg="Conta banida"
         ), 403
 
+    # =========================
+    # SESSION & LOGIN DATA
+    # =========================
+
     remember_me = data.get("remember_me", False)
     platform = data.get("platform", "Desktop")
 
-    ip = request.headers.get(
-        "X-Forwarded-For",
-        request.remote_addr
-    )
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
 
     token = secrets.token_hex(64)
 
@@ -720,24 +764,26 @@ def login():
 
     db.session.commit()
 
+    # 🔥 ISTO É O QUE FAZ O ADMIN FUNCIONAR NO FLASK
     session["user_id"] = user.id
-        
+    session.modified = True
+
     return jsonify(
-    status="ok",
-    id=user.id,
-    username=user.username,
-    email=user.email,
-    avatar=user.avatar,
-    banner=user.banner,
-    moedas=user.moedas,
+        status="ok",
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        avatar=user.avatar,
+        banner=user.banner,
+        moedas=user.moedas,
 
-    session_token=sessao.session_token,  # <- ok agora
+        session_token=sessao.session_token,
 
-    role=user.role,
+        role=user.role,
 
-    avatares_comprados=json.loads(user.avatares_comprados or "[]"),
-    banners_comprados=json.loads(user.banners_comprados or "[]")
-)
+        avatares_comprados=json.loads(user.avatares_comprados or "[]"),
+        banners_comprados=json.loads(user.banners_comprados or "[]")
+    )
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
 def delete_account():
@@ -4714,6 +4760,14 @@ def read_all_notifications():
     db.session.commit()
 
     return jsonify(ok=True)
+
+@app.route("/debug-admin")
+def debug_admin():
+    return {
+        "session": dict(session),
+        "user_id": session.get("user_id"),
+        "is_admin": is_admin()
+    }
     
 #================= START =================
 if __name__ == "__main__":
