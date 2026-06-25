@@ -4279,10 +4279,12 @@ def admin_ticket_login():
 
         admin = User.query.filter_by(username=username, role="admin").first()
 
-        if not admin or admin.password != password:
+        if not admin:
+            return "❌ Admin não encontrado"
+
+        if admin.password != password:
             return "❌ Login inválido"
 
-        # 🔐 sessão só para tickets admin
         session["admin_ticket_id"] = admin.id
 
         return redirect("/admin/tickets")
@@ -4297,7 +4299,7 @@ def admin_ticket_login():
 
             <form method="POST">
 
-                <input name="username" placeholder="Admin username"
+                <input name="username" placeholder="Username"
                     style="width:100%;padding:10px;margin:10px 0;border-radius:8px;">
 
                 <input name="password" type="password" placeholder="Password"
@@ -4314,7 +4316,6 @@ def admin_ticket_login():
     </body>
     </html>
     """
-    
 @app.route("/ticket/<int:ticket_id>/request-close/user", methods=["POST"])
 def request_close_user(ticket_id):
 
