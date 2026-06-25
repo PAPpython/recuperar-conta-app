@@ -4568,18 +4568,53 @@ def pending_follow_count(user_id):
 @app.route("/follow/pending/<int:user_id>")
 def pending_follow_list(user_id):
 
-    requests = FollowRequest.query.filter_by(
+    requests_list = FollowRequest.query.filter_by(
         to_user=user_id,
         status="pending"
     ).all()
 
-    return jsonify([
-        {
+    resultado = []
+
+    for r in requests_list:
+
+        user = User.query.get(r.from_user)
+
+        resultado.append({
             "id": r.id,
-            "from_user": r.from_user
-        }
-        for r in requests
-    ])
+            "from_user": r.from_user,
+            "username": user.username if user else "Desconhecido",
+            "avatar": user.avatar if user else None,
+            "bio": user.bio if user else ""
+        })
+
+    return jsonify(resultado)
+
+@app.route("/notifications/unread/<int:user_id>")
+def unread_notifications(user_id):
+
+    total = Notification.query.filter_by(
+        user_id=user_id,
+        lida=False
+    ).count()
+
+    return jsonify(total=total)
+
+@app.route("/notifications/read-all", methods=["POST"])
+def read_all_notifications():
+
+    data = request.get_json(force=True)
+
+    Notification.query.filter_by(
+        user_id=data["user_id"],
+        lida=False
+    ).update({
+        "lida": True
+    })
+
+    db.session.commit()
+
+    return jsonify(ok=True)
+    
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
