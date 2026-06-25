@@ -468,9 +468,19 @@ def existe_bloqueio(a, b):
         )
     ).first() is not None
 
-def is_admin(user_id):
-    user = User.query.get(user_id)
-    return user and user.role == "admin"
+def is_admin(user_id=None):
+    if user_id is None:
+        user_id = session.get("user_id")
+
+    if not user_id:
+        return False
+
+    user = User.query.get(int(user_id))
+
+    if not user:
+        return False
+
+    return user.id == 1 or user.role == "admin"
     
 def admin_required(user_id):
     user = User.query.get(user_id)
