@@ -2055,6 +2055,8 @@ def servir_banner(filename):
 @app.route("/admin/promote", methods=["POST"])
 def promote_user():
 
+    print("SESSION:", dict(session))
+
     data = request.get_json(force=True)
 
     admin_id = session.get("user_id")
