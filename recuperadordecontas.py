@@ -294,6 +294,20 @@ def admin_required(user_id):
         return False, jsonify(error="Sem permissão"), 403
     return True, user
 
+def admin_ticket_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        user_id = session.get("user_id")
+
+        if not user_id:
+            return jsonify(error="Sessão inválida"), 401
+
+        if not is_admin(user_id):
+            return jsonify(error="Sem permissão"), 403
+
+        return func(*args, **kwargs)
+
+    return wrapper
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
 def home():
@@ -487,6 +501,10 @@ def login():
             status="error",
             msg="Conta banida"
         ), 403
+
+    session.clear()
+    session["user_id"] = user.id
+    session.permanent = True
         
     return jsonify(
     status="ok",
@@ -3565,8 +3583,12 @@ def edit_user(user_id):
 """
 
 @app.route("/admin/tickets")
-@admin_ticket_required
 def admin_tickets():
+
+    admin_id = session.get("user_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
 
     filter_type = request.args.get("filter", "all")
 
@@ -3624,10 +3646,15 @@ def admin_tickets():
     
 
 @app.route("/admin/ticket/<int:ticket_id>")
-@admin_ticket_required
 def open_ticket(ticket_id):
 
+    admin_id = session.get("user_id")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
     ticket = Ticket.query.get(ticket_id)
+
     if not ticket:
         return "Ticket não encontrado", 404
 
@@ -4134,19 +4161,27 @@ def confirm_close(ticket_id):
     return redirect(f"/ticket/{ticket_id}")
 
 @app.route("/ticket/<int:ticket_id>/rate", methods=["POST"])
-@admin_ticket_required
 def rate_admin(ticket_id):
 
-    ticket = Ticket.query.get(ticket_id)
-    if not ticket:
-        return "Ticket não encontrado", 404
+    admin_id = session.get("user_id")
 
-    ticket.rating = int(request.form["rating"])
-    ticket.rating_comment = request.form.get("comment")
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    ticket = Ticket.query.get_or_404(ticket_id)
+
+    data = request.get_json(force=True)
+
+    rating = int(data.get("rating", 0))
+
+    if rating < 1 or rating > 5:
+        return jsonify(error="Avaliação inválida"), 400
+
+    ticket.rating = rating
 
     db.session.commit()
 
-    return redirect(f"/ticket/{ticket_id}")
+    return jsonify(status="ok")
 
 @app.route("/ticket/<int:ticket_id>/messages")
 def get_messages(ticket_id):
@@ -4443,12 +4478,14 @@ def read_all_notifications():
 
 @app.route("/debug-admin")
 def debug_admin():
+
+    admin_id = session.get("user_id")
+
     return {
         "session": dict(session),
-        "user_id": session.get("user_id"),
-        "is_admin": is_admin()
+        "user_id": admin_id,
+        "is_admin": is_admin(admin_id)
     }
-    
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
