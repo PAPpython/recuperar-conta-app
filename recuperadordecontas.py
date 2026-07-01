@@ -286,6 +286,14 @@ def existe_bloqueio(a, b):
 
 def is_admin(user_id):
     user = User.query.get(user_id)
+
+    print("USER_ID:", user_id)
+
+    if user:
+        print("ROLE:", user.role)
+    else:
+        print("USER NÃO EXISTE")
+
     return user and user.role == "admin"
 
 def admin_required(user_id):
