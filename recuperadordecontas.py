@@ -460,11 +460,17 @@ def register():
         banner="bannerdefault",
         avatares_comprados=json.dumps([]),
         banners_comprados=json.dumps([]),
+        role="user",  
         moedas=0
     )
 
     db.session.add(user)
     db.session.commit()
+    
+    # Se for o primeiro utilizador, torna-o admin
+    if user.id == 1:
+        user.role = "admin"
+        db.session.commit()
 
     return jsonify(status="ok")
 # ================= LOGIN =================
