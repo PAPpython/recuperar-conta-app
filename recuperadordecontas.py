@@ -16,9 +16,6 @@ import base64
 import json
 import uuid
 from flask import session
-from flask import redirect
-import secrets
-from datetime import datetime, timedelta
 # ================= APP =================
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -101,7 +98,6 @@ class User(db.Model):
     provider = db.Column(db.String(20), default="local")
     google_token = db.Column(db.String(64), unique=True)
     is_google_pending = db.Column(db.Boolean, default=False)
-    admin_code = db.Column(db.String(10), unique=True, nullable=True)
     
      # 🔐 Recuperação
     email_recuperacao = db.Column(db.String(120), nullable=True)
@@ -115,150 +111,7 @@ class User(db.Model):
     apagado = db.Column(db.Boolean, default=False)  # Marca se a conta foi apagada
     avatar = db.Column(db.String(50), nullable=True)  # ✅ AVATAR (ID DO AVATAR)
     ultima_recompensa_post = db.Column(db.DateTime, nullable=True)
-    email_verificado = db.Column(db.Boolean, default=False)
-    email_token = db.Column(db.String(128))
-    email_verification_attempts = db.Column(db.Integer, default=0)
-    last_verification_request = db.Column(db.DateTime, nullable=True)
-    account_status = db.Column(db.String(20), default="active")
-    status_reason = db.Column(db.String(255), nullable=True)
-    status_until = db.Column(db.DateTime, nullable=True)
-    ia_status = db.Column(db.String(20), default="ok")
-    email_status = db.Column(db.String(20), default="ok")
-    is_private = db.Column(db.Boolean, default=False)
-    last_seen = db.Column(db.DateTime, nullable=True)
 
-class FollowRequest(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    from_user = db.Column(db.Integer)
-    to_user = db.Column(db.Integer)
-    status = db.Column(db.String, default="pending")
-
-class Ticket(db.Model):
-
-    id = db.Column(db.Integer, primary_key=True)
-
-    user_id = db.Column(db.Integer, nullable=False)
-
-    # TÍTULO
-    title = db.Column(db.String(200))
-
-    # PRIORIDADE
-    priority = db.Column(db.String(50), default="normal")
-
-    # STATUS
-    status = db.Column(db.String(30), default="open")
-
-    # ADMIN RESPONSÁVEL
-    admin_id = db.Column(db.Integer)
-
-    # PEDIDOS DE FECHO
-    user_requested_close = db.Column(db.Boolean, default=False)
-    admin_requested_close = db.Column(db.Boolean, default=False)
-
-    rating = db.Column(db.Integer, nullable=True)
-    rating_comment = db.Column(db.Text, nullable=True)
-    admin_id = db.Column(db.Integer, nullable=True)
-
-    # AVALIAÇÃO
-    stars = db.Column(db.Integer)
-
-    created_at = db.Column(db.DateTime)
-    closed_at = db.Column(db.DateTime)
-    
-class TicketMessage(db.Model):
-
-    id = db.Column(db.Integer, primary_key=True)
-
-    ticket_id = db.Column(db.Integer)
-
-    sender = db.Column(db.String(20))
-    sender_id = db.Column(db.Integer)
-
-    message = db.Column(db.Text)
-
-    created_at = db.Column(db.DateTime)
-    
-class UserSession(db.Model):
-    __tablename__ = "user_sessions"
-
-    id = db.Column(db.Integer, primary_key=True)
-
-    user_id = db.Column(
-        db.Integer,
-        db.ForeignKey("users.id"),
-        nullable=False
-    )
-
-    session_token = db.Column(
-        db.String(128),
-        unique=True,
-        nullable=False
-    )
-
-    platform = db.Column(
-        db.String(30),
-        default="Desktop"
-    )
-
-    ip_address = db.Column(db.String(100))
-
-    location = db.Column(
-        db.String(100),
-        default="Desconhecida"
-    )
-
-    remember_me = db.Column(
-        db.Boolean,
-        default=False
-    )
-
-    active = db.Column(
-        db.Boolean,
-        default=True
-    )
-
-    created_at = db.Column(
-        db.DateTime,
-        default=datetime.utcnow
-    )
-
-    last_seen = db.Column(
-        db.DateTime,
-        default=datetime.utcnow
-    )
-
-class LoginHistory(db.Model):
-    __tablename__ = "login_history"
-
-    id = db.Column(db.Integer, primary_key=True)
-
-    user_id = db.Column(
-        db.Integer,
-        db.ForeignKey("users.id")
-    )
-
-    ip_address = db.Column(db.String(100))
-
-    location = db.Column(
-        db.String(100),
-        default="Desconhecida"
-    )
-
-    platform = db.Column(
-        db.String(30),
-        default="Desktop"
-    )
-
-    success = db.Column(
-        db.Boolean,
-        default=True
-    )
-
-    login_time = db.Column(
-        db.DateTime,
-        default=datetime.utcnow
-    )
-    
 class Post(db.Model):
     __tablename__ = "posts"
 
@@ -352,10 +205,6 @@ class Notification(db.Model):
     comment_id = db.Column(db.String, db.ForeignKey("comments.id"))
     lida = db.Column(db.Boolean, default=False)
     data = db.Column(db.DateTime, default=datetime.utcnow)
-    unique_key = db.Column(db.String, index=True)
-    thread_id = db.Column(db.String, nullable=True)
-    count = db.Column(db.Integer, default=1)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Message(db.Model):
     __tablename__ = "messages"
@@ -407,45 +256,12 @@ SIGN_SECRET = b"recuperacao-super-secreta"
 CODE_EXPIRATION = 300  # 5 minutos
 
 # ================= UTILS =================
-def create_or_update_notification(user_id, tipo, origem_id=None, post_id=None, comment_id=None, thread_id=None):
-
-    notif = Notification.query.filter_by(
-        user_id=user_id,
-        tipo=tipo,
-        thread_id=thread_id
-    ).first()
-
-    if notif:
-        notif.lida = False
-        notif.data = datetime.utcnow()
-    else:
-        notif = Notification(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            tipo=tipo,
-            origem_id=origem_id,
-            post_id=post_id,
-            comment_id=comment_id,
-            thread_id=thread_id
-        )
-        db.session.add(notif)
-
-    db.session.commit()
-    
 def hash_password(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
 def generate_code(tipo):
     # 16 caracteres hex (compatível com o app)
     return os.urandom(16).hex()
-
-def admin_ticket_required(func):
-    def wrapper(*args, **kwargs):
-        if "admin_ticket_id" not in session:
-            return redirect("/admin/tickets/login")
-        return func(*args, **kwargs)
-    wrapper.__name__ = func.__name__
-    return wrapper
 
 def validate_code(token, tipo_esperado):
     if (
@@ -468,58 +284,15 @@ def existe_bloqueio(a, b):
         )
     ).first() is not None
 
-def is_admin(user_id=None):
-    """
-    Verifica se o utilizador é admin.
-    Se não receber user_id, usa a session automaticamente.
-    """
-
-    if user_id is None:
-        user_id = session.get("user_id")
-
-    if not user_id:
-        return False
-
-    try:
-        user_id = int(user_id)
-    except:
-        return False
-
+def is_admin(user_id):
     user = User.query.get(user_id)
+    return user and user.role == "admin"
 
-    if not user:
-        return False
-
-    # 👑 OWNER FIXO (ID 1 sempre admin)
-    if user.id == 1:
-        return True
-
-    return user.role == "admin"
-
-def admin_required(user_id=None):
-    """
-    Validação de admin para rotas.
-    """
-
-    if user_id is None:
-        user_id = session.get("user_id")
-
-    if not user_id:
+def admin_required(user_id):
+    user = User.query.get(user_id)
+    if not user or user.role != "admin":
         return False, jsonify(error="Sem permissão"), 403
-
-    try:
-        user = User.query.get(int(user_id))
-    except:
-        return False, jsonify(error="Sem permissão"), 403
-
-    if not user:
-        return False, jsonify(error="Sem permissão"), 403
-
-    # 👑 OWNER FIXO
-    if user.id == 1 or user.role == "admin":
-        return True, user
-
-    return False, jsonify(error="Sem permissão"), 403
+    return True, user
 
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
@@ -625,7 +398,6 @@ def check_email():
     return jsonify(
         exists=User.query.filter_by(email=email).first() is not None
     )
-    
 # ================= REGISTRAR =================
 @app.route("/register", methods=["POST"])
 def register():
@@ -637,13 +409,15 @@ def register():
     password = data.get("password")
 
     if not username or not email or not password:
-        return jsonify(
-            status="error",
-            msg="Dados inválidos"
-        ), 400
+        return jsonify(status="error", msg="Dados inválidos"), 400
 
     # 🚫 EMAIL PERMANENTEMENTE BANIDO
-    if User.query.filter_by(email=email, email_banido=True).first():
+    banido_email = User.query.filter_by(
+        email=email,
+        email_banido=True
+    ).first()
+
+    if banido_email:
         return jsonify(
             status="error",
             msg="Este email foi permanentemente banido"
@@ -663,18 +437,13 @@ def register():
             msg="Email já existe"
         ), 409
 
-    # 🔑 TOKEN DE VERIFICAÇÃO
-    token = secrets.token_urlsafe(64)
-
     # ✅ CRIAR CONTA
     user = User(
         username=username,
         email=email,
         password=hash_password(password),
-
         avatar="default",
         banner="bannerdefault",
-
         avatares_comprados=json.dumps([]),
         banners_comprados=json.dumps([]),
         moedas=0
@@ -683,11 +452,7 @@ def register():
     db.session.add(user)
     db.session.commit()
 
-    # ✅ SEMPRE RESPONDE SUCESSO
-    return jsonify(
-        status="ok",
-        msg="Conta criada com sucesso."
-    )
+    return jsonify(status="ok")
 # ================= LOGIN =================
 @app.route("/login", methods=["POST"])
 def login():
@@ -708,12 +473,6 @@ def login():
     if not user:
         return jsonify(status="error", msg="Utilizador não encontrado"), 404
 
-    if not user.email_verificado:
-        return jsonify({
-            "status": "error",
-            "msg": "Email não verificado, verifique para poder avançar para AERON"
-        }), 403
-
     if user.password != hash_password(password):
         return jsonify(status="error", msg="Password inválida"), 401
 
@@ -722,68 +481,30 @@ def login():
             status="error",
             msg="Essa conta foi apagada. Não é possível fazer login."
         ), 403
-
+        
     if user.banido:
         return jsonify(
             status="error",
             msg="Conta banida"
         ), 403
-
-    # =========================
-    # SESSION & LOGIN DATA
-    # =========================
-
-    remember_me = data.get("remember_me", False)
-    platform = data.get("platform", "Desktop")
-
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-
-    token = secrets.token_hex(64)
-
-    sessao = UserSession(
-        user_id=user.id,
-        session_token=token,
-        platform=platform,
-        ip_address=ip,
-        location="Desconhecida",
-        remember_me=remember_me,
-        active=True
-    )
-
-    db.session.add(sessao)
-
-    historico = LoginHistory(
-        user_id=user.id,
-        ip_address=ip,
-        location="Desconhecida",
-        platform=platform,
-        success=True
-    )
-
-    db.session.add(historico)
-
-    db.session.commit()
-
-    # 🔥 ISTO É O QUE FAZ O ADMIN FUNCIONAR NO FLASK
-    session["user_id"] = user.id
-    session.modified = True
-
+        
     return jsonify(
-        status="ok",
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        avatar=user.avatar,
-        banner=user.banner,
-        moedas=user.moedas,
+    status="ok",
+    id=user.id,
+    username=user.username,
+    email=user.email,
+    avatar=user.avatar,
+    banner=user.banner,
+    moedas=user.moedas,
 
-        session_token=sessao.session_token,
+    # 🔥 ADMIN ROLE
+    role=user.role,
 
-        role=user.role,
+    # 🔥 COMPRADOS
+    avatares_comprados=json.loads(user.avatares_comprados or "[]"),
+    banners_comprados=json.loads(user.banners_comprados or "[]")
+)
 
-        avatares_comprados=json.loads(user.avatares_comprados or "[]"),
-        banners_comprados=json.loads(user.banners_comprados or "[]")
-    )
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
 def delete_account():
@@ -848,7 +569,7 @@ def save_recovery_data():
         if pergunta and resposta:
             perguntas_guardar.append({
                 "pergunta": pergunta,
-                "resposta": resposta
+                "hash": hash_resposta(resposta)
             })
 
     user.perguntas_recuperacao = (
@@ -1151,6 +872,7 @@ def like(post_id):
     if not post:
         return jsonify(error="Post não encontrado"), 404
 
+    # 🚫 BLOQUEIO
     if existe_bloqueio(user_id, post.autor_id):
         return jsonify(error="Utilizador bloqueado"), 403
 
@@ -1161,10 +883,11 @@ def like(post_id):
         user_id=user_id
     ).first()
 
-    # ❌ DESLIKE
+    # ❌ DESCURTIR
     if existente:
         db.session.delete(existente)
 
+        # 🧹 remover notificação de like
         Notification.query.filter_by(
             tipo="like",
             origem_id=user_id,
@@ -1174,7 +897,7 @@ def like(post_id):
         db.session.commit()
         return jsonify(liked=False)
 
-    # ❤️ LIKE
+    # ❤️ CURTIR
     like = Like(
         id=str(uuid.uuid4()),
         post_id=real_id,
@@ -1182,18 +905,19 @@ def like(post_id):
     )
     db.session.add(like)
 
-    # 🔔 NOTIFICAÇÃO INTELIGENTE
+    # 🔔 NOTIFICAÇÃO (se não for o próprio autor)
     if post.autor_id != user_id:
-        create_or_update_notification(
+        db.session.add(Notification(
+            id=str(uuid.uuid4()),
             user_id=post.autor_id,
             tipo="like",
             origem_id=user_id,
-            post_id=real_id,
-            thread_id=f"post_{real_id}"
-        )
+            post_id=real_id
+        ))
 
     db.session.commit()
     return jsonify(liked=True)
+
 #================= COMPARTILHAR =================
 @app.route("/posts/<post_id>/share", methods=["POST"])
 def share_post(post_id):
@@ -1275,64 +999,135 @@ def inbox(user_id):
 
     return jsonify(res)
     
-# ================= COMENTÁRIO =================
+# ================= comentário =================
 @app.route("/posts/<post_id>/comment", methods=["POST"])
 def comentar(post_id):
 
-    data = request.form if request.form else request.get_json(force=True)
+    # ==========================================
+    # JSON OU FORM-DATA
+    # ==========================================
+
+    if request.form:
+        data = request.form
+    else:
+        data = request.get_json(force=True)
 
     user_id = data.get("user_id")
-    texto = (data.get("texto") or "").strip()
+
+    texto = (
+        data.get("texto") or ""
+    ).strip()
+
     parent_id = data.get("parent_id")
 
-    if not user_id or not texto:
-        return jsonify(error="Dados inválidos"), 400
+    # ==========================================
+    # USER
+    # ==========================================
 
     autor = User.query.get(user_id)
+
     if not autor:
-        return jsonify(error="User não encontrado"), 404
+        return jsonify(
+            error="User não encontrado"
+        ), 404
+
+    # ==========================================
+    # 🔒 BLOQUEADO
+    # ==========================================
 
     if autor.bloqueado:
-        return jsonify(error="Conta bloqueada"), 403
+        return jsonify(
+            error="Conta bloqueada"
+        ), 403
+
+    # ==========================================
+    # POST
+    # ==========================================
 
     post = Post.query.get(post_id)
+
     if not post:
-        return jsonify(error="Post não encontrado"), 404
+        return jsonify(
+            error="Post não encontrado"
+        ), 404
 
-    if existe_bloqueio(user_id, post.autor_id):
-        return jsonify(error="Não podes comentar neste post"), 403
+    # 🚫 BLOQUEIO COM AUTOR DO POST
+    if existe_bloqueio(
+        user_id,
+        post.autor_id
+    ):
+        return jsonify(
+            error="Não podes comentar neste post"
+        ), 403
 
-    # ================= IMAGEM =================
-    imagem = None
+    # ==========================================
+    # IMAGEM
+    # ==========================================
+
+    imagem = data.get("imagem")
 
     if "imagem" in request.files:
+
         file = request.files["imagem"]
 
-        if file and file.filename:
+        if file.filename != "":
+
             nome = f"{uuid.uuid4()}.png"
 
-            pasta = os.path.join("static", "comments")
-            os.makedirs(pasta, exist_ok=True)
+            pasta = os.path.join(
+                "static",
+                "comments"
+            )
 
-            caminho = os.path.join(pasta, nome)
+            os.makedirs(
+                pasta,
+                exist_ok=True
+            )
+
+            caminho = os.path.join(
+                pasta,
+                nome
+            )
+
             file.save(caminho)
 
             imagem = f"/static/comments/{nome}"
 
-    # ================= RESPOSTA =================
+    # ==========================================
+    # RESPOSTA A COMENTÁRIO
+    # ==========================================
+
+    parent_comment = None
+
     if parent_id:
-        parent_comment = Comment.query.get(parent_id)
+
+        parent_comment = Comment.query.get(
+            parent_id
+        )
 
         if not parent_comment:
-            return jsonify(error="Comentário pai não existe"), 404
+            return jsonify(
+                error="Comentário pai não existe"
+            ), 404
 
         if parent_comment.post_id != post_id:
-            return jsonify(error="Comentário inválido"), 400
+            return jsonify(
+                error="Comentário inválido"
+            ), 400
 
-        if existe_bloqueio(user_id, parent_comment.autor_id):
-            return jsonify(error="Não podes responder"), 403
+        # 🚫 BLOQUEIO
+        if existe_bloqueio(
+            user_id,
+            parent_comment.autor_id
+        ):
+            return jsonify(
+                error="Não podes responder"
+            ), 403
 
-    # ================= CRIAR =================
+    # ==========================================
+    # CRIAR COMENTÁRIO
+    # ==========================================
+
     comment = Comment(
         id=str(uuid.uuid4()),
         post_id=post_id,
@@ -1343,59 +1138,53 @@ def comentar(post_id):
     )
 
     db.session.add(comment)
-    db.session.commit()
-
-    # ================= NOTIFICAÇÃO =================
-    if post.autor_id != user_id:
-
-        key = f"comment:{post_id}:{user_id}:{parent_id or 'root'}"
-
-        exists = Notification.query.filter_by(unique_key=key).first()
-
-        if not exists:
-            db.session.add(Notification(
-                id=str(uuid.uuid4()),
-                user_id=post.autor_id,
-                tipo="comment",
-                origem_id=user_id,
-                post_id=post_id,
-                comment_id=comment.id,
-                unique_key=key
-            ))
 
     db.session.commit()
+
+    # ==========================================
+    # RETORNO COMPLETO
+    # ==========================================
 
     return jsonify({
+
         "status": "ok",
+
         "comment": {
-            "id": comment.id,
+
+            "id": comment.id,  # ✅ ID COMENTÁRIO
+
             "post_id": comment.post_id,
+
             "texto": comment.texto,
+
             "imagem": comment.imagem,
+
             "parent_id": comment.parent_id,
+
             "autor": {
+
                 "id": autor.id,
+
                 "username": autor.username,
+
                 "avatar": autor.avatar
+
             }
+
         }
+
     })
-
-
-# ================= CURTIR COMENTÁRIO =================
+#================= CURTIR COMENTÁRIO =================
 @app.route("/comments/<comment_id>/like", methods=["POST"])
 def like_comment(comment_id):
-
     data = request.get_json(force=True)
-    user_id = data.get("user_id")
-
-    if not user_id:
-        return jsonify(error="User inválido"), 400
+    user_id = data["user_id"]
 
     comment = Comment.query.get(comment_id)
     if not comment:
         return jsonify(error="Comentário não encontrado"), 404
 
+    # 🚫 BLOQUEIO
     if existe_bloqueio(user_id, comment.autor_id):
         return jsonify(error="Não podes curtir este comentário"), 403
 
@@ -1404,41 +1193,31 @@ def like_comment(comment_id):
         user_id=user_id
     ).first()
 
-    # ================= UNLIKE =================
     if existente:
         db.session.delete(existente)
         db.session.commit()
         return jsonify(liked=False)
 
-    # ================= LIKE =================
     like = CommentLike(
         id=str(uuid.uuid4()),
         comment_id=comment_id,
         user_id=user_id
     )
-
     db.session.add(like)
 
-    # ================= NOTIFICAÇÃO =================
+    # 🔔 NOTIFICAÇÃO (apenas se não houver bloqueio)
     if comment.autor_id != user_id:
-
-        key = f"like_comment:{comment_id}:{user_id}"
-
-        exists = Notification.query.filter_by(unique_key=key).first()
-
-        if not exists:
-            db.session.add(Notification(
-                id=str(uuid.uuid4()),
-                user_id=comment.autor_id,
-                tipo="like_comment",
-                origem_id=user_id,
-                comment_id=comment_id,
-                unique_key=key
-            ))
+        db.session.add(Notification(
+            id=str(uuid.uuid4()),
+            user_id=comment.autor_id,
+            tipo="like_comment",
+            origem_id=user_id,
+            comment_id=comment_id
+        ))
 
     db.session.commit()
-
     return jsonify(liked=True)
+
 #================= DENUNCIAR POST =================
 @app.route("/posts/<post_id>/report", methods=["POST"])
 def report_post(post_id):
@@ -1512,78 +1291,50 @@ def report_user(user_id):
 
     return jsonify(status="ok")
 
-# ================= SEGUIR / DEIXAR DE SEGUIR =================
-@app.route("/users/<int:user_id>/follow", methods=["POST"])
+#================= SEGUIR / DEIXAR DE SEGUIR =================
+@app.route("/users/<user_id>/follow", methods=["POST"])
 def follow_user(user_id):
-
     data = request.get_json(force=True)
     follower_id = data["user_id"]
 
+    # ❌ Não pode seguir a si próprio
     if str(follower_id) == str(user_id):
         return jsonify(error="Não podes seguir a ti próprio"), 400
 
+    # 🚫 BLOQUEIO (em qualquer sentido)
     if existe_bloqueio(follower_id, user_id):
         return jsonify(error="Não podes seguir este utilizador"), 403
 
-    target = User.query.get(user_id)
-    if not target:
-        return jsonify(error="User não encontrado"), 404
-
-    # já segue?
-    existing_follow = Follow.query.filter_by(
+    existente = Follow.query.filter_by(
         follower_id=follower_id,
         followed_id=user_id
     ).first()
 
-    if existing_follow:
-        db.session.delete(existing_follow)
+    # 🔁 Deixar de seguir
+    if existente:
+        db.session.delete(existente)
         db.session.commit()
         return jsonify(following=False)
 
-    # 🟢 CONTA PÚBLICA → FOLLOW DIRETO
-    if not target.is_private:
-
-        db.session.add(Follow(
-            id=str(uuid.uuid4()),
-            follower_id=follower_id,
-            followed_id=user_id
-        ))
-
-        db.session.add(Notification(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            tipo="follow",
-            origem_id=follower_id
-        ))
-
-        db.session.commit()
-        return jsonify(following=True, mode="direct")
-
-    # 🔒 CONTA PRIVADA → FOLLOW REQUEST
-    existing_request = FollowRequest.query.filter_by(
-        from_user=follower_id,
-        to_user=user_id
-    ).first()
-
-    if existing_request:
-        return jsonify(status="already_requested")
-
-    db.session.add(FollowRequest(
-        from_user=follower_id,
-        to_user=user_id,
-        status="pending"
+    # ➕ Seguir
+    db.session.add(Follow(
+        id=str(uuid.uuid4()),
+        follower_id=follower_id,
+        followed_id=user_id
     ))
 
+    # 🔔 Notificação
     db.session.add(Notification(
         id=str(uuid.uuid4()),
         user_id=user_id,
-        tipo="follow_request",
+        tipo="follow",
         origem_id=follower_id
     ))
 
     db.session.commit()
+    return jsonify(following=True)
 
-    return jsonify(status="requested")
+
 #================= BLOQUEAR UTILIZADOR =================
 @app.route("/users/<user_id>/block", methods=["POST"])
 def block_user(user_id):
@@ -1754,111 +1505,82 @@ def listar_comentarios(post_id):
 #================= LISTAR NOTIFICAÇÕES =================
 @app.route("/notifications/<int:user_id>", methods=["GET"])
 def listar_notificacoes(user_id):
-
     notifs = Notification.query.filter_by(
         user_id=user_id
     ).order_by(Notification.data.desc()).all()
 
     res = []
-
     for n in notifs:
+        origem = User.query.get(n.origem_id)
 
-        origem = User.query.get(n.origem_id) if n.origem_id else None
-
-        # 🔒 ignorar bloqueados
+        # 🔒 IGNORAR NOTIFICAÇÕES DE UTILIZADORES BLOQUEADOS
         if origem and existe_bloqueio(user_id, origem.id):
             continue
 
         res.append({
             "id": n.id,
             "tipo": n.tipo,
-            "origem": {
-                "id": origem.id if origem else None,
-                "username": origem.username if origem else None
-            },
+            "origem": origem.username if origem else None,
             "post_id": n.post_id,
             "comment_id": n.comment_id,
             "lida": n.lida,
-            "data": n.data.isoformat()
+            "data": n.data.strftime("%d/%m/%Y %H:%M")
         })
 
     return jsonify(res)
+
 #================= MARCAR NOTIFICAÇÃO COMO LIDA =================
 @app.route("/notifications/<notif_id>/read", methods=["POST"])
 def marcar_notificacao_lida(notif_id):
-
     data = request.get_json(force=True)
     user_id = data.get("user_id")
 
     notif = Notification.query.get(notif_id)
-
     if not notif:
         return jsonify(error="Notificação não encontrada"), 404
 
+    # 🔒 Garantir que a notificação pertence ao utilizador
     if notif.user_id != user_id:
         return jsonify(error="Sem permissão"), 403
 
     notif.lida = True
     db.session.commit()
-
     return jsonify(status="ok")
-#================= PERFIL COMPLETO =================
+
 #================= PERFIL COMPLETO =================
 @app.route("/users/<int:user_id>/profile", methods=["GET"])
 def perfil_completo(user_id):
-
     viewer_id = request.args.get("viewer_id", type=int)
 
     user = User.query.get(user_id)
-
     if not user or user.apagado:
         return jsonify(error="Utilizador não encontrado"), 404
 
-    # 🔒 BLOQUEIO TOTAL
+    # 🔒 BLOQUEIO TOTAL (não vê perfil)
     if viewer_id and existe_bloqueio(viewer_id, user_id):
         return jsonify(error="Perfil indisponível"), 403
 
-    seguidores = Follow.query.filter_by(
-        followed_id=user_id
-    ).count()
-
-    seguindo = Follow.query.filter_by(
-        follower_id=user_id
-    ).count()
+    seguidores = Follow.query.filter_by(followed_id=user_id).count()
+    seguindo = Follow.query.filter_by(follower_id=user_id).count()
 
     segue = False
-    pending_request = False
-
     if viewer_id:
-
         segue = Follow.query.filter_by(
             follower_id=viewer_id,
             followed_id=user_id
         ).first() is not None
-
-        pending_request = FollowRequest.query.filter_by(
-            from_user=viewer_id,
-            to_user=user_id,
-            status="pending"
-        ).first() is not None
-
-    return jsonify({
-        "id": user.id,
-        "nome": user.nome,
-        "username": user.username,
-        "avatar": user.avatar,
-        "banner": user.banner,
-        "bio": user.bio,
-
-        "seguidores": seguidores,
-        "seguindo": seguindo,
-
-        "seguindo_este_user": segue,
-
-        # 🔥 NOVOS
-        "is_private": user.is_private,
-        "pending_request": pending_request
-    })
+        
+        return jsonify({
+            "id": user.id,
+            "nome": user.nome,
+            "username": user.username,
+            "avatar": user.avatar,
+            "banner": user.banner,
+            "bio": user.bio,
+            "seguidores": seguidores,
+            "seguindo": seguindo,
+            "seguindo_este_user": segue
+        })
 #================= POSTS DO PERFIL =================
 @app.route("/users/<int:user_id>/posts", methods=["GET"])
 def posts_perfil(user_id):
@@ -1888,83 +1610,68 @@ def posts_perfil(user_id):
     return jsonify(res)
 
 #================= ENVIAR MENSAGEM =================
-# ================= ENVIAR MENSAGEM =================
 @app.route("/messages/send", methods=["POST"])
 def enviar_mensagem():
 
     data = request.get_json(force=True)
 
-    from_user = int(data.get("from_user_id"))
-    to_user = int(data.get("to_user_id"))
+    from_user = data["from_user_id"]
+    to_user = data["to_user_id"]
     texto = (data.get("texto") or "").strip()
 
     if not texto:
         return jsonify(error="Mensagem vazia"), 400
 
-    # ================= USER CHECK =================
+    # 🔒 VER UTILIZADOR
     user = User.query.get(from_user)
+
     if not user:
         return jsonify(error="User não encontrado"), 404
 
+    # 🚫 UTILIZADOR BLOQUEADO/SUSPENSO
     if user.bloqueado:
-        return jsonify(error="Estás bloqueado e não podes enviar mensagens"), 403
+        return jsonify(
+            error="Estás bloqueado e não podes enviar mensagens"
+        ), 403
 
-    # ================= BLOQUEIO =================
+    # 🔒 BLOQUEIO TOTAL ENTRE USERS
     if existe_bloqueio(from_user, to_user):
-        return jsonify(error="Não é possível enviar mensagem a este utilizador"), 403
+        return jsonify(
+            error="Não é possível enviar mensagem a este utilizador"
+        ), 403
 
-    # ================= CRIAR MENSAGEM =================
     msg = Message(
         id=str(uuid.uuid4()),
         from_user_id=from_user,
         to_user_id=to_user,
-        texto=texto,
-        lida=False,
-        data=datetime.utcnow()
+        texto=texto
     )
 
     db.session.add(msg)
 
-    # ================= THREAD ID (AGRUPAMENTO) =================
-    thread_id = f"msg_{min(from_user, to_user)}_{max(from_user, to_user)}"
-
-    # ================= NOTIFICAÇÃO (UPDATE OU CREATE) =================
-    notif = Notification.query.filter_by(
+    # 🔔 NOTIFICAÇÃO
+    db.session.add(Notification(
+        id=str(uuid.uuid4()),
         user_id=to_user,
         tipo="message",
-        thread_id=thread_id
-    ).first()
-
-    if notif:
-        notif.data = datetime.utcnow()
-        notif.lida = False
-    else:
-        db.session.add(Notification(
-            id=str(uuid.uuid4()),
-            user_id=to_user,
-            tipo="message",
-            origem_id=from_user,
-            thread_id=thread_id,
-            data=datetime.utcnow(),
-            lida=False
-        ))
+        origem_id=from_user
+    ))
 
     db.session.commit()
 
-    return jsonify(status="ok", message_id=msg.id)
+    return jsonify(status="ok")
+    
 #================= CONVERSA =================
 @app.route("/messages/<int:user1>/<int:user2>", methods=["GET"])
 def conversa(user1, user2):
-
     msgs = Message.query.filter(
         db.or_(
             db.and_(Message.from_user_id == user1, Message.to_user_id == user2),
             db.and_(Message.from_user_id == user2, Message.to_user_id == user1)
         )
-    ).order_by(Message.data.asc()).all()
+    ).order_by(Message.data).all()
 
     res = []
-
     for m in msgs:
         res.append({
             "id": m.id,
@@ -1976,26 +1683,30 @@ def conversa(user1, user2):
         })
 
     return jsonify(res)
+
 #================= MENSAGENS NÃO LIDAS =================
 @app.route("/messages/unread/<int:user_id>", methods=["GET"])
 def mensagens_nao_lidas(user_id):
 
+    # Buscar mensagens não lidas
     msgs = Message.query.filter_by(
         to_user_id=user_id,
         lida=False
     ).all()
 
     total = 0
-
     for m in msgs:
+        # 🔒 ignora mensagens de utilizadores bloqueados
         if not existe_bloqueio(user_id, m.from_user_id):
             total += 1
 
     return jsonify(total=total)
+
 #================= MARCAR COMO LIDAS =================
 @app.route("/messages/read/<int:user_id>/<int:from_user>", methods=["POST"])
 def marcar_lidas(user_id, from_user):
 
+    # 🔒 BLOQUEIO → não mexe nas mensagens
     if existe_bloqueio(user_id, from_user):
         return jsonify(status="bloqueado")
 
@@ -2005,18 +1716,9 @@ def marcar_lidas(user_id, from_user):
         lida=False
     ).update({"lida": True})
 
-    # também limpar notificação da thread
-    thread_id = f"msg_{min(user_id, from_user)}_{max(user_id, from_user)}"
-
-    Notification.query.filter_by(
-        user_id=user_id,
-        tipo="message",
-        thread_id=thread_id
-    ).update({"lida": True})
-
     db.session.commit()
-
     return jsonify(status="ok")
+
 # ================= OBTER PERFIL =================
 @app.route("/users/<int:user_id>", methods=["GET"])
 def obter_user(user_id):
@@ -2328,6 +2030,10 @@ def servir_banner(filename):
 
     return "Banner não encontrado", 404
 
+# =========================================================
+# ADMIN
+# =========================================================
+
 @app.route("/admin/promote", methods=["POST"])
 def promote_user():
 
@@ -2339,6 +2045,7 @@ def promote_user():
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
 
+    # 🔥 FORÇAR INT SEMPRE
     try:
         user_id = int(target)
     except:
@@ -2349,38 +2056,11 @@ def promote_user():
     if not user:
         return jsonify(error="User não encontrado"), 404
 
-    if user.role == "admin":
-        return jsonify(error="Já é admin"), 400
-
-    # =========================
-    # 🔥 GERAR ADMIN CODE (#0001)
-    # =========================
-
-    last_admin = User.query.filter(User.role == "admin")\
-        .order_by(User.id.desc()).first()
-
-    if last_admin and last_admin.admin_code:
-        last_number = int(last_admin.admin_code.replace("#", ""))
-        new_number = last_number + 1
-    else:
-        new_number = 1
-
-    admin_code = f"#{new_number:04d}"
-
-    # =========================
-    # PROMOTE
-    # =========================
-
     user.role = "admin"
-    user.admin_code = admin_code
-
     db.session.commit()
 
-    return jsonify(
-        status="ok",
-        msg=f"{user.username} agora é admin {admin_code}",
-        admin_code=admin_code
-    )
+    return jsonify(status="ok", msg=f"{user.username} agora é admin")
+    
 
 # =========================================================
 # REMOVER ADMIN
