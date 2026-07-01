@@ -2068,12 +2068,14 @@ def servir_banner(filename):
 
 @app.route("/admin/promote", methods=["POST"])
 def promote_user():
-
-    print("SESSION:", dict(session))
-
+    
     data = request.get_json(force=True)
-
-    admin_id = session.get("user_id")
+    
+    admin_id = data.get("admin_id")
+    
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+    
     target = data.get("user_id")
 
     if not is_admin(admin_id):
@@ -2095,7 +2097,6 @@ def promote_user():
 
     return jsonify(status="ok", msg=f"{user.username} agora é admin")
     
-
 # =========================================================
 # REMOVER ADMIN
 # =========================================================
@@ -2105,7 +2106,7 @@ def demote_user():
 
     data = request.get_json(force=True)
 
-    admin_id = session.get("user_id")
+    admin_id = data.get("admin_id")
     target_id = data.get("user_id")
 
     if not is_admin(admin_id):
@@ -2117,7 +2118,7 @@ def demote_user():
         return jsonify(error="User não encontrado"), 404
 
     # impedir remover a si próprio
-    if user.id == admin_id:
+    if user.id == int(admin_id):
         return jsonify(
             error="Não podes remover o teu próprio admin"
         ), 403
@@ -2127,8 +2128,6 @@ def demote_user():
     db.session.commit()
 
     return jsonify(status="ok")
-
-
 # =========================================================
 # LOGS ADMIN
 # =========================================================
@@ -2201,7 +2200,7 @@ def admin_delete_post(post_id):
 
     data = request.get_json(force=True)
 
-    admin_id = session.get("user_id")
+    admin_id = data.get("admin_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2227,12 +2226,10 @@ def admin_delete_post(post_id):
     ).delete()
 
     db.session.delete(post)
-
     db.session.commit()
 
     return jsonify(status="ok")
-
-
+    
 # =========================================================
 # ADMIN APAGAR COMENTÁRIO
 # =========================================================
@@ -2242,7 +2239,7 @@ def admin_delete_comment(comment_id):
 
     data = request.get_json(force=True)
 
-    admin_id = session.get("user_id")
+    admin_id = data.get("admin_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2252,18 +2249,13 @@ def admin_delete_comment(comment_id):
     if not comment:
         return jsonify(error="Comentário não encontrado"), 404
 
-    # apagar likes comentário
-    CommentLike.query.filter_by(
-        comment_id=comment.id
-    ).delete()
+    CommentLike.query.filter_by(comment_id=comment.id).delete()
 
     db.session.delete(comment)
-
     db.session.commit()
 
     return jsonify(status="ok")
-
-
+    
 # =========================================================
 # BANIR USER
 # =========================================================
@@ -2273,11 +2265,8 @@ def admin_ban_user(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = session.get("user_id")
-    motivo = data.get(
-        "motivo",
-        "Violação das regras"
-    )
+    admin_id = data.get("admin_id")
+    motivo = data.get("motivo", "Violação das regras")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2391,7 +2380,7 @@ def admin_unban_user(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = session.get("user_id")
+    admin_id = data.get("admin_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2408,8 +2397,7 @@ def admin_unban_user(user_id):
     db.session.commit()
 
     return jsonify(status="ok")
-
-
+    
 # =========================================================
 # BLOQUEAR USER
 # =========================================================
@@ -2419,8 +2407,7 @@ def admin_block_user(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = session.get("user_id")
-
+    admin_id = data.get("admin_id")
     dias = int(data.get("dias", 7))
 
     if not is_admin(admin_id):
@@ -2439,8 +2426,7 @@ def admin_block_user(user_id):
     db.session.commit()
 
     return jsonify(status="ok")
-
-
+    
 # =========================================================
 # DESBLOQUEAR USER
 # =========================================================
@@ -2450,7 +2436,7 @@ def admin_unblock_user(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = session.get("user_id")
+    admin_id = data.get("admin_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2466,8 +2452,7 @@ def admin_unblock_user(user_id):
     db.session.commit()
 
     return jsonify(status="ok")
-
-
+    
 # =========================================================
 # SUSPENDER IA
 # =========================================================
@@ -2477,7 +2462,7 @@ def suspend_ia(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = session.get("user_id")
+    admin_id = data.get("admin_id")
     tempo = data.get("horas")  # vem tipo "3 horas"
 
     if not is_admin(admin_id):
@@ -2545,7 +2530,7 @@ def admin_unsuspend_ia(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = session.get("user_id")
+    admin_id = data.get("admin_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -2560,8 +2545,7 @@ def admin_unsuspend_ia(user_id):
     db.session.commit()
 
     return jsonify(status="ok")
-
-
+    
 # =========================================================
 # BANIR IA PERMANENTE
 # =========================================================
@@ -2596,7 +2580,7 @@ def admin_unban_ia(user_id):
 
     data = request.get_json(force=True)
 
-    admin_id = session.get("user_id")
+    admin_id = data.get("admin_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
