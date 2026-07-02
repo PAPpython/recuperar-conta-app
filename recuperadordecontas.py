@@ -3313,15 +3313,15 @@ def send_verification():
     user = User.query.filter_by(email=email).first()
 
     if not user:
+        # Se o utilizador não existe, não expomos isso, dizemos OK para segurança
         return jsonify({"status": "ok"}), 200
 
-    # Verifica se já está verificado (usando getattr seguro caso mude o nome)
+    # Verifica se já está verificado
     if getattr(user, "email_verificado", False) or getattr(user, "ativo", False) == True:
         return jsonify({"status": "ok"}), 200
 
     now = datetime.utcnow()
 
-    # Se colunas de tempo não existirem, usamos um try/except para não crashar a rota
     try:
         if user.last_verification_request:
             diff = now - user.last_verification_request
@@ -3340,23 +3340,25 @@ def send_verification():
         user.email_verification_attempts += 1
         user.last_verification_request = now
     except AttributeError:
-        # Se as colunas de estatísticas não existirem na DB, o código ignora e avança com segurança
         pass
 
+    # 🔥 GERAR O TOKEN DIRETAMENTE AQUI
     token = secrets.token_hex(16)
     
-    # 🔥 USAR A COLUNA REAL QUE EXISTE NA TUA DB!
+    # Gravar na coluna que existe na tua base de dados
     user.reactivation_code = token
 
+    # 🔥 OBRIGATÓRIO: Forçar a gravação na base de dados antes do return!
+    db.session.add(user)
     db.session.commit()
 
+    # Garantir que passamos o token gerado explicitamente no JSON de resposta
     return jsonify({
         "status": "ok",
-        "token": token,
+        "token": str(token),  # Envia o token real em string para o Tkinter
         "username": user.username
     })
-
-
+    
 @app.route("/verify-email/<token>")
 def verify_email(token):
     from datetime import datetime
