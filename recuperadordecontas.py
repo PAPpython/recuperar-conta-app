@@ -3299,32 +3299,11 @@ def check_session():
     # ✅ sessão válida
     return jsonify(active=True)
 
-@app.route("/verify-email/<token>")
-def verify_email(token):
-
-    user = User.query.filter_by(email_token=token).first()
-
-    # ❌ token não existe ou já foi apagado
-    if not user:
-        return render_template("email_invalid.html")
-
-    # ❌ já foi verificado antes (segurança extra)
-    if user.email_verificado:
-        return render_template("email_invalid.html")
-
-    # ✔️ primeira verificação válida
-    user.email_verificado = True
-    user.email_token = None
-
-    db.session.commit()
-
-    return render_template("email_verified.html")
-    
 @app.route("/send-verification", methods=["POST"])
 def send_verification():
     import secrets
     from datetime import datetime, timedelta
-    
+
     data = request.get_json(force=True)
     email = data.get("email")
 
@@ -3334,31 +3313,70 @@ def send_verification():
     user = User.query.filter_by(email=email).first()
 
     if not user:
-        # Resposta de segurança genérica se o e-mail não existir
-        return jsonify({"status": "error", "msg": "Utilizador não encontrado"}), 404
+        return jsonify({"status": "ok"}), 200
 
-    # Se já estiver verificado, avisa logo o Tkinter
-    if getattr(user, "email_verificado", False):
-        return jsonify({"status": "error", "msg": "Este email já se encontra verificado!"}), 400
+    # Verifica se já está verificado (usando getattr seguro caso mude o nome)
+    if getattr(user, "email_verificado", False) or getattr(user, "ativo", False) == True:
+        return jsonify({"status": "ok"}), 200
 
-    # Gerar token seguro de 32 caracteres hex
+    now = datetime.utcnow()
+
+    # Se colunas de tempo não existirem, usamos um try/except para não crashar a rota
+    try:
+        if user.last_verification_request:
+            diff = now - user.last_verification_request
+            if diff < timedelta(seconds=30):
+                return jsonify({
+                    "status": "error",
+                    "msg": "Aguarda 30 segundos antes de reenviar"
+                }), 429
+
+        if user.email_verification_attempts >= 5:
+            return jsonify({
+                "status": "error",
+                "msg": "Limite de tentativas atingido"
+            }), 429
+
+        user.email_verification_attempts += 1
+        user.last_verification_request = now
+    except AttributeError:
+        # Se as colunas de estatísticas não existirem na DB, o código ignora e avança com segurança
+        pass
+
     token = secrets.token_hex(16)
     
-    # Guarda na coluna real que a tua rota /verify-email lê!
-    user.email_token = token
-    
-    try:
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"status": "error", "msg": "Erro ao salvar na base de dados"}), 500
+    # 🔥 USAR A COLUNA REAL QUE EXISTE NA TUA DB!
+    user.reactivation_code = token
 
-    # Retorna exatamente o que o teu worker do Tkinter espera ler!
+    db.session.commit()
+
     return jsonify({
         "status": "ok",
         "token": token,
         "username": user.username
     })
+
+
+@app.route("/verify-email/<token>")
+def verify_email(token):
+    
+    # 🔥 Procura pela coluna real que existe no teu modelo User
+    user = User.query.filter_by(reactivation_code=token).first()
+
+    # ❌ Token inválido ou não encontrado
+    if not user:
+        return render_template("email_invalid.html")
+
+    # ✔ Ativa o e-mail e a conta
+    if hasattr(user, "email_verificado"):
+        user.email_verificado = True
+        
+    user.ativo = True
+    user.reactivation_code = None  # Limpa o token para não ser reutilizado
+
+    db.session.commit()
+
+    return render_template("email_verified.html")
     
 @app.route("/check-email", methods=["POST"])
 def check_email_exists():
