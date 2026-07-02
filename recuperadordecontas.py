@@ -169,29 +169,27 @@ class Ticket(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
 
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    admin_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
-    admin_id = db.Column(db.Integer, nullable=True)
-
-    title = db.Column(db.String(200))
-    priority = db.Column(db.String(30))
+    title = db.Column(db.String(200), nullable=False)
+    priority = db.Column(db.String(30), default="normal")
     status = db.Column(db.String(20), default="open")
 
-    rating = db.Column(db.Integer)
+    rating = db.Column(db.Integer, nullable=True)
 
     close_pending = db.Column(db.Boolean, default=False)
-    close_requested_by = db.Column(db.String(20))
+    close_requested_by = db.Column(db.String(20), nullable=True)
 
 class TicketMessage(db.Model):
     __tablename__ = "ticket_messages"
 
     id = db.Column(db.Integer, primary_key=True)
 
-    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"))
+    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=False)
 
-    sender = db.Column(db.String(20))
-
-    message = db.Column(db.Text)
+    sender = db.Column(db.String(20), nullable=False)
+    message = db.Column(db.Text, nullable=False)
 
 class Like(db.Model):
     __tablename__ = "likes"
