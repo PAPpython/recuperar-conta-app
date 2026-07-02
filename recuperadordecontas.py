@@ -3381,17 +3381,31 @@ def check_email_exists():
         "exists": user is not None
     })
 
-@app.route("/get-user-data", methods=["POST"])
-def get_user_data():
+# =======================================================
+# 🔥 ROTA DE SUPORTE PARA O TKINTER (APENAS ESTA)
+# =======================================================
 
-    user_id = request.json.get("user_id")
+@app.route("/get-user-data", methods=["POST"])
+def tk_get_user_data():  # Nome alterado para evitar colisões
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id")
+
+    if not user_id:
+        return {"status": "error", "msg": "ID de utilizador inválido"}, 400
 
     user = User.query.get(user_id)
-
     if not user:
-        return {"status": "error"}
+        return {"status": "error", "msg": "Utilizador não encontrado"}, 404
 
     perguntas = json.loads(user.perguntas_recuperacao or "[]")
+
+    # Mapear as perguntas de forma limpa para o Tkinter ler
+    lista_perguntas = []
+    for p in perguntas:
+        lista_perguntas.append({
+            "pergunta": p.get("pergunta", ""),
+            "resposta": "Definida"  # Não expõe o hash
+        })
 
     return {
         "status": "ok",
@@ -3399,9 +3413,9 @@ def get_user_data():
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "email_recuperacao": user.email_recuperacao,
+            "email_recuperacao": user.email_recuperacao or "Não definido",
             
-            # 🔥 ADICIONA ESTA LINHA AQUI:
+            # 🔥 Passa o estado real de verificação do teu modelo
             "email_verificado": getattr(user, "email_verificado", False),
             
             "role": user.role,
@@ -3409,7 +3423,7 @@ def get_user_data():
             "banido": user.banido,
             "bloqueado": user.bloqueado,
             "avisos": user.avisos,
-            "perguntas": perguntas
+            "perguntas": lista_perguntas
         }
     }
     
