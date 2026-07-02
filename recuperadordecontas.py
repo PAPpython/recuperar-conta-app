@@ -4711,7 +4711,10 @@ def debug_admin():
 @app.route("/ping")
 def ping():
     return "OK"
-
+    
+# ==========================================
+# PAINEL DO UTILIZADOR - VISTA DO TICKET
+# ==========================================
 @app.route("/ticket/<int:ticket_id>")
 def view_ticket(ticket_id):
 
@@ -4728,209 +4731,278 @@ def view_ticket(ticket_id):
 
     for m in messages:
 
-        admin_msg = m.sender == "admin"
+        if m.sender == "admin":
+            nome = admin.username if admin else "Administrador"
+            cor = "#2563eb"
+            borda = "#60a5fa"
+        else:
+            nome = user.username if user else "Utilizador"
+            cor = "#1e293b"
+            borda = "#22c55e"
 
         html_messages += f"""
+
         <div style="
-            margin-bottom:12px;
-            display:flex;
-            justify-content:{'flex-end' if admin_msg else 'flex-start'};
+            margin-bottom:15px;
+            padding:12px;
+            background:{cor};
+            border-left:5px solid {borda};
+            border-radius:10px;
         ">
 
-            <div style="
-                max-width:70%;
-                background:{'#2563eb' if admin_msg else '#1e293b'};
-                padding:12px;
-                border-radius:12px;
-            ">
+            <b>{nome}</b>
 
-                <b style="color:{'#22c55e' if admin_msg else '#60a5fa'}">
-                    {"ADMIN" if admin_msg else user.username}
-                </b>
-
-                <div style="margin-top:6px;">
-                    {m.message}
-                </div>
-
+            <div style="margin-top:8px;white-space:pre-wrap;">
+                {m.message}
             </div>
 
         </div>
+
         """
 
     is_closed = ticket.status == "closed"
     close_pending = getattr(ticket, "close_pending", False)
 
     html = f"""
+
 <!DOCTYPE html>
+
 <html>
 
 <head>
+
 <meta charset="UTF-8">
+
 <title>Ticket #{ticket.id}</title>
+
 </head>
 
-<body style="
-margin:0;
-background:#0f172a;
+<body style="margin:0;background:#0f172a;color:white;font-family:Arial;">
+
+<div style="display:flex;height:100vh;">
+
+<div style="
+width:320px;
+background:#111827;
+padding:20px;
+overflow:auto;
+border-right:1px solid #1f2937;
+">
+
+<h2>🎫 Ticket #{ticket.id}</h2>
+
+<hr>
+
+<h3>Informações</h3>
+
+<p><b>Status</b><br>{"🔴 FECHADO" if is_closed else "🟢 ABERTO"}</p>
+
+<p><b>Prioridade</b><br>{ticket.priority.upper()}</p>
+
+<p><b>Admin Responsável</b><br>{admin.username if admin else "Ainda não atribuído"}</p>
+
+<hr>
+
+<a href="/posts"
+style="
+display:block;
+padding:12px;
+background:#334155;
 color:white;
-font-family:Arial;
+text-align:center;
+border-radius:8px;
+text-decoration:none;
+margin-bottom:10px;
 ">
-
-<div style="
-max-width:900px;
-margin:auto;
-padding:30px;
-">
-
-<h1>🎫 Ticket #{ticket.id}</h1>
-
-<div style="
-background:#111827;
-padding:20px;
-border-radius:12px;
-">
-
-<p><b>Assunto:</b> {ticket.title}</p>
-
-<p><b>Prioridade:</b> {ticket.priority.upper()}</p>
-
-<p><b>Status:</b> {"🔴 FECHADO" if is_closed else "🟢 ABERTO"}</p>
-
-<p><b>Admin Responsável:</b> {admin.username if admin else "Ainda não atribuído"}</p>
-
-</div>
-
-<br>
-
-<div id="chat" style="
-background:#111827;
-padding:20px;
-border-radius:12px;
-height:420px;
-overflow-y:auto;
-">
-
-{html_messages}
-
-</div>
+⬅ Voltar ao Início
+</a>
 
 """
+
+    # ===========================
+    # BOTÕES DO TICKET (PAINEL ESQUERDO)
+    # ===========================
 
     if not is_closed:
-
-        html += f"""
-
-<br>
-
-<form method="POST" action="/ticket/{ticket.id}/reply">
-
-<input
-type="hidden"
-name="sender"
-value="user">
-
-<textarea
-name="message"
-required
-placeholder="Escreva a sua resposta..."
-style="
-width:100%;
-height:120px;
-border-radius:10px;
-padding:10px;
-box-sizing:border-box;
-resize:none;
-"></textarea>
-
-<br><br>
-
-<button
-style="
-width:100%;
-padding:12px;
-background:#22c55e;
-border:none;
-border-radius:10px;
-font-size:16px;
-font-weight:bold;
-cursor:pointer;
-">
-Enviar mensagem
-</button>
-
-</form>
-
-"""
 
         if close_pending:
 
             html += f"""
-<br>
+
 <form method="POST" action="/ticket/{ticket.id}/confirm-close">
 
 <button
 style="
 width:100%;
 padding:12px;
+margin-top:10px;
 background:#22c55e;
-color:black;
 border:none;
-border-radius:10px;
+border-radius:8px;
+color:black;
 font-weight:bold;
 cursor:pointer;
 ">
-✔ Confirmar Fecho do Ticket
+
+✔ Confirmar Fecho
+
 </button>
 
 </form>
+
 """
+
         else:
 
             html += f"""
-<br>
+
 <form method="POST" action="/ticket/{ticket.id}/request-close/user">
 
 <button
 style="
 width:100%;
 padding:12px;
+margin-top:10px;
 background:#ef4444;
-color:white;
 border:none;
-border-radius:10px;
+border-radius:8px;
+color:white;
 cursor:pointer;
 ">
-Pedir fecho do ticket
+
+🔒 Pedir Fecho
+
 </button>
 
 </form>
+
+"""
+
+    # FECHA O PAINEL ESQUERDO
+    html += """
+</div>
+
+<div
+style="
+flex:1;
+display:flex;
+flex-direction:column;
+background:#0f172a;
+">
+
+<div
+style="
+padding:18px;
+background:#111827;
+border-bottom:1px solid #1f2937;
+font-size:22px;
+font-weight:bold;
+">
+
+💬 Conversa do Ticket
+
+</div>
+
+<div
+id="chat"
+style="
+flex:1;
+overflow:auto;
+padding:20px;
+">
+
+"""
+
+    html += html_messages
+
+    html += """
+
+</div>
+
+"""
+    # ===========================
+    # FORMULÁRIO DE RESPOSTA OU AVALIAÇÃO
+    # ===========================
+    if not is_closed:
+
+        html += f"""
+
+<div style="
+padding:20px;
+background:#111827;
+border-top:1px solid #1f2937;
+">
+
+<form method="POST" action="/ticket/{ticket.id}/reply">
+
+<input type="hidden" name="sender" value="user">
+
+<textarea
+name="message"
+required
+placeholder="Escreva uma resposta..."
+style="
+width:100%;
+height:110px;
+padding:12px;
+border-radius:10px;
+resize:none;
+box-sizing:border-box;
+">
+</textarea>
+
+<button
+style="
+margin-top:10px;
+width:100%;
+padding:14px;
+background:#2563eb;
+border:none;
+border-radius:10px;
+color:white;
+cursor:pointer;
+">
+📨 Responder
+</button>
+
+</form>
+
+</div>
+
 """
 
     else:
 
         html += f"""
 
-<br>
 <div style="
 padding:20px;
+background:#111827;
+border-top:1px solid #1f2937;
+">
+
+<div style="
+padding:15px;
 background:#7f1d1d;
 border-radius:10px;
 text-align:center;
+font-weight:bold;
+margin-bottom:15px;
 ">
-<h2 style="margin:0;color:#ef4444;">🔒 Este ticket está fechado.</h2>
+🔒 Este ticket encontra-se fechado.
 </div>
 
-<br>
 <div style="
-background:#111827;
+background:#1e293b;
 padding:20px;
-border-radius:12px;
+border-radius:10px;
 text-align:center;
+border:1px solid #334155;
 ">
-<h3>⭐ Avaliação do Atendimento</h3>
-<p>Como classificaria o suporte recebido neste ticket?</p>
+<h3 style="margin-top:0;">⭐ Avaliação do Atendimento</h3>
+<p style="color:#94a3b8;">Como classifica o suporte recebido neste ticket?</p>
 <form method="POST" action="/ticket/{ticket.id}/rate">
-    <select name="rating" style="padding:10px; border-radius:5px; background:#1e293b; color:white; border:1px solid #334155;">
+    <select name="rating" style="padding:10px; border-radius:5px; background:#0f172a; color:white; border:1px solid #334155; width:200px; font-size:14px;">
         <option value="5">⭐⭐⭐⭐⭐ Excelente</option>
         <option value="4">⭐⭐⭐⭐ Bom</option>
         <option value="3">⭐⭐⭐ Regular</option>
@@ -4938,15 +5010,19 @@ text-align:center;
         <option value="1">⭐ Terrível</option>
     </select>
     <br><br>
-    <button style="padding:10px 20px; background:#2563eb; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">
+    <button style="padding:12px 24px; background:#22c55e; color:black; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">
         Submeter Avaliação
     </button>
 </form>
 </div>
 
+</div>
+
 """
 
     html += f"""
+
+</div>
 
 </div>
 
@@ -4986,13 +5062,15 @@ atualizarChat();
     return html
 
 
+# ==========================================
+# RETORNO DENTRO DO CHAT AUTOMÁTICO (USER)
+# ==========================================
 @app.route("/ticket/<int:ticket_id>/messages")
 def ticket_messages(ticket_id):
 
     ticket = Ticket.query.get_or_404(ticket_id)
 
     user = User.query.get(ticket.user_id)
-
     admin = User.query.get(ticket.admin_id) if ticket.admin_id else None
 
     messages = TicketMessage.query.filter_by(
@@ -5003,26 +5081,26 @@ def ticket_messages(ticket_id):
 
     for m in messages:
 
-        admin_msg = m.sender == "admin"
+        if m.sender == "admin":
+            nome = admin.username if admin else "Administrador"
+            cor = "#2563eb"
+            borda = "#60a5fa"
+        else:
+            nome = user.username if user else "Utilizador"
+            cor = "#1e293b"
+            borda = "#22c55e"
 
         html += f"""
 <div style="
-margin-bottom:12px;
-display:flex;
-justify-content:{'flex-end' if admin_msg else 'flex-start'};
-">
-<div style="
-max-width:70%;
-background:{'#2563eb' if admin_msg else '#1e293b'};
+margin-bottom:15px;
 padding:12px;
-border-radius:12px;
+background:{cor};
+border-left:5px solid {borda};
+border-radius:10px;
 ">
-<b style="color:{'#22c55e' if admin_msg else '#60a5fa'}">
-{"ADMIN" if admin_msg else user.username}
-</b>
-<div style="margin-top:6px;white-space:pre-wrap;">
+<b>{nome}</b>
+<div style="margin-top:8px;white-space:pre-wrap;">
 {m.message}
-</div>
 </div>
 </div>
 """
