@@ -4163,7 +4163,49 @@ def user_tickets():
 
     user = User.query.get(user_id)
     if not user:
-        return "User não encontrado", 404
+        return f"""
+        <!DOCTYPE html>
+        <html lang="pt">
+        <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AERON - Erro</title>
+        <style>
+        * {{ margin:0; padding:0; box-sizing:border-box; }}
+        body {{
+            height:100vh;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            font-family:"Segoe UI",sans-serif;
+            background:linear-gradient(135deg, #020617 0%, #0f172a 35%, #1e3a8a 70%, #3b82f6 100%);
+        }}
+        .card {{
+            width:700px; max-width:90%;
+            background:rgba(15,23,42,.92);
+            border:1px solid rgba(239,68,68,.25); /* Vermelho suave para erro */
+            border-radius:24px; padding:60px; text-align:center;
+            backdrop-filter:blur(12px);
+            box-shadow:0 0 60px rgba(239,68,68,.15);
+        }}
+        .logo {{ width:180px; max-width:80%; margin-bottom:25px; }}
+        .icon {{ font-size:72px; margin-bottom:15px; }}
+        h1 {{ color:white; margin-bottom:20px; font-size:36px; }}
+        p {{ color:#cbd5e1; font-size:18px; line-height:1.8; }}
+        .msg {{ margin-top:15px; color:#f87171; font-weight:bold; }}
+        </style>
+        </head>
+        <body>
+        <div class="card">
+            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" class="logo" alt="AERON">
+            <div class="icon">❌</div>
+            <h1>Utilizador não encontrado</h1>
+            <p>Não foi possível associar este pedido de suporte a uma conta ativa.</p>
+            <p class="msg">Por favor, verifica os teus dados de acesso e tenta novamente.</p>
+        </div>
+        </body>
+        </html>
+        """, 404
 
     tickets = Ticket.query.filter_by(user_id=user_id).order_by(Ticket.id.desc()).all()
 
@@ -4204,7 +4246,7 @@ def user_tickets():
     </body>
     </html>
     """
-
+    
 @app.route("/suporte/new", methods=["GET", "POST"])
 def create_user_ticket():
 
@@ -4212,11 +4254,86 @@ def create_user_ticket():
 
     user = User.query.get(user_id)
 
+    # Reutiliza o estilo se o user_id for inválido aqui também
     if not user:
-        return "User não encontrado", 404
+        return f"""
+        <!DOCTYPE html>
+        <html lang="pt">
+        <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AERON - Erro</title>
+        <style>
+        * {{ margin:0; padding:0; box-sizing:border-box; }}
+        body {{
+            height:100vh; display:flex; justify-content:center; align-items:center;
+            font-family:"Segoe UI",sans-serif;
+            background:linear-gradient(135deg, #020617 0%, #0f172a 35%, #1e3a8a 70%, #3b82f6 100%);
+        }}
+        .card {{
+            width:700px; max-width:90%; background:rgba(15,23,42,.92);
+            border:1px solid rgba(239,68,68,.25); border-radius:24px; padding:60px; text-align:center;
+            backdrop-filter:blur(12px); box-shadow:0 0 60px rgba(239,68,68,.15);
+        }}
+        .logo {{ width:180px; max-width:80%; margin-bottom:25px; }}
+        .icon {{ font-size:72px; margin-bottom:15px; }}
+        h1 {{ color:white; margin-bottom:20px; font-size:36px; }}
+        p {{ color:#cbd5e1; font-size:18px; line-height:1.8; }}
+        .msg {{ margin-top:15px; color:#f87171; font-weight:bold; }}
+        </style>
+        </head>
+        <body>
+        <div class="card">
+            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" class="logo" alt="AERON">
+            <div class="icon">❌</div>
+            <h1>Utilizador não encontrado</h1>
+            <p>O ID de utilizador fornecido é inválido.</p>
+            <p class="msg">Acede ao suporte através da tua aplicação oficial.</p>
+        </div>
+        </body>
+        </html>
+        """, 404
 
+    # 🔥 ERRO ESTILIZADO SE FOR ADMINISTRADOR A TENTAR CRIAR TICKET
     if user.role == "admin":
-        return "Admins não podem criar tickets", 403
+        return f"""
+        <!DOCTYPE html>
+        <html lang="pt">
+        <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AERON - Permissão Negada</title>
+        <style>
+        * {{ margin:0; padding:0; box-sizing:border-box; }}
+        body {{
+            height:100vh; display:flex; justify-content:center; align-items:center;
+            font-family:"Segoe UI",sans-serif;
+            background:linear-gradient(135deg, #020617 0%, #0f172a 35%, #1e3a8a 70%, #3b82f6 100%);
+        }}
+        .card {{
+            width:700px; max-width:90%; background:rgba(15,23,42,.92);
+            border:1px solid rgba(245,158,11,.25); /* Laranja de aviso */
+            border-radius:24px; padding:60px; text-align:center;
+            backdrop-filter:blur(12px); box-shadow:0 0 60px rgba(245,158,11,.15);
+        }}
+        .logo {{ width:180px; max-width:80%; margin-bottom:25px; }}
+        .icon {{ font-size:72px; margin-bottom:15px; }}
+        h1 {{ color:white; margin-bottom:20px; font-size:36px; }}
+        p {{ color:#cbd5e1; font-size:18px; line-height:1.8; }}
+        .msg {{ margin-top:15px; color:#fbbf24; font-weight:bold; }}
+        </style>
+        </head>
+        <body>
+        <div class="card">
+            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" class="logo" alt="AERON">
+            <div class="icon">⚠️</div>
+            <h1>Acesso Restrito</h1>
+            <p>Os administradores não possuem permissão para abrir novos tickets de suporte.</p>
+            <p class="msg">Utiliza o Painel de Controlo para gerir os pedidos existentes.</p>
+        </div>
+        </body>
+        </html>
+        """, 403
 
     if request.method == "POST":
 
@@ -4243,46 +4360,28 @@ def create_user_ticket():
         db.session.add(msg)
         db.session.commit()
 
-        # 🔥 IMPORTANTE: manda para página de sucesso (não direto para /ticket)
         return redirect(f"/suporte/sucesso/{ticket.id}")
 
     return f"""
     <html>
     <body style="background:#0f172a;color:white;font-family:Arial;">
-
     <div style="max-width:600px;margin:auto;margin-top:60px;">
-
         <h2>🆘 Criar Ticket</h2>
-
         <form method="POST">
-
-            <input name="title" placeholder="Assunto do Ticket" required
-                style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;">
-
-            <select name="priority"
-                style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;">
+            <input name="title" placeholder="Assunto do Ticket" required style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;">
+            <select name="priority" style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;">
                 <option value="urgent">🔴 Urgente</option>
                 <option value="high">🟠 Alta</option>
                 <option value="normal" selected>🟡 Normal</option>
                 <option value="low">🟢 Baixa</option>
             </select>
-
-            <textarea name="message" required placeholder="Descreve o problema..."
-                style="width:100%;height:120px;padding:10px;border-radius:8px;"></textarea>
-
-            <button style="width:100%;margin-top:10px;padding:12px;
-                background:#22c55e;color:black;border:none;border-radius:8px;font-weight:bold;">
+            <textarea name="message" required placeholder="Descreve o problema..." style="width:100%;height:120px;padding:10px;border-radius:8px;"></textarea>
+            <button style="width:100%;margin-top:10px;padding:12px; background:#22c55e;color:black;border:none;border-radius:8px;font-weight:bold;">
                 🎫 Enviar Ticket
             </button>
-
         </form>
-
-        <a href="/suporte?user_id={user_id}" style="display:block;margin-top:15px;text-align:center;color:white;">
-            Voltar
-        </a>
-
+        <a href="/suporte?user_id={user_id}" style="display:block;margin-top:15px;text-align:center;color:white;">Voltar</a>
     </div>
-
     </body>
     </html>
     """
