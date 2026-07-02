@@ -3430,15 +3430,21 @@ def tk_get_user_data():  # Nome alterado para evitar colisões
     if not user:
         return {"status": "error", "msg": "Utilizador não encontrado"}, 404
 
+    # 🔥 Força o Flask a ler os dados mais recentes diretamente da BD (evita cache antigo)
+    db.session.refresh(user)
+
     perguntas = json.loads(user.perguntas_recuperacao or "[]")
 
-    # Mapear as perguntas de forma limpa para o Tkinter ler
+    # Mapear as perguntas de forma limpa enviando a resposta real para o e-mail do Tkinter
     lista_perguntas = []
     for p in perguntas:
         lista_perguntas.append({
             "pergunta": p.get("pergunta", ""),
-            "resposta": "Definida"  # Não expõe o hash
+            "resposta": p.get("resposta", "Não definida")  # 🔥 Agora passa a resposta real!
         })
+
+    # Verifica se a conta está verificada através do campo email_verificado OU do campo ativo
+    esta_verificado = getattr(user, "email_verificado", False) or getattr(user, "ativo", False)
 
     return {
         "status": "ok",
@@ -3448,8 +3454,8 @@ def tk_get_user_data():  # Nome alterado para evitar colisões
             "email": user.email,
             "email_recuperacao": user.email_recuperacao or "Não definido",
             
-            # 🔥 Passa o estado real de verificação do teu modelo
-            "email_verificado": getattr(user, "email_verificado", False),
+            # 🔥 Passa o estado real de verificação validado de ambos os campos
+            "email_verificado": esta_verificado,
             
             "role": user.role,
             "moedas": user.moedas,
