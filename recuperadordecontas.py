@@ -3331,39 +3331,26 @@ def send_verification():
     user = User.query.filter_by(email=email).first()
 
     if not user:
-        return jsonify({"status": "ok"}), 200
+        # Resposta de segurança genérica se o e-mail não existir
+        return jsonify({"status": "error", "msg": "Utilizador não encontrado"}), 404
 
-    # se já verificado não faz nada
-    if user.email_verificado:
-        return jsonify({"status": "ok"}), 200
+    # Se já estiver verificado, avisa logo o Tkinter
+    if getattr(user, "email_verificado", False):
+        return jsonify({"status": "error", "msg": "Este email já se encontra verificado!"}), 400
 
-    now = datetime.utcnow()
-
-    # verifica cooldown de 30 segundos
-    if user.last_verification_request:
-        diff = now - user.last_verification_request
-        if diff < timedelta(seconds=30):
-            return jsonify({
-                "status": "error",
-                "msg": "Aguarda 30 segundos antes de reenviar"
-            }), 429
-
-    # limite de tentativas
-    if user.email_verification_attempts >= 5:
-        return jsonify({
-            "status": "error",
-            "msg": "Limite de tentativas atingido"
-        }), 429
-
-    # atualizar estado
-    user.email_verification_attempts += 1
-    user.last_verification_request = now
-
-    token = secrets.token_hex(32)
+    # Gerar token seguro de 32 caracteres hex
+    token = secrets.token_hex(16)
+    
+    # Guarda na coluna real que a tua rota /verify-email lê!
     user.email_token = token
+    
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"status": "error", "msg": "Erro ao salvar na base de dados"}), 500
 
-    db.session.commit()
-
+    # Retorna exatamente o que o teu worker do Tkinter espera ler!
     return jsonify({
         "status": "ok",
         "token": token,
