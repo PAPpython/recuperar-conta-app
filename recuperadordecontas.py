@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory, session, url_for,redirect,secrets
+from flask import Flask, render_template, request, jsonify, send_from_directory, session, url_for,redirect
 import os
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -3322,6 +3322,8 @@ def verify_email(token):
     
 @app.route("/send-verification", methods=["POST"])
 def send_verification():
+    import secrets
+    
     data = request.get_json(force=True)
     email = data.get("email")
 
