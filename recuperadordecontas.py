@@ -4757,6 +4757,9 @@ def view_ticket(ticket_id):
         </div>
         """
 
+    is_closed = ticket.status == "closed"
+    close_pending = getattr(ticket, "close_pending", False)
+
     html = f"""
 <!DOCTYPE html>
 <html>
@@ -4789,19 +4792,17 @@ border-radius:12px;
 
 <p><b>Assunto:</b> {ticket.title}</p>
 
-<p><b>Prioridade:</b> {ticket.priority}</p>
+<p><b>Prioridade:</b> {ticket.priority.upper()}</p>
 
-<p><b>Status:</b> {ticket.status.upper()}</p>
+<p><b>Status:</b> {"🔴 FECHADO" if is_closed else "🟢 ABERTO"}</p>
 
-<p><b>Criado por:</b> {user.username}</p>
-
-<p><b>Admin:</b> {admin.username if admin else "Ainda não atribuído"}</p>
+<p><b>Admin Responsável:</b> {admin.username if admin else "Ainda não atribuído"}</p>
 
 </div>
 
 <br>
 
-<div style="
+<div id="chat" style="
 background:#111827;
 padding:20px;
 border-radius:12px;
@@ -4815,7 +4816,7 @@ overflow-y:auto;
 
 """
 
-    if ticket.status == "open":
+    if not is_closed:
 
         html += f"""
 
@@ -4831,11 +4832,14 @@ value="user">
 <textarea
 name="message"
 required
+placeholder="Escreva a sua resposta..."
 style="
 width:100%;
 height:120px;
 border-radius:10px;
 padding:10px;
+box-sizing:border-box;
+resize:none;
 "></textarea>
 
 <br><br>
@@ -4849,14 +4853,41 @@ border:none;
 border-radius:10px;
 font-size:16px;
 font-weight:bold;
+cursor:pointer;
 ">
 Enviar mensagem
 </button>
 
 </form>
 
-<br>
+"""
 
+        if close_pending:
+
+            html += f"""
+<br>
+<form method="POST" action="/ticket/{ticket.id}/confirm-close">
+
+<button
+style="
+width:100%;
+padding:12px;
+background:#22c55e;
+color:black;
+border:none;
+border-radius:10px;
+font-weight:bold;
+cursor:pointer;
+">
+✔ Confirmar Fecho do Ticket
+</button>
+
+</form>
+"""
+        else:
+
+            html += f"""
+<br>
 <form method="POST" action="/ticket/{ticket.id}/request-close/user">
 
 <button
@@ -4867,27 +4898,84 @@ background:#ef4444;
 color:white;
 border:none;
 border-radius:10px;
+cursor:pointer;
 ">
 Pedir fecho do ticket
 </button>
 
 </form>
-
 """
 
     else:
 
-        html += """
+        html += f"""
 
-<h2 style="color:#ef4444;">
-🔒 Este ticket está fechado.
-</h2>
+<br>
+<div style="
+padding:20px;
+background:#7f1d1d;
+border-radius:10px;
+text-align:center;
+">
+<h2 style="margin:0;color:#ef4444;">🔒 Este ticket está fechado.</h2>
+</div>
+
+<br>
+<div style="
+background:#111827;
+padding:20px;
+border-radius:12px;
+text-align:center;
+">
+<h3>⭐ Avaliação do Atendimento</h3>
+<p>Como classificaria o suporte recebido neste ticket?</p>
+<form method="POST" action="/ticket/{ticket.id}/rate">
+    <select name="rating" style="padding:10px; border-radius:5px; background:#1e293b; color:white; border:1px solid #334155;">
+        <option value="5">⭐⭐⭐⭐⭐ Excelente</option>
+        <option value="4">⭐⭐⭐⭐ Bom</option>
+        <option value="3">⭐⭐⭐ Regular</option>
+        <option value="2">⭐⭐ Mau</option>
+        <option value="1">⭐ Terrível</option>
+    </select>
+    <br><br>
+    <button style="padding:10px 20px; background:#2563eb; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">
+        Submeter Avaliação
+    </button>
+</form>
+</div>
 
 """
 
-    html += """
+    html += f"""
 
 </div>
+
+<script>
+
+function atualizarChat(){{
+
+fetch("/ticket/{ticket.id}/messages")
+
+.then(r=>r.text())
+
+.then(html=>{{
+
+document.getElementById("chat").innerHTML=html;
+
+document.getElementById("chat").scrollTop=
+document.getElementById("chat").scrollHeight;
+
+}});
+
+}}
+
+setInterval(atualizarChat,3000);
+
+window.onload=function(){{
+atualizarChat();
+}};
+
+</script>
 
 </body>
 
@@ -4896,6 +4984,7 @@ Pedir fecho do ticket
 """
 
     return html
+
 
 @app.route("/ticket/<int:ticket_id>/messages")
 def ticket_messages(ticket_id):
@@ -4914,26 +5003,26 @@ def ticket_messages(ticket_id):
 
     for m in messages:
 
-        if m.sender == "admin":
-            nome = admin.username if admin else "Administrador"
-            cor = "#2563eb"
-            borda = "#60a5fa"
-        else:
-            nome = user.username
-            cor = "#1e293b"
-            borda = "#22c55e"
+        admin_msg = m.sender == "admin"
 
         html += f"""
 <div style="
-margin-bottom:15px;
-padding:12px;
-background:{cor};
-border-left:5px solid {borda};
-border-radius:10px;
+margin-bottom:12px;
+display:flex;
+justify-content:{'flex-end' if admin_msg else 'flex-start'};
 ">
-<b>{nome}</b>
-<div style="margin-top:8px;white-space:pre-wrap;">
+<div style="
+max-width:70%;
+background:{'#2563eb' if admin_msg else '#1e293b'};
+padding:12px;
+border-radius:12px;
+">
+<b style="color:{'#22c55e' if admin_msg else '#60a5fa'}">
+{"ADMIN" if admin_msg else user.username}
+</b>
+<div style="margin-top:6px;white-space:pre-wrap;">
 {m.message}
+</div>
 </div>
 </div>
 """
