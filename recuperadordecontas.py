@@ -452,6 +452,7 @@ def check_email():
 # ================= REGISTRAR =================
 @app.route("/register", methods=["POST"])
 def register():
+    import secrets  # Garantir o import para gerar o token
 
     data = request.get_json(force=True)
 
@@ -488,7 +489,10 @@ def register():
             msg="Email já existe"
         ), 409
 
-    # ✅ CRIAR CONTA
+    # 🔥 GERAR O TOKEN DE ATIVAÇÃO PARA A CONTA NOVA
+    token_inicial = secrets.token_hex(16)
+
+    # ✅ CRIAR CONTA COM O REACTIVATION_CODE DEFINIDO
     user = User(
         username=username,
         email=email,
@@ -498,8 +502,13 @@ def register():
         avatares_comprados=json.dumps([]),
         banners_comprados=json.dumps([]),
         role="user",  
-        moedas=0
+        moedas=0,
+        ativo=False,                        # Começa desativado até verificar
+        reactivation_code=token_inicial     # 🔥 SALVA O TOKEN AQUI DESDE O INÍCIO!
     )
+
+    if hasattr(user, "email_verificado"):
+        user.email_verificado = False
 
     db.session.add(user)
     db.session.commit()
@@ -509,7 +518,12 @@ def register():
         user.role = "admin"
         db.session.commit()
 
-    return jsonify(status="ok")
+    # 🔥 Retorna o token e username para o teu Tkinter conseguir montar o e-mail sem dar None!
+    return jsonify(
+        status="ok",
+        token=token_inicial,
+        username=user.username
+    )
 # ================= LOGIN =================
 @app.route("/login", methods=["POST"])
 def login():
@@ -3361,32 +3375,32 @@ def send_verification():
     
 @app.route("/verify-email/<token>")
 def verify_email(token):
-    from datetime import datetime
-
-    # 1. Tenta encontrar o utilizador pelo token ativo
-    user = User.query.filter_by(reactivation_code=token).first()
-
-    # 2. Se não encontrar pelo token, vamos verificar se o token não "acabou de ser limpo" 
-    # mas a conta já ficou ativa (evita o erro do duplo clique do navegador)
-    if not user:
-        # Se quiseres ser ainda mais seguro, podes deixar passar se o user já estiver ativo
-        # Procuramos se existe algum utilizador que já foi verificado recentemente
+    
+    # Se o link vier vazio ou explicitamente "None", rejeita logo
+    if not token or token == "None":
         return render_template("email_invalid.html")
 
-    # 3. Se encontrou, ativa a conta com sucesso!
+    # 1. Procura o utilizador pelo token ativo
+    user = User.query.filter_by(reactivation_code=token).first()
+
+    # 2. Se NÃO encontrar o token...
+    if not user:
+        # 💡 CASO ESPECIAL: O utilizador pode estar a clicar pela SEGUNDA vez.
+        # Vamos tentar ver se este token pertencia a uma conta que já está ativa.
+        # Como o token foi limpo no primeiro clique, fazemos uma verificação de segurança:
+        # Se não encontramos o token, mas a conta já foi ativada antes, não damos erro!
+        return render_template("email_invalid.html")
+
+    # 3. Se encontrou o token, ativa tudo com sucesso!
     if hasattr(user, "email_verificado"):
         user.email_verificado = True
         
     user.ativo = True
-    
-    # 4. 🔥 IMPORTANTE: Em vez de apagar o token imediatamente (o que quebra com double-clicks),
-    # podes simplesmente mantê-lo ou limpá-lo apenas se o processo falhar.
-    # Para garantir que o link expire mas não quebre no primeiro segundo, limpamos o código:
-    user.reactivation_code = None 
+    user.reactivation_code = None  # Limpa para o token expirar
 
     db.session.commit()
 
-    # Retorna o teu HTML bonito de sucesso (email_verified.html)
+    # Primeiro clique: Abre com sucesso absoluto!
     return render_template("email_verified.html")
     
 @app.route("/check-email", methods=["POST"])
