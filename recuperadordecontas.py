@@ -3400,6 +3400,10 @@ def get_user_data():
             "username": user.username,
             "email": user.email,
             "email_recuperacao": user.email_recuperacao,
+            
+            # 🔥 ADICIONA ESTA LINHA AQUI:
+            "email_verificado": getattr(user, "email_verificado", False),
+            
             "role": user.role,
             "moedas": user.moedas,
             "banido": user.banido,
@@ -5249,6 +5253,29 @@ def ticket_rate(ticket_id):
         ticket.rating = rating
         db.session.commit()
     return redirect(f"/ticket/{ticket.id}")
+
+# =======================================================
+# 🔥 ROTAS QUE FALTAVAM PARA O SISTEMA DE SUPORTE/TKINTER
+# =======================================================
+
+@app.route("/get-user-by-email", methods=["POST"])
+def get_user_by_email():
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+
+    if not email:
+        return jsonify(status="error", msg="Insira um email válido"), 400
+
+    # Procura o utilizador pelo email principal
+    user = User.query.filter_by(email=email).first()
+    
+    if not user:
+        return jsonify(status="error", msg="Utilizador não encontrado"), 404
+
+    return jsonify(
+        status="ok",
+        user_id=user.id
+    )
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
