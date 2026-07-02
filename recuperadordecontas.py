@@ -3672,8 +3672,7 @@ def admin_tickets():
     </body>
     </html>
     """
-
-```python
+    
 @app.route("/admin/ticket/<int:ticket_id>")
 def open_ticket(ticket_id):
 
