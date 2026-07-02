@@ -164,6 +164,34 @@ class Comment(db.Model):
         default=datetime.utcnow
     )
 
+class Ticket(db.Model):
+    __tablename__ = "tickets"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+
+    admin_id = db.Column(db.Integer, nullable=True)
+
+    title = db.Column(db.String(200))
+    priority = db.Column(db.String(30))
+    status = db.Column(db.String(20), default="open")
+
+    rating = db.Column(db.Integer)
+
+    close_pending = db.Column(db.Boolean, default=False)
+    close_requested_by = db.Column(db.String(20))
+
+class TicketMessage(db.Model):
+    __tablename__ = "ticket_messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"))
+
+    sender = db.Column(db.String(20))
+
+    message = db.Column(db.Text)
 
 class Like(db.Model):
     __tablename__ = "likes"
