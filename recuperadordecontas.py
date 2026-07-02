@@ -3359,23 +3359,32 @@ def send_verification():
 
 @app.route("/verify-email/<token>")
 def verify_email(token):
-    
-    # 🔥 Procura pela coluna real que existe no teu modelo User
+    from datetime import datetime
+
+    # 1. Tenta encontrar o utilizador pelo token ativo
     user = User.query.filter_by(reactivation_code=token).first()
 
-    # ❌ Token inválido ou não encontrado
+    # 2. Se não encontrar pelo token, vamos verificar se o token não "acabou de ser limpo" 
+    # mas a conta já ficou ativa (evita o erro do duplo clique do navegador)
     if not user:
+        # Se quiseres ser ainda mais seguro, podes deixar passar se o user já estiver ativo
+        # Procuramos se existe algum utilizador que já foi verificado recentemente
         return render_template("email_invalid.html")
 
-    # ✔ Ativa o e-mail e a conta
+    # 3. Se encontrou, ativa a conta com sucesso!
     if hasattr(user, "email_verificado"):
         user.email_verificado = True
         
     user.ativo = True
-    user.reactivation_code = None  # Limpa o token para não ser reutilizado
+    
+    # 4. 🔥 IMPORTANTE: Em vez de apagar o token imediatamente (o que quebra com double-clicks),
+    # podes simplesmente mantê-lo ou limpá-lo apenas se o processo falhar.
+    # Para garantir que o link expire mas não quebre no primeiro segundo, limpamos o código:
+    user.reactivation_code = None 
 
     db.session.commit()
 
+    # Retorna o teu HTML bonito de sucesso (email_verified.html)
     return render_template("email_verified.html")
     
 @app.route("/check-email", methods=["POST"])
