@@ -3672,10 +3672,6 @@ def admin_tickets():
     </body>
     </html>
     """
-    
-Peço desculpa, tens toda a razão. Ao reorganizar, acabei por remover algumas quebras de linha (`<br>`) e agrupar estilos CSS que estavam separados no teu código original, além de ter mudado a margem do aviso de ticket fechado.
-
-Aqui está o código **absolutamente idêntico** ao teu original em termos de strings, classes, estilos inline exatos e quebras de linha. A única coisa que fiz foi **remover o bloco do chat que estava duplicado** (estava literalmente colado duas vezes seguidas) e **corrigir a indentação do Python** (o `else` do botão de reabrir e o `if not is_closed:` do formulário final estavam desalinhados, o que causava erro no Python).
 
 ```python
 @app.route("/admin/ticket/<int:ticket_id>")
