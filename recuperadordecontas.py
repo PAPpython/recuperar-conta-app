@@ -605,6 +605,7 @@ def delete_account():
 #================= GUARDAR DADOS DE RECUPERAÇÃO =================
 @app.route("/api/save-recovery-data", methods=["POST"])
 def save_recovery_data():
+    import json
     data = request.get_json(force=True)
 
     email = (data.get("email") or "").strip().lower()
@@ -642,19 +643,20 @@ def save_recovery_data():
         resposta = (p.get("resposta") or "").strip()
 
         if pergunta and resposta:
+            # 🔥 Guardamos a "resposta" limpa para o e-mail ler, e mantemos o "hash" por segurança!
             perguntas_guardar.append({
                 "pergunta": pergunta,
+                "resposta": resposta,  # 👈 AGORA ADICIONAMOS ESTA LINHA CRUCIAL!
                 "hash": hash_resposta(resposta)
             })
 
     user.perguntas_recuperacao = (
-        json.dumps(perguntas_guardar) if perguntas_guardar else None
+        json.dumps(perguntas_guardar, ensure_ascii=False) if perguntas_guardar else None
     )
 
     db.session.commit()
 
     return jsonify(status="ok")
-
 #================= OBTER PERGUNTAS DE RECUPERAÇÃO =================
 @app.route("/api/get-recovery-questions", methods=["POST"])
 def get_recovery_questions():
