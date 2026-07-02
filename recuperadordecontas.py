@@ -3585,7 +3585,7 @@ def edit_user(user_id):
 @app.route("/admin/tickets")
 def admin_tickets():
 
-    admin_id = session.get("user_id")
+    admin_id = session.get("admin_ticket_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -3648,7 +3648,7 @@ def admin_tickets():
 @app.route("/admin/ticket/<int:ticket_id>")
 def open_ticket(ticket_id):
 
-    admin_id = session.get("user_id")
+    admin_id = session.get("admin_ticket_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -4163,7 +4163,7 @@ def confirm_close(ticket_id):
 @app.route("/ticket/<int:ticket_id>/rate", methods=["POST"])
 def rate_admin(ticket_id):
 
-    admin_id = session.get("user_id")
+    admin_id = session.get("admin_ticket_id")
 
     if not is_admin(admin_id):
         return jsonify(error="Sem permissão"), 403
@@ -4479,8 +4479,7 @@ def read_all_notifications():
 @app.route("/debug-admin")
 def debug_admin():
 
-    admin_id = session.get("user_id")
-
+    admin_id = session.get("admin_ticket_id")
     return {
         "session": dict(session),
         "user_id": admin_id,
