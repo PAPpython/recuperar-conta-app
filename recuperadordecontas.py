@@ -4073,7 +4073,6 @@ atualizarChat();
 
     return html
 
-```
 @app.route("/ticket/<int:ticket_id>/reopen", methods=["POST"])
 def reopen_ticket(ticket_id):
 
