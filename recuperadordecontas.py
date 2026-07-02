@@ -4486,6 +4486,10 @@ def debug_admin():
         "user_id": admin_id,
         "is_admin": is_admin(admin_id)
     }
+
+@app.route("/ping")
+def ping():
+    return "OK"
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
