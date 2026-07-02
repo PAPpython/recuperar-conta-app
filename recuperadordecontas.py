@@ -3323,6 +3323,7 @@ def verify_email(token):
 @app.route("/send-verification", methods=["POST"])
 def send_verification():
     import secrets
+    from datetime import datetime, timedelta
     
     data = request.get_json(force=True)
     email = data.get("email")
