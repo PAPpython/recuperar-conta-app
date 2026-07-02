@@ -3686,6 +3686,13 @@ def open_ticket(ticket_id):
     if not ticket:
         return "Ticket não encontrado", 404
 
+    # =============================================================
+    # NOVO: ATRIBUIR AUTOMATICAMENTE O TICKET AO ADMIN QUE O ABRIU
+    # =============================================================
+    if not ticket.admin_id:
+        ticket.admin_id = admin_id
+        db.session.commit()  # Grava na base de dados que este admin assumiu o ticket
+
     user = User.query.get(ticket.user_id)
 
     admin = None
@@ -3976,12 +3983,12 @@ background:#111827;
 border-top:1px solid #1f2937;
 ">
 
-<form method="POST" action="/ticket/{ticket.id}/reply">
+<form id="form-resposta">
 
-<input type="hidden" name="sender" value="admin">
+<input type="hidden" id="sender" value="admin">
 
 <textarea
-name="message"
+id="message-text"
 required
 placeholder="Escreva uma resposta..."
 style="
@@ -3991,10 +3998,14 @@ padding:12px;
 border-radius:10px;
 resize:none;
 box-sizing:border-box;
+background:#1e293b;
+color:white;
+border:1px solid #334155;
 ">
 </textarea>
 
 <button
+type="submit"
 style="
 margin-top:10px;
 width:100%;
@@ -4004,8 +4015,9 @@ border:none;
 border-radius:10px;
 color:white;
 cursor:pointer;
+font-weight:bold;
 ">
-📨 Responder
+📨 Responder como Admin
 </button>
 
 </form>
@@ -4048,19 +4060,51 @@ fetch("/ticket/{ticket.id}/messages")
 
 .then(html=>{{
 
-document.getElementById("chat").innerHTML=html;
+const chatDiv = document.getElementById("chat");
+const totalScroll = chatDiv.scrollHeight - chatDiv.clientHeight;
+const estaNoFundo = (chatDiv.scrollTop >= totalScroll - 50);
 
-document.getElementById("chat").scrollTop=
-document.getElementById("chat").scrollHeight;
+chatDiv.innerHTML=html;
+
+if(estaNoFundo || chatDiv.scrollTop === 0){{
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+}}
 
 }});
 
 }}
 
+// INTERCEPTAR SUBMISSÃO DO ADMIN VIA AJAX
+const form = document.getElementById("form-resposta");
+if(form){{
+    form.addEventListener("submit", function(e){{
+        e.preventDefault();
+        
+        const msgInput = document.getElementById("message-text");
+        const msgValor = msgInput.value;
+        const senderValor = document.getElementById("sender").value;
+        
+        if(!msgValor.trim()) return;
+
+        fetch("/ticket/{ticket.id}/reply", {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify({{ message: msgValor, sender: senderValor }})
+        }})
+        .then(r => r.json())
+        .then(data => {{
+            if(data.status === "ok"){{
+                msgInput.value = "";
+                atualizarChat();
+            }}
+        }});
+    }});
+}}
+
 setInterval(atualizarChat,3000);
 
 window.onload=function(){{
-atualizarChat();
+document.getElementById("chat").scrollTop = document.getElementById("chat").scrollHeight;
 }};
 
 </script>
@@ -4068,7 +4112,6 @@ atualizarChat();
 </body>
 
 </html>
-
 """
 
     return html
@@ -4933,12 +4976,12 @@ background:#111827;
 border-top:1px solid #1f2937;
 ">
 
-<form method="POST" action="/ticket/{ticket.id}/reply">
+<form id="form-resposta">
 
-<input type="hidden" name="sender" value="user">
+<input type="hidden" id="sender" value="user">
 
 <textarea
-name="message"
+id="message-text"
 required
 placeholder="Escreva uma resposta..."
 style="
@@ -4948,10 +4991,14 @@ padding:12px;
 border-radius:10px;
 resize:none;
 box-sizing:border-box;
+background:#1e293b;
+color:white;
+border:1px solid #334155;
 ">
 </textarea>
 
 <button
+type="submit"
 style="
 margin-top:10px;
 width:100%;
@@ -4961,6 +5008,7 @@ border:none;
 border-radius:10px;
 color:white;
 cursor:pointer;
+font-weight:bold;
 ">
 📨 Responder
 </button>
@@ -5036,19 +5084,51 @@ fetch("/ticket/{ticket.id}/messages")
 
 .then(html=>{{
 
-document.getElementById("chat").innerHTML=html;
+const chatDiv = document.getElementById("chat");
+const totalScroll = chatDiv.scrollHeight - chatDiv.clientHeight;
+const estaNoFundo = (chatDiv.scrollTop >= totalScroll - 50);
 
-document.getElementById("chat").scrollTop=
-document.getElementById("chat").scrollHeight;
+chatDiv.innerHTML=html;
+
+if(estaNoFundo || chatDiv.scrollTop === 0){{
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+}}
 
 }});
 
 }}
 
+// INTERCEPTAR SUBMISSÃO VIA AJAX
+const form = document.getElementById("form-resposta");
+if(form){{
+    form.addEventListener("submit", function(e){{
+        e.preventDefault();
+        
+        const msgInput = document.getElementById("message-text");
+        const msgValor = msgInput.value;
+        const senderValor = document.getElementById("sender").value;
+        
+        if(!msgValor.trim()) return;
+
+        fetch("/ticket/{ticket.id}/reply", {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify({{ message: msgValor, sender: senderValor }})
+        }})
+        .then(r => r.json())
+        .then(data => {{
+            if(data.status === "ok"){{
+                msgInput.value = "";
+                atualizarChat();
+            }}
+        }});
+    }});
+}}
+
 setInterval(atualizarChat,3000);
 
 window.onload=function(){{
-atualizarChat();
+document.getElementById("chat").scrollTop = document.getElementById("chat").scrollHeight;
 }};
 
 </script>
@@ -5060,8 +5140,7 @@ atualizarChat();
 """
 
     return html
-
-
+    
 # ==========================================
 # RETORNO DENTRO DO CHAT AUTOMÁTICO (USER)
 # ==========================================
@@ -5106,6 +5185,70 @@ border-radius:10px;
 """
 
     return html
+
+# ==========================================
+# PROCESSAR ENVIO DE MENSAGENS (USER/ADMIN)
+# ==========================================
+@app.route("/ticket/<int:ticket_id>/reply", methods=["POST"])
+def ticket_reply(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    
+    # Se o formulário vier via AJAX (JSON) ou formulário normal
+    if request.is_json:
+        data = request.get_json()
+        message_text = data.get("message")
+        sender = data.get("sender", "user")
+    else:
+        message_text = request.form.get("message")
+        sender = request.form.get("sender", "user")
+
+    if not message_text or not message_text.strip():
+        return jsonify(status="error", message="Mensagem vazia"), 400
+
+    # Criar e guardar a nova mensagem
+    nova_msg = TicketMessage(
+        ticket_id=ticket.id,
+        sender=sender,
+        message=message_text.strip()
+    )
+    db.session.add(nova_msg)
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+# ==========================================
+# PROCESSAR PEDIDO DE FECHO (USER)
+# ==========================================
+@app.route("/ticket/<int:ticket_id>/request-close/user", methods=["POST"])
+def ticket_request_close_user(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    ticket.close_pending = True
+    ticket.close_requested_by = "user"
+    db.session.commit()
+    return redirect(f"/ticket/{ticket.id}")
+
+# ==========================================
+# PROCESSAR CONFIRMAÇÃO DE FECHO
+# ==========================================
+@app.route("/ticket/<int:ticket_id>/confirm-close", methods=["POST"])
+def ticket_confirm_close(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    ticket.status = "closed"
+    ticket.close_pending = False
+    db.session.commit()
+    return redirect(f"/ticket/{ticket.id}")
+
+# ==========================================
+# PROCESSAR AVALIAÇÃO DO TICKET
+# ==========================================
+@app.route("/ticket/<int:ticket_id>/rate", methods=["POST"])
+def ticket_rate(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    rating = request.form.get("rating", type=int)
+    if rating:
+        ticket.rating = rating
+        db.session.commit()
+    return redirect(f"/ticket/{ticket.id}")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
