@@ -3859,15 +3859,35 @@ def reply_ticket(ticket_id):
     if ticket.status == "closed":
         return "Ticket fechado"
 
-    message = request.form.get("message")
+    message = request.form.get("message", "").strip()
     sender = request.form.get("sender")
 
-    # ✔ aqui corrigido (IMPORTANTE)
+    if not message:
+        return "Mensagem vazia", 400
+
+    # Se respondeu um administrador
     if sender == "admin":
-        ticket.admin_id = session.get("admin_ticket_id")
+
+        admin_id = session.get("admin_ticket_id")
+
+        if not is_admin(admin_id):
+            return "Sem permissão", 403
+
+        ticket.admin_id = admin_id
+
+    # Se respondeu um utilizador
+    elif sender == "user":
+
+        user_id = session.get("user_id")
+
+        if user_id and int(user_id) != ticket.user_id:
+            return "Sem permissão", 403
+
+    else:
+        return "Sender inválido", 400
 
     msg = TicketMessage(
-        ticket_id=ticket_id,
+        ticket_id=ticket.id,
         sender=sender,
         message=message
     )
@@ -3875,8 +3895,12 @@ def reply_ticket(ticket_id):
     db.session.add(msg)
     db.session.commit()
 
-    return redirect(f"/ticket/{ticket_id}")
-    
+    # Redireciona para a página correta
+    if sender == "admin":
+        return redirect(f"/admin/ticket/{ticket.id}")
+    else:
+        return redirect(f"/ticket/{ticket.id}")
+        
 @app.route("/ticket/<int:ticket_id>/reopen", methods=["POST"])
 def reopen_ticket(ticket_id):
 
@@ -4515,6 +4539,191 @@ def debug_admin():
 @app.route("/ping")
 def ping():
     return "OK"
+
+@app.route("/ticket/<int:ticket_id>")
+def view_ticket(ticket_id):
+
+    ticket = Ticket.query.get_or_404(ticket_id)
+
+    user = User.query.get(ticket.user_id)
+    admin = User.query.get(ticket.admin_id) if ticket.admin_id else None
+
+    messages = TicketMessage.query.filter_by(
+        ticket_id=ticket.id
+    ).order_by(TicketMessage.id.asc()).all()
+
+    html_messages = ""
+
+    for m in messages:
+
+        admin_msg = m.sender == "admin"
+
+        html_messages += f"""
+        <div style="
+            margin-bottom:12px;
+            display:flex;
+            justify-content:{'flex-end' if admin_msg else 'flex-start'};
+        ">
+
+            <div style="
+                max-width:70%;
+                background:{'#2563eb' if admin_msg else '#1e293b'};
+                padding:12px;
+                border-radius:12px;
+            ">
+
+                <b style="color:{'#22c55e' if admin_msg else '#60a5fa'}">
+                    {"ADMIN" if admin_msg else user.username}
+                </b>
+
+                <div style="margin-top:6px;">
+                    {m.message}
+                </div>
+
+            </div>
+
+        </div>
+        """
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="UTF-8">
+<title>Ticket #{ticket.id}</title>
+</head>
+
+<body style="
+margin:0;
+background:#0f172a;
+color:white;
+font-family:Arial;
+">
+
+<div style="
+max-width:900px;
+margin:auto;
+padding:30px;
+">
+
+<h1>🎫 Ticket #{ticket.id}</h1>
+
+<div style="
+background:#111827;
+padding:20px;
+border-radius:12px;
+">
+
+<p><b>Assunto:</b> {ticket.title}</p>
+
+<p><b>Prioridade:</b> {ticket.priority}</p>
+
+<p><b>Status:</b> {ticket.status.upper()}</p>
+
+<p><b>Criado por:</b> {user.username}</p>
+
+<p><b>Admin:</b> {admin.username if admin else "Ainda não atribuído"}</p>
+
+</div>
+
+<br>
+
+<div style="
+background:#111827;
+padding:20px;
+border-radius:12px;
+height:420px;
+overflow-y:auto;
+">
+
+{html_messages}
+
+</div>
+
+"""
+
+    if ticket.status == "open":
+
+        html += f"""
+
+<br>
+
+<form method="POST" action="/ticket/{ticket.id}/reply">
+
+<input
+type="hidden"
+name="sender"
+value="user">
+
+<textarea
+name="message"
+required
+style="
+width:100%;
+height:120px;
+border-radius:10px;
+padding:10px;
+"></textarea>
+
+<br><br>
+
+<button
+style="
+width:100%;
+padding:12px;
+background:#22c55e;
+border:none;
+border-radius:10px;
+font-size:16px;
+font-weight:bold;
+">
+Enviar mensagem
+</button>
+
+</form>
+
+<br>
+
+<form method="POST" action="/ticket/{ticket.id}/request-close/user">
+
+<button
+style="
+width:100%;
+padding:12px;
+background:#ef4444;
+color:white;
+border:none;
+border-radius:10px;
+">
+Pedir fecho do ticket
+</button>
+
+</form>
+
+"""
+
+    else:
+
+        html += """
+
+<h2 style="color:#ef4444;">
+🔒 Este ticket está fechado.
+</h2>
+
+"""
+
+    html += """
+
+</div>
+
+</body>
+
+</html>
+
+"""
+
+    return html
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
