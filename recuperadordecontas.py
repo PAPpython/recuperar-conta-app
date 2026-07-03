@@ -3468,7 +3468,7 @@ def verify_recovery_email(token):
 
     db.session.commit()
 
-    return render_template("email_verified.html")
+    return render_template("email_recovery_verified.html")
 
 @app.route("/check-recovery-email", methods=["POST"])
 def check_recovery_email():
@@ -3485,8 +3485,29 @@ def check_recovery_email():
         })
 
     return jsonify({
-        "verified": user.recovery_token is None
+        "verified": (
+            user.email_recuperacao is not None and
+            user.recovery_token is None
+        )
     })
+    
+@app.route("/cancel-recovery-email/<token>")
+def cancel_recovery_email(token):
+
+    if not token:
+        return render_template("email_invalid.html")
+
+    user = User.query.filter_by(recovery_token=token).first()
+
+    if not user:
+        return render_template("email_invalid.html")
+
+    user.email_recuperacao = None
+    user.recovery_token = None
+
+    db.session.commit()
+
+    return render_template("email_recovery_cancelled.html")
 # =======================================================
 # 🔥 ROTA DE SUPORTE PARA O TKINTER (APENAS ESTA)
 # =======================================================
