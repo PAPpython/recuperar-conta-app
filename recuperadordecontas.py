@@ -3471,7 +3471,7 @@ def verify_recovery_email(token):
     return render_template("email_recovery_verified.html")
 
 @app.route("/check-recovery-email", methods=["POST"])
-def check_recovery_email():
+def check_recovery_email2():
 
     data = request.get_json(force=True)
 
