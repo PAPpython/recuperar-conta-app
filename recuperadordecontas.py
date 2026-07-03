@@ -102,6 +102,7 @@ class User(db.Model):
      # 🔐 Recuperação
     email_recuperacao = db.Column(db.String(120), nullable=True)
     perguntas_recuperacao = db.Column(db.Text, nullable=True)  # JSON
+    recovery_token = db.Column(db.String(64), nullable=True)
 
     moedas = db.Column(db.Integer, default=0)
 
@@ -3416,6 +3417,76 @@ def check_email_exists():
         "exists": user is not None
     })
 
+@app.route("/send-recovery-verification", methods=["POST"])
+def send_recovery_verification():
+    import secrets
+
+    data = request.get_json(force=True)
+
+    email = data.get("email")                     # Email principal
+    recovery_email = data.get("recovery_email")   # Email de recuperação
+
+    if not email or not recovery_email:
+        return jsonify({
+            "status": "error",
+            "msg": "Dados incompletos"
+        }), 400
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return jsonify({
+            "status": "error",
+            "msg": "Conta não encontrada"
+        }), 404
+
+    token = secrets.token_hex(16)
+
+    user.email_recuperacao = recovery_email
+    user.recovery_token = token
+
+    db.session.commit()
+
+    return jsonify({
+        "status": "ok",
+        "token": token,
+        "username": user.username
+    })
+
+@app.route("/verify-recovery-email/<token>")
+def verify_recovery_email(token):
+
+    if not token:
+        return render_template("email_invalid.html")
+
+    user = User.query.filter_by(recovery_token=token).first()
+
+    if not user:
+        return render_template("email_invalid.html")
+
+    user.recovery_token = None
+
+    db.session.commit()
+
+    return render_template("email_verified.html")
+
+@app.route("/check-recovery-email", methods=["POST"])
+def check_recovery_email():
+
+    data = request.get_json(force=True)
+
+    email = data.get("email")
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return jsonify({
+            "verified": False
+        })
+
+    return jsonify({
+        "verified": user.recovery_token is None
+    })
 # =======================================================
 # 🔥 ROTA DE SUPORTE PARA O TKINTER (APENAS ESTA)
 # =======================================================
