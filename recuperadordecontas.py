@@ -68,51 +68,113 @@ google = oauth.register(
 # ================= MODELO USER =================
 class User(db.Model):
     __tablename__ = "users"
+
     id = db.Column(db.Integer, primary_key=True)
+
+    # ================= CONTA =================
     username = db.Column(db.String(80), unique=True)
     email = db.Column(db.String(120), unique=True)
     password = db.Column(db.String(128))
-    nome = db.Column(db.String(120), nullable=True)
-    banner = db.Column(db.String(255), nullable=True)
-    avatares_comprados = db.Column(db.Text, default="[]")
-    banners_comprados = db.Column(db.Text, default="[]")
-    bio = db.Column(db.String(175), nullable=True)
-    role = db.Column(db.String(20), default="user")
-    banido = db.Column(db.Boolean, default=False)
-    suspenso_ate = db.Column(db.DateTime, nullable=True)
-    warn_count = db.Column(db.Integer, default=0)
-    ia_banido = db.Column(db.Boolean, default=False)
-    ia_suspenso_ate = db.Column(db.DateTime, nullable=True)
-    warning_count = db.Column(db.Integer, default=0)
-    ia_ban_reason = db.Column(db.String(255), nullable=True)
-    ultima_punicao_ia = db.Column(db.DateTime, nullable=True)
-    ban_reason = db.Column(db.String(255), nullable=True)
-    bloqueado = db.Column(db.Boolean, default=False)
-    bloqueado_ate = db.Column(db.DateTime, nullable=True)
-    apagado_por_admin = db.Column(db.Boolean, default=False)
-    avisos = db.Column(db.Integer, default=0)
-    email_banido = db.Column(db.Boolean, default=False)
-    mostrar_publicamente = db.Column(db.Boolean, default=True)
-    google_name = db.Column(db.String(120))
-    google_picture = db.Column(db.String(300))
+
     provider = db.Column(db.String(20), default="local")
     google_token = db.Column(db.String(64), unique=True)
+    google_name = db.Column(db.String(120))
+    google_picture = db.Column(db.String(300))
     is_google_pending = db.Column(db.Boolean, default=False)
-    
-     # 🔐 Recuperação
+
+    # ================= PERFIL =================
+    nome = db.Column(db.String(120), nullable=True)
+    bio = db.Column(db.String(175), nullable=True)
+    avatar = db.Column(db.String(50), nullable=True)
+    banner = db.Column(db.String(255), nullable=True)
+
+    avatares_comprados = db.Column(db.Text, default="[]")
+    banners_comprados = db.Column(db.Text, default="[]")
+
+    # ================= PRIVACIDADE =================
+    mostrar_publicamente = db.Column(db.Boolean, default=True)
+    mostrar_nome = db.Column(db.Boolean, default=True)
+    perfil_privado = db.Column(db.Boolean, default=False)
+
+    # (novo)
+    mostrar_email = db.Column(db.Boolean, default=False)
+
+    # ================= SEGURANÇA =================
+    password_changed = db.Column(db.DateTime)
+
+    # (novo)
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    # ================= RECUPERAÇÃO =================
     email_recuperacao = db.Column(db.String(120), nullable=True)
-    perguntas_recuperacao = db.Column(db.Text, nullable=True)  # JSON
+    perguntas_recuperacao = db.Column(db.Text, nullable=True)
     recovery_token = db.Column(db.String(64), nullable=True)
 
+    # ================= ESTADO DA CONTA =================
+    ativo = db.Column(db.Boolean, default=True)
+    apagado = db.Column(db.Boolean, default=False)
+
+    desativado_em = db.Column(db.DateTime, nullable=True)
+    reactivation_code = db.Column(db.String(32), nullable=True)
+
+    # ================= MODERAÇÃO =================
+    role = db.Column(db.String(20), default="user")
+
+    banido = db.Column(db.Boolean, default=False)
+    ban_reason = db.Column(db.String(255), nullable=True)
+
+    suspenso_ate = db.Column(db.DateTime, nullable=True)
+
+    bloqueado = db.Column(db.Boolean, default=False)
+    bloqueado_ate = db.Column(db.DateTime, nullable=True)
+
+    apagado_por_admin = db.Column(db.Boolean, default=False)
+
+    avisos = db.Column(db.Integer, default=0)
+
+    warn_count = db.Column(db.Integer, default=0)
+    warning_count = db.Column(db.Integer, default=0)
+
+    email_banido = db.Column(db.Boolean, default=False)
+
+    # ================= IA =================
+    ia_banido = db.Column(db.Boolean, default=False)
+    ia_ban_reason = db.Column(db.String(255), nullable=True)
+    ia_suspenso_ate = db.Column(db.DateTime, nullable=True)
+    ultima_punicao_ia = db.Column(db.DateTime, nullable=True)
+
+    # ================= ECONOMIA =================
     moedas = db.Column(db.Integer, default=0)
 
-    ativo = db.Column(db.Boolean, default=True)  # Define se a conta está ativa
-    desativado_em = db.Column(db.DateTime, nullable=True)  # Data de desativação
-    reactivation_code = db.Column(db.String(32), nullable=True)  # Código de reativação temporário
-    apagado = db.Column(db.Boolean, default=False)  # Marca se a conta foi apagada
-    avatar = db.Column(db.String(50), nullable=True)  # ✅ AVATAR (ID DO AVATAR)
     ultima_recompensa_post = db.Column(db.DateTime, nullable=True)
 
+
+from datetime import datetime
+
+class PasswordHistory(db.Model):
+    __tablename__ = "password_history"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    password_hash = db.Column(
+        db.String(128),
+        nullable=False
+    )
+
+    changed_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+    
 class Post(db.Model):
     __tablename__ = "posts"
 
@@ -5523,6 +5585,195 @@ def ticket_rate(ticket_id):
         ticket.rating = rating
         db.session.commit()
     return redirect(f"/ticket/{ticket.id}")
+
+@app.route("/api/settings/user-info", methods=["POST"])
+def settings_user_info():
+
+    data = request.get_json(force=True)
+
+    user_id = data.get("user_id")
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(status="error")
+
+    return jsonify(
+
+        status="ok",
+
+        username=user.username,
+
+        nome=user.nome,
+
+        email=user.email,
+
+        email_recuperacao=user.email_recuperacao,
+
+        provider=user.provider,
+
+        avatar=user.avatar,
+
+        banner=user.banner,
+
+        created_at=user.created_at.strftime("%d/%m/%Y %H:%M")
+        if user.created_at else None,
+
+        password_changed=user.password_changed.strftime("%d/%m/%Y %H:%M")
+        if user.password_changed else None
+    )
+
+    @app.route("/api/settings/privacy", methods=["POST"])
+    
+def settings_privacy():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(status="error")
+
+    return jsonify(
+
+        status="ok",
+
+        perfil_privado=user.perfil_privado,
+
+        mostrar_nome=user.mostrar_nome,
+
+        mostrar_publicamente=user.mostrar_publicamente
+    )
+
+@app.route("/api/settings/update-privacy", methods=["POST"])
+def update_privacy():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(status="error")
+
+    user.perfil_privado = bool(data.get("perfil_privado"))
+
+    user.mostrar_nome = bool(data.get("mostrar_nome"))
+
+    user.mostrar_publicamente = bool(data.get("mostrar_publicamente"))
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+from datetime import datetime
+
+@app.route("/api/settings/change-password", methods=["POST"])
+def settings_change_password():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(status="error", msg="Utilizador não encontrado")
+
+    current_password = data.get("current_password", "")
+
+    new_password = data.get("new_password", "")
+
+    confirm_password = data.get("confirm_password", "")
+
+    if hash_password(current_password) != user.password:
+        return jsonify(
+            status="error",
+            msg="Password atual incorreta"
+        )
+
+    if new_password != confirm_password:
+        return jsonify(
+            status="error",
+            msg="As passwords não coincidem"
+        )
+
+    if hash_password(new_password) == user.password:
+        return jsonify(
+            status="error",
+            msg="A nova password não pode ser igual à atual"
+        )
+
+    historico = PasswordHistory.query.filter_by(
+        user_id=user.id
+    ).all()
+
+    novo_hash = hash_password(new_password)
+
+    for antiga in historico:
+
+        if antiga.password_hash == novo_hash:
+
+            return jsonify(
+                status="error",
+                msg="Esta password já foi utilizada anteriormente"
+            )
+
+    PasswordHistory.query.filter_by(user_id=user.id).delete()
+
+    db.session.add(
+
+        PasswordHistory(
+
+            user_id=user.id,
+
+            password_hash=user.password
+        )
+
+    )
+
+    user.password = novo_hash
+
+    user.password_changed = datetime.utcnow()
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+@app.route("/api/settings/logout-session", methods=["POST"])
+def logout_session():
+
+    data = request.get_json(force=True)
+
+    session_id = data.get("session_id")
+
+    s = UserSession.query.get(session_id)
+
+    if not s:
+        return jsonify(status="error")
+
+    s.active = False
+
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+@app.route("/api/settings/logout-all", methods=["POST"])
+def logout_all():
+
+    data = request.get_json(force=True)
+
+    user_id = data.get("user_id")
+
+    UserSession.query.filter_by(
+        user_id=user_id,
+        active=True
+    ).update(
+        {
+            "active": False
+        }
+    )
+
+    db.session.commit()
+
+    return jsonify(status="ok")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
