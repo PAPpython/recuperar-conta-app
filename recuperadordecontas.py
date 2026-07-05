@@ -3476,7 +3476,7 @@ def verify_recovery_email(token):
 
         print("EMAIL VERIFICADO COM SUCESSO")
 
-        return render_template("email_recovery_verified.html")
+        return render_template("email_recovery_verify.html")
 
     except Exception as e:
         print("ERRO NA VERIFY-RECOVERY:", str(e))
