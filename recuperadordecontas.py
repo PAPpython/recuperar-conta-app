@@ -5760,6 +5760,48 @@ def logout_all():
     db.session.commit()
 
     return jsonify(status="ok")
+
+@app.route("/api/settings/sessions", methods=["POST"])
+def settings_sessions():
+
+    data = request.get_json(force=True)
+
+    user_id = data.get("user_id")
+
+    sessoes = UserSession.query.filter_by(
+        user_id=user_id
+    ).order_by(
+        UserSession.created_at.desc()
+    ).all()
+
+    lista = []
+
+    for s in sessoes:
+
+        lista.append({
+
+            "id": s.id,
+
+            "platform": s.platform,
+
+            "ip": s.ip_address,
+
+            "location": s.location,
+
+            "active": s.active,
+
+            "remember_me": s.remember_me,
+
+            "created_at":
+                s.created_at.strftime("%d/%m/%Y %H:%M")
+                if s.created_at else "-"
+
+        })
+
+    return jsonify(
+        status="ok",
+        sessions=lista
+    )
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
