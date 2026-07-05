@@ -5599,32 +5599,22 @@ def settings_user_info():
         return jsonify(status="error")
 
     return jsonify(
-
         status="ok",
-
         username=user.username,
-
         nome=user.nome,
-
         email=user.email,
-
         email_recuperacao=user.email_recuperacao,
-
         provider=user.provider,
-
         avatar=user.avatar,
-
         banner=user.banner,
-
         created_at=user.created_at.strftime("%d/%m/%Y %H:%M")
         if user.created_at else None,
-
         password_changed=user.password_changed.strftime("%d/%m/%Y %H:%M")
         if user.password_changed else None
     )
 
-    @app.route("/api/settings/privacy", methods=["POST"])
-    
+
+@app.route("/api/settings/privacy", methods=["POST"])
 def settings_privacy():
 
     data = request.get_json(force=True)
@@ -5635,13 +5625,9 @@ def settings_privacy():
         return jsonify(status="error")
 
     return jsonify(
-
         status="ok",
-
         perfil_privado=user.perfil_privado,
-
         mostrar_nome=user.mostrar_nome,
-
         mostrar_publicamente=user.mostrar_publicamente
     )
 
