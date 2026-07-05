@@ -95,23 +95,21 @@ class User(db.Model):
     mostrar_publicamente = db.Column(db.Boolean, default=True)
     mostrar_nome = db.Column(db.Boolean, default=True)
     perfil_privado = db.Column(db.Boolean, default=False)
-
-    # (novo)
     mostrar_email = db.Column(db.Boolean, default=False)
 
     # ================= SEGURANÇA =================
     password_changed = db.Column(db.DateTime)
 
-    # (novo)
-    created_at = db.Column(
-        db.DateTime,
-        default=datetime.utcnow
-    )
-
     # ================= RECUPERAÇÃO =================
     email_recuperacao = db.Column(db.String(120), nullable=True)
     perguntas_recuperacao = db.Column(db.Text, nullable=True)
     recovery_token = db.Column(db.String(64), nullable=True)
+
+    # pending / verified / rejected
+    recovery_email_status = db.Column(
+        db.String(20),
+        default="pending"
+    )
 
     # ================= ESTADO DA CONTA =================
     ativo = db.Column(db.Boolean, default=True)
@@ -148,9 +146,33 @@ class User(db.Model):
 
     # ================= ECONOMIA =================
     moedas = db.Column(db.Integer, default=0)
-
     ultima_recompensa_post = db.Column(db.DateTime, nullable=True)
 
+    # ================= ATIVIDADE =================
+
+    # Data da criação da conta
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    # Último login
+    last_login = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    # Última alteração do perfil
+    last_profile_update = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    # Última alteração do email principal
+    email_changed = db.Column(
+        db.DateTime,
+        nullable=True
+    )
 
 from datetime import datetime
 
@@ -173,6 +195,130 @@ class PasswordHistory(db.Model):
     changed_at = db.Column(
         db.DateTime,
         default=datetime.utcnow
+    )
+
+class AccountActivity(db.Model):
+
+    __tablename__ = "account_activity"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    activity_type = db.Column(
+        db.String(60)
+    )
+
+    description = db.Column(
+        db.Text
+    )
+
+    old_value = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    new_value = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+class AdminActivity(db.Model):
+
+    __tablename__ = "admin_activity"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    admin_name = db.Column(
+        db.String(120)
+    )
+
+    ticket_id = db.Column(
+        db.Integer,
+        nullable=True
+    )
+
+    action = db.Column(
+        db.String(120)
+    )
+
+    old_value = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    new_value = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+class PendingEmailChange(db.Model):
+
+    __tablename__ = "pending_email_changes"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    old_email = db.Column(
+        db.String(120)
+    )
+
+    new_email = db.Column(
+        db.String(120)
+    )
+
+    token = db.Column(
+        db.String(64),
+        unique=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    verified = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    cancelled = db.Column(
+        db.Boolean,
+        default=False
     )
     
 class Post(db.Model):
@@ -375,6 +521,30 @@ def existe_bloqueio(a, b):
             db.and_(Block.blocker_id == b, Block.blocked_id == a)
         )
     ).first() is not None
+
+def adicionar_atividade(
+        user_id,
+        tipo,
+        titulo,
+        antigo="",
+        novo="",
+        origem="user",
+        admin_id=None
+):
+
+    db.session.add(
+        AccountActivity(
+            user_id=user_id,
+            admin_id=admin_id,
+            tipo=tipo,
+            titulo=titulo,
+            valor_antigo=antigo,
+            valor_novo=novo,
+            origem=origem
+        )
+    )
+
+    db.session.commit()
 
 def is_admin(user_id):
     user = User.query.get(user_id)
@@ -3760,6 +3930,16 @@ def edit_user(user_id):
     if not user:
         return "User not found", 404
 
+    admin_id = session.get("admin_ticket_id")
+    username_antigo = user.username
+    email_antigo = user.email
+    email_rec_antigo = user.email_recuperacao
+    password_antiga = user.password
+    banido_antigo = user.banido
+    bloqueado_antigo = user.bloqueado
+    ativo_antigo = user.ativo
+    perguntas_antigas = user.perguntas_recuperacao
+
     if request.method == "POST":
 
         data = request.form
@@ -3771,7 +3951,7 @@ def edit_user(user_id):
 
         password = data.get("password")
         if password:
-            user.password = password
+            user.password = hash_password(password)
 
         # ================= RECOVERY =================
         user.perguntas_recuperacao = data.get("perguntas", user.perguntas_recuperacao)
@@ -3789,11 +3969,101 @@ def edit_user(user_id):
         user.ia_suspenso_ate = data.get("ia_suspenso_ate") or None
         user.bloqueado_ate = data.get("bloqueado_ate") or None
 
-        # ================= REASONS =================
+                # ================= REASONS =================
         user.ban_reason = data.get("ban_reason", user.ban_reason)
         user.ia_ban_reason = data.get("ia_ban_reason", user.ia_ban_reason)
 
         db.session.commit()
+
+        # ================= HISTÓRICO =================
+
+        if username_antigo != user.username:
+            adicionar_atividade(
+                user.id,
+                "username",
+                "Username alterado",
+                username_antigo,
+                user.username,
+                "admin",
+                admin_id
+            )
+
+        if email_antigo != user.email:
+            adicionar_atividade(
+                user.id,
+                "email",
+                "Email principal alterado",
+                email_antigo,
+                user.email,
+                "admin",
+                admin_id
+            )
+
+        if email_rec_antigo != user.email_recuperacao:
+            adicionar_atividade(
+                user.id,
+                "recovery_email",
+                "Email de recuperação alterado",
+                email_rec_antigo or "-",
+                user.email_recuperacao or "-",
+                "admin",
+                admin_id
+            )
+
+        if password_antiga != user.password:
+            adicionar_atividade(
+                user.id,
+                "password",
+                "Password alterada pelo administrador",
+                "********",
+                "********",
+                "admin",
+                admin_id
+            )
+
+        if perguntas_antigas != user.perguntas_recuperacao:
+            adicionar_atividade(
+                user.id,
+                "recovery_questions",
+                "Perguntas de recuperação alteradas",
+                "",
+                "",
+                "admin",
+                admin_id
+            )
+
+        if banido_antigo != user.banido:
+            adicionar_atividade(
+                user.id,
+                "ban",
+                "Estado de banimento alterado",
+                str(banido_antigo),
+                str(user.banido),
+                "admin",
+                admin_id
+            )
+
+        if bloqueado_antigo != user.bloqueado:
+            adicionar_atividade(
+                user.id,
+                "lock",
+                "Estado de bloqueio alterado",
+                str(bloqueado_antigo),
+                str(user.bloqueado),
+                "admin",
+                admin_id
+            )
+
+        if ativo_antigo != user.ativo:
+            adicionar_atividade(
+                user.id,
+                "account",
+                "Estado da conta alterado",
+                str(ativo_antigo),
+                str(user.ativo),
+                "admin",
+                admin_id
+            )
 
         return "✔ Utilizador atualizado com sucesso!"
 
