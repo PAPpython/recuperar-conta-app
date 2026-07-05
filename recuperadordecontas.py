@@ -6093,6 +6093,152 @@ def settings_sessions():
         status="ok",
         sessions=lista
     )
+
+@app.route("/api/request-email-change", methods=["POST"])
+def request_email_change():
+    data = request.get_json(force=True)
+    user_id = data.get("user_id")
+    new_email = (data.get("new_email") or "").strip().lower()
+    
+    # Verifica se já existe um pedido pendente não cancelado
+    pending = PendingEmailChange.query.filter_by(user_id=user_id, verified=False, cancelled=False).first()
+    if pending:
+        return jsonify(status="error", msg="Já existe um pedido pendente."), 409
+    
+    token = secrets.token_hex(32)
+    user = User.query.get(user_id)
+    
+    db.session.add(PendingEmailChange(user_id=user_id, old_email=user.email, new_email=new_email, token=token))
+    db.session.commit()
+    # Adicionar lógica de envio de email aqui...
+    return jsonify(status="ok", token=token)
+
+@app.route("/api/verify-email-change", methods=["POST"])
+def verify_email_change():
+    data = request.get_json(force=True)
+    token = data.get("token")
+    change = PendingEmailChange.query.filter_by(token=token, verified=False, cancelled=False).first()
+    
+    if not change:
+        return jsonify(status="error", msg="Token inválido."), 400
+    
+    user = User.query.get(change.user_id)
+    user.email = change.new_email
+    user.email_changed = datetime.utcnow()
+    change.verified = True
+    db.session.commit()
+    return jsonify(status="ok")
+
+    # Adicione isto antes do commit final na rota verify_email_change
+    if user.email_recuperacao:
+        # Aqui disparas o envio de email para user.email_recuperacao
+        print(f"Notificando alteração de email para: {user.email_recuperacao}")
+    
+    db.session.commit()
+
+@app.route("/api/activity-logs/<int:user_id>", methods=["GET"])
+def get_user_activity(user_id):
+    # Opcional: Adicionar validação se o utilizador é o dono da conta
+    logs = AccountActivity.query.filter_by(user_id=user_id).order_by(AccountActivity.created_at.desc()).all()
+    return jsonify([{
+        "type": l.activity_type,
+        "description": l.description,
+        "date": l.created_at.strftime("%Y-%m-%d %H:%M")
+    } for l in logs])
+
+@app.route("/api/admin/logs", methods=["GET"])
+def get_admin_logs():
+    user_id = session.get("user_id")
+    is_adm, response = admin_required(user_id)
+    if not is_adm: return response
+    
+    logs = AdminActivity.query.order_by(AdminActivity.created_at.desc()).all()
+    return jsonify([{
+        "admin": l.admin_name,
+        "action": l.action,
+        "target_user": l.user_id,
+        "date": l.created_at.strftime("%Y-%m-%d %H:%M")
+    } for l in logs])
+
+@app.route("/api/settings/account-activity", methods=["POST"])
+def get_account_activity():
+    data = request.get_json(force=True)
+    user_id = data.get("user_id")
+    
+    # Busca todas as atividades do utilizador, da mais recente para a mais antiga
+    atividades = AccountActivity.query.filter_by(user_id=user_id)\
+        .order_by(AccountActivity.created_at.desc()).all()
+    
+    lista = []
+    for a in atividades:
+        lista.append({
+            "titulo": a.titulo,
+            "tipo": a.tipo,
+            "data": a.created_at.strftime("%d/%m/%Y %H:%M"),
+            "origem": a.origem, # 'user' ou 'admin'
+            "valor_antigo": a.valor_antigo,
+            "valor_novo": a.valor_novo
+        })
+        
+    return jsonify(status="ok", logs=lista)
+
+# ================= EMAIL CHANGE ROUTES =================
+
+@app.route("/api/request-email-change", methods=["POST"])
+def request_email_change():
+    data = request.get_json(force=True)
+    user_id = data.get("user_id")
+    new_email = (data.get("new_email") or "").strip().lower()
+    
+    # Verifica se já existe um pedido pendente não cancelado
+    pending = PendingEmailChange.query.filter_by(user_id=user_id, verified=False, cancelled=False).first()
+    if pending:
+        return jsonify(status="error", msg="Já existe um pedido pendente."), 409
+    
+    token = secrets.token_hex(32)
+    user = User.query.get(user_id)
+    
+    # Cria o registo na base de dados
+    db.session.add(PendingEmailChange(user_id=user_id, old_email=user.email, new_email=new_email, token=token))
+    db.session.commit()
+    
+    # Aqui deves chamar a função de envio de email
+    # enviar_email(new_email, "Confirmação de alteração de e-mail", f"O teu token é: {token}")
+    
+    return jsonify(status="ok", msg="Pedido criado. Verifica o novo e-mail.")
+
+@app.route("/api/verify-email-change", methods=["POST"])
+def verify_email_change():
+    data = request.get_json(force=True)
+    token = data.get("token")
+    change = PendingEmailChange.query.filter_by(token=token, verified=False, cancelled=False).first()
+    
+    if not change:
+        return jsonify(status="error", msg="Token inválido ou expirado."), 400
+    
+    user = User.query.get(change.user_id)
+    user.email = change.new_email
+    user.email_changed = datetime.utcnow()
+    change.verified = True
+    
+    # Regista no histórico de atividades
+    adicionar_atividade(user.id, "email", "Email alterado via verificação", change.old_email, change.new_email, "user")
+    
+    db.session.commit()
+    return jsonify(status="ok", msg="E-mail atualizado com sucesso!")
+
+@app.route("/api/cancel-email-change", methods=["POST"])
+def cancel_email_change():
+    data = request.get_json(force=True)
+    token = data.get("token")
+    change = PendingEmailChange.query.filter_by(token=token, verified=False, cancelled=False).first()
+    
+    if not change:
+        return jsonify(status="error", msg="Pedido não encontrado."), 400
+        
+    change.cancelled = True
+    db.session.commit()
+    return jsonify(status="ok", msg="Pedido cancelado.")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
