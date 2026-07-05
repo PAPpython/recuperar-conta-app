@@ -646,25 +646,46 @@ def login():
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
 def delete_account():
+
     data = request.get_json(force=True)
 
     user_id = data.get("id")
     username = (data.get("username") or "").strip().lower()
+    password = data.get("password")
 
-    if not user_id or not username:
-        return jsonify(status="error", msg="Dados inválidos"), 400
+    if not user_id or not username or not password:
+        return jsonify(
+            status="error",
+            msg="Dados inválidos"
+        ), 400
 
-    user = User.query.filter_by(id=user_id, username=username).first()
+    user = User.query.filter_by(
+        id=user_id,
+        username=username
+    ).first()
 
     if not user:
-        return jsonify(status="error", msg="Conta já não existe"), 404
+        return jsonify(
+            status="error",
+            msg="Conta já não existe"
+        ), 404
 
-    # Marcar a conta como apagada
+    # Verificar password
+    if hash_password(password) != user.password:
+        return jsonify(
+            status="error",
+            msg="Password incorreta"
+        )
+
+    # Marcar conta como apagada
     user.apagado = True
+
     db.session.commit()
 
-    return jsonify(status="ok", msg="Conta apagada com sucesso")
-
+    return jsonify(
+        status="ok",
+        msg="Conta apagada com sucesso"
+    )
 #================= GUARDAR DADOS DE RECUPERAÇÃO =================
 @app.route("/api/save-recovery-data", methods=["POST"])
 def save_recovery_data():
