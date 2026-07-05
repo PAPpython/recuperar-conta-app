@@ -3506,20 +3506,32 @@ def check_recovery_email_verification():
 @app.route("/cancel-recovery-email/<token>")
 def cancel_recovery_email(token):
 
-    if not token:
+    try:
+        print("TOKEN CANCEL RECEBIDO:", token)
+
+        if not token or token == "None":
+            print("TOKEN INVÁLIDO")
+            return render_template("email_invalid.html")
+
+        user = User.query.filter_by(recovery_token=token).first()
+
+        print("USER ENCONTRADO:", user)
+
+        if not user:
+            return render_template("email_invalid.html")
+
+        user.email_recuperacao = None
+        user.recovery_token = None
+
+        db.session.commit()
+
+        print("EMAIL DE RECUPERAÇÃO CANCELADO")
+
+        return render_template("email_recovery_cancelled.html")
+
+    except Exception as e:
+        print("ERRO NO CANCEL:", str(e))
         return render_template("email_invalid.html")
-
-    user = User.query.filter_by(recovery_token=token).first()
-
-    if not user:
-        return render_template("email_invalid.html")
-
-    user.email_recuperacao = None
-    user.recovery_token = None
-
-    db.session.commit()
-
-    return render_template("email_recovery_cancelled.html")
 # =======================================================
 # 🔥 ROTA DE SUPORTE PARA O TKINTER (APENAS ESTA)
 # =======================================================
