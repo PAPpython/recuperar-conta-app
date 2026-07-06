@@ -6355,6 +6355,184 @@ def change_recovery_questions():
         status="ok",
         msg="Perguntas atualizadas"
     )
+
+@app.route("/api/settings/recovery-questions", methods=["POST"])
+def get_recovery_questions():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Utilizador não encontrado"
+        )
+
+    try:
+
+        perguntas = json.loads(
+            user.perguntas_recuperacao or "[]"
+        )
+
+    except:
+
+        perguntas = []
+
+    return jsonify(
+        status="ok",
+        questions=perguntas
+    )
+
+@app.route("/api/settings/add-recovery-question", methods=["POST"])
+def add_recovery_question():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Utilizador não encontrado"
+        )
+
+    pergunta = (data.get("question") or "").strip()
+    resposta = (data.get("answer") or "").strip()
+
+    if not pergunta or not resposta:
+        return jsonify(
+            status="error",
+            msg="Preencha todos os campos"
+        )
+
+    try:
+        perguntas = json.loads(
+            user.perguntas_recuperacao or "[]"
+        )
+    except:
+        perguntas = []
+
+    perguntas.append({
+        "question": pergunta,
+        "answer": resposta
+    })
+
+    user.perguntas_recuperacao = json.dumps(
+        perguntas,
+        ensure_ascii=False
+    )
+
+    db.session.commit()
+
+    adicionar_atividade(
+        user.id,
+        "recovery_questions",
+        "Pergunta de recuperação adicionada",
+        "",
+        pergunta,
+        "user"
+    )
+
+    return jsonify(status="ok")
+    
+@app.route("/api/settings/update-recovery-question", methods=["POST"])
+def update_recovery_question():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(status="error")
+
+    indice = data.get("index")
+
+    pergunta = (data.get("question") or "").strip()
+    resposta = (data.get("answer") or "").strip()
+
+    try:
+        perguntas = json.loads(
+            user.perguntas_recuperacao or "[]"
+        )
+    except:
+        perguntas = []
+
+    if indice is None or indice >= len(perguntas):
+        return jsonify(
+            status="error",
+            msg="Pergunta inválida"
+        )
+
+    antiga = perguntas[indice]["question"]
+
+    perguntas[indice] = {
+        "question": pergunta,
+        "answer": resposta
+    }
+
+    user.perguntas_recuperacao = json.dumps(
+        perguntas,
+        ensure_ascii=False
+    )
+
+    db.session.commit()
+
+    adicionar_atividade(
+        user.id,
+        "recovery_questions",
+        "Pergunta de recuperação alterada",
+        antiga,
+        pergunta,
+        "user"
+    )
+
+    return jsonify(status="ok")
+
+@app.route("/api/settings/delete-recovery-question", methods=["POST"])
+def delete_recovery_question():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(status="error")
+
+    indice = data.get("index")
+
+    try:
+        perguntas = json.loads(
+            user.perguntas_recuperacao or "[]"
+        )
+    except:
+        perguntas = []
+
+    if indice is None or indice >= len(perguntas):
+        return jsonify(
+            status="error",
+            msg="Pergunta inválida"
+        )
+
+    removida = perguntas.pop(indice)
+
+    user.perguntas_recuperacao = json.dumps(
+        perguntas,
+        ensure_ascii=False
+    )
+
+    db.session.commit()
+
+    adicionar_atividade(
+        user.id,
+        "recovery_questions",
+        "Pergunta de recuperação removida",
+        removida["question"],
+        "",
+        "user"
+    )
+
+    return jsonify(status="ok")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
