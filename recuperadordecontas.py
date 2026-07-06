@@ -572,7 +572,7 @@ def existe_bloqueio(a, b):
 def adicionar_atividade(
         user_id,
         tipo,
-        titulo,
+        descricao,
         antigo="",
         novo="",
         origem="user",
@@ -589,7 +589,7 @@ def adicionar_atividade(
 
             activity_type=tipo,
 
-            description=titulo,
+            description=descricao,
 
             old_value=antigo,
 
@@ -6170,13 +6170,17 @@ def account_activity():
     user = User.query.get(data.get("user_id"))
 
     if not user:
-        return jsonify(status="error")
+        return jsonify(
+            status="error",
+            msg="Utilizador não encontrado"
+        )
 
-    atividades = AccountActivity.query.filter_by(
-        user_id=user.id
-    ).order_by(
-        AccountActivity.created_at.desc()
-    ).all()
+    atividades = (
+        AccountActivity.query
+        .filter_by(user_id=user.id)
+        .order_by(AccountActivity.created_at.desc())
+        .all()
+    )
 
     lista = []
 
@@ -6184,19 +6188,19 @@ def account_activity():
 
         lista.append({
 
-            "titulo": a.titulo,
+            "titulo": a.description,
 
-            "tipo": a.tipo,
+            "tipo": a.activity_type,
 
             "origem": a.origem,
 
-            "antigo": a.valor_antigo,
+            "admin_id": a.admin_id,
 
-            "novo": a.valor_novo,
+            "antigo": a.old_value,
 
-            "data": a.created_at.strftime(
-                "%d/%m/%Y %H:%M"
-            )
+            "novo": a.new_value,
+
+            "data": a.created_at.strftime("%d/%m/%Y %H:%M")
 
         })
 
@@ -6216,11 +6220,12 @@ def account_activity():
         last_profile_update=user.last_profile_update.strftime("%d/%m/%Y %H:%M")
         if user.last_profile_update else "-",
 
-        recovery_email=user.email_recuperacao,
+        recovery_email=user.email_recuperacao or "-",
 
-        recovery_status=user.recovery_email_status,
+        recovery_status=user.recovery_email_status or "pending",
 
         atividades=lista
+
     )
 
 @app.route("/api/settings/change-email", methods=["POST"])
