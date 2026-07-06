@@ -6413,8 +6413,9 @@ def change_recovery_questions():
         msg="Perguntas atualizadas"
     )
 
+# ================= PERGUNTAS DE RECUPERAÇÃO (DEFINIÇÕES) =================
 @app.route("/api/settings/recovery-questions", methods=["POST"])
-def get_recovery_questions():
+def settings_recovery_questions():
 
     data = request.get_json(force=True)
 
@@ -6427,20 +6428,16 @@ def get_recovery_questions():
         )
 
     try:
-
         perguntas = json.loads(
             user.perguntas_recuperacao or "[]"
         )
-
     except:
-
         perguntas = []
 
     return jsonify(
         status="ok",
         questions=perguntas
     )
-
 @app.route("/api/settings/add-recovery-question", methods=["POST"])
 def add_recovery_question():
 
