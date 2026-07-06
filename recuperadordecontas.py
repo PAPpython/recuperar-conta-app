@@ -852,9 +852,7 @@ def login():
 
     # ================= NOVO =================
     user.last_login = datetime.utcnow()
-
-    db.session.commit()
-
+    
     adicionar_atividade(
         user.id,
         "login",
@@ -863,6 +861,16 @@ def login():
         "",
         "user"
     )
+
+    user.last_login = datetime.utcnow()
+    
+    adicionar_atividade(
+        user.id,
+        "login",
+        "Novo início de sessão"
+    )
+    
+    db.session.commit()
     # ========================================
 
     session.clear()
