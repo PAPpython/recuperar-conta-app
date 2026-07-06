@@ -197,6 +197,33 @@ class PasswordHistory(db.Model):
         default=datetime.utcnow
     )
 
+class FollowRequest(db.Model):
+    __tablename__ = "follow_requests"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    sender_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    receiver_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    status = db.Column(
+        db.String(20),
+        default="pending"
+    )
+
 class AccountActivity(db.Model):
 
     __tablename__ = "account_activity"
@@ -212,10 +239,24 @@ class AccountActivity(db.Model):
         nullable=False
     )
 
+    # Admin que fez a alteração (opcional)
+    admin_id = db.Column(
+        db.Integer,
+        nullable=True
+    )
+
+    # login
+    # email
+    # password
+    # recovery_email
+    # recovery_questions
+    # ban
+    # etc...
     activity_type = db.Column(
         db.String(60)
     )
 
+    # Texto mostrado ao utilizador
     description = db.Column(
         db.Text
     )
@@ -230,11 +271,17 @@ class AccountActivity(db.Model):
         nullable=True
     )
 
+    # user
+    # admin
+    origem = db.Column(
+        db.String(20),
+        default="user"
+    )
+
     created_at = db.Column(
         db.DateTime,
         default=datetime.utcnow
     )
-
 class AdminActivity(db.Model):
 
     __tablename__ = "admin_activity"
@@ -533,19 +580,29 @@ def adicionar_atividade(
 ):
 
     db.session.add(
+
         AccountActivity(
+
             user_id=user_id,
+
             admin_id=admin_id,
-            tipo=tipo,
-            titulo=titulo,
-            valor_antigo=antigo,
-            valor_novo=novo,
+
+            activity_type=tipo,
+
+            description=titulo,
+
+            old_value=antigo,
+
+            new_value=novo,
+
             origem=origem
+
         )
+
     )
 
     db.session.commit()
-
+    
 def is_admin(user_id):
     user = User.query.get(user_id)
 
