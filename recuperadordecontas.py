@@ -6599,6 +6599,284 @@ def update_recovery_questions():
         status="ok",
         msg="Perguntas atualizadas com sucesso."
     )
+
+@app.route("/api/settings/send-email-change-code", methods=["POST"])
+def send_email_change_code():
+
+    import secrets
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Utilizador não encontrado"
+        )
+
+    password = data.get("password", "")
+
+    novo_email = (
+        data.get("new_email") or ""
+    ).strip().lower()
+
+    if not password or not novo_email:
+        return jsonify(
+            status="error",
+            msg="Preencha todos os campos"
+        )
+
+    if hash_password(password) != user.password:
+        return jsonify(
+            status="error",
+            msg="Password incorreta"
+        )
+
+    if novo_email == user.email:
+        return jsonify(
+            status="error",
+            msg="Esse já é o email atual."
+        )
+
+    existe = User.query.filter_by(
+        email=novo_email
+    ).first()
+
+    if existe:
+        return jsonify(
+            status="error",
+            msg="Esse email já está registado."
+        )
+
+    token = secrets.token_hex(32)
+
+    user.pending_email = novo_email
+
+    user.email_change_token = token
+
+    user.email_status = "pending"
+
+    db.session.commit()
+
+    return jsonify(
+
+        status="ok",
+
+        token=token,
+
+        username=user.username,
+
+        current_email=user.email,
+
+        new_email=novo_email
+
+    )
+
+@app.route("/verify-email-change/<token>")
+def verify_email_change(token):
+
+    if not token or token == "None":
+        return render_template("email_invalid.html")
+
+    pedido = PendingEmailChange.query.filter_by(
+        token=token
+    ).first()
+
+    if not pedido:
+        return render_template("email_invalid.html")
+
+    if pedido.status != "pending":
+        return render_template("email_invalid.html")
+
+    user = User.query.get(pedido.user_id)
+
+    if not user:
+        return render_template("email_invalid.html")
+
+    email_antigo = user.email
+
+    user.email = pedido.new_email
+    user.email_changed = datetime.utcnow()
+
+    pedido.status = "verified"
+
+    db.session.commit()
+
+    adicionar_atividade(
+        user.id,
+        "email",
+        "Email principal alterado",
+        email_antigo,
+        user.email,
+        "user"
+    )
+
+    return render_template("email_change_verified.html")
+
+@app.route("/cancel-email-change/<token>")
+def cancel_email_change(token):
+
+    if not token or token == "None":
+        return render_template("email_invalid.html")
+
+    user = User.query.filter_by(
+        email_change_token=token
+    ).first()
+
+    if not user:
+        return render_template("email_invalid.html")
+
+    if not user.pending_email:
+        return render_template("email_invalid.html")
+
+    user.pending_email = None
+
+    user.email_change_token = None
+
+    user.email_status = "rejected"
+
+    db.session.commit()
+
+    return render_template("email_change_cancelled.html")
+
+@app.route("/api/settings/send-recovery-email-change", methods=["POST"])
+def send_recovery_email_change():
+
+    import secrets
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Utilizador não encontrado"
+        )
+
+    password = data.get("password", "")
+
+    novo_email = (
+        data.get("new_email") or ""
+    ).strip().lower()
+
+    if not password or not novo_email:
+        return jsonify(
+            status="error",
+            msg="Preencha todos os campos"
+        )
+
+    if hash_password(password) != user.password:
+        return jsonify(
+            status="error",
+            msg="Password incorreta"
+        )
+
+    if novo_email == (user.email_recuperacao or "").lower():
+        return jsonify(
+            status="error",
+            msg="Esse já é o email de recuperação."
+        )
+
+    existe = User.query.filter_by(
+        email_recuperacao=novo_email
+    ).first()
+
+    if existe:
+        return jsonify(
+            status="error",
+            msg="Esse email já está a ser utilizado."
+        )
+
+    token = secrets.token_hex(32)
+
+    user.pending_recovery_email = novo_email
+
+    user.recovery_change_token = token
+
+    user.recovery_email_status = "pending"
+
+    db.session.commit()
+
+    return jsonify(
+
+        status="ok",
+
+        token=token,
+
+        username=user.username,
+
+        current_email=user.email_recuperacao,
+
+        new_email=novo_email
+
+    )
+
+@app.route("/verify-recovery-email-change/<token>")
+def verify_recovery_email_change(token):
+
+    if not token or token == "None":
+        return render_template("email_invalid.html")
+
+    user = User.query.filter_by(
+        recovery_change_token=token
+    ).first()
+
+    if not user:
+        return render_template("email_invalid.html")
+
+    if not user.pending_recovery_email:
+        return render_template("email_invalid.html")
+
+    antigo = user.email_recuperacao or ""
+
+    user.email_recuperacao = user.pending_recovery_email
+
+    user.pending_recovery_email = None
+
+    user.recovery_change_token = None
+
+    user.recovery_email_status = "verified"
+
+    db.session.commit()
+
+    adicionar_atividade(
+        user.id,
+        "recovery_email",
+        "Email de recuperação alterado",
+        antigo,
+        user.email_recuperacao,
+        "user"
+    )
+
+    return render_template("recovery_email_verified.html")
+
+@app.route("/cancel-recovery-email-change/<token>")
+def cancel_recovery_email_change(token):
+
+    if not token or token == "None":
+        return render_template("email_invalid.html")
+
+    user = User.query.filter_by(
+        recovery_change_token=token
+    ).first()
+
+    if not user:
+        return render_template("email_invalid.html")
+
+    if not user.pending_recovery_email:
+        return render_template("email_invalid.html")
+
+    user.pending_recovery_email = None
+
+    user.recovery_change_token = None
+
+    user.recovery_email_status = "rejected"
+
+    db.session.commit()
+
+    return render_template("recovery_email_cancelled.html")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
