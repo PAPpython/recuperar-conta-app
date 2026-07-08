@@ -173,6 +173,68 @@ class User(db.Model):
         db.DateTime,
         nullable=True
     )
+    
+    # ================= EMAIL PRINCIPAL =================
+
+    # Email atual verificado?
+    email_verified = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    # Novo email à espera de confirmação
+    pending_email = db.Column(
+        db.String(120),
+        nullable=True
+    )
+
+    # pending / verified / rejected
+    pending_email_status = db.Column(
+        db.String(20),
+        default=None,
+        nullable=True
+    )
+
+    # Token para confirmar alteração
+    pending_email_token = db.Column(
+        db.String(64),
+        nullable=True
+    )
+    
+    # ================= EMAIL RECUPERAÇÃO =================
+
+    email_recuperacao = db.Column(
+        db.String(120),
+        nullable=True
+    )
+
+    perguntas_recuperacao = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    recovery_token = db.Column(
+        db.String(64),
+        nullable=True
+    )
+
+    # Novo email de recuperação pendente
+    pending_recovery_email = db.Column(
+        db.String(120),
+        nullable=True
+    )
+
+    pending_recovery_token = db.Column(
+        db.String(64),
+        nullable=True
+    )
+
+    # pending / verified / rejected
+    recovery_email_status = db.Column(
+        db.String(20),
+        default=None,
+        nullable=True
+    )
 
 from datetime import datetime
 
@@ -6236,6 +6298,7 @@ def account_activity():
 
     )
 
+# ================= ALTERAR EMAIL PRINCIPAL =================
 @app.route("/api/settings/change-email", methods=["POST"])
 def change_email():
 
@@ -6249,30 +6312,20 @@ def change_email():
             msg="Utilizador não encontrado"
         )
 
-    password = data.get("password", "")
     novo_email = (data.get("new_email") or "").strip().lower()
 
-    if not password or not novo_email:
+    if not novo_email:
         return jsonify(
             status="error",
-            msg="Preencha todos os campos"
+            msg="Introduza um email."
         )
 
-    # Password
-    if hash_password(password) != user.password:
-        return jsonify(
-            status="error",
-            msg="Password incorreta"
-        )
-
-    # Igual ao atual
     if novo_email == user.email:
         return jsonify(
             status="error",
-            msg="Este já é o seu email principal"
+            msg="Esse já é o seu email principal."
         )
 
-    # Já existe
     existe = User.query.filter_by(
         email=novo_email
     ).first()
@@ -6280,34 +6333,27 @@ def change_email():
     if existe:
         return jsonify(
             status="error",
-            msg="Esse email já está registado"
+            msg="Esse email já está registado."
         )
 
-    email_antigo = user.email
+    # Guarda temporariamente o novo email
+    user.pending_email = novo_email
 
-    user.email = novo_email
+    # Ainda não está verificado
+    user.email_status = "pending"
 
-    user.email_changed = datetime.utcnow()
-
-    # Caso uses verificação de email
-    user.email_banido = False
+    # Token para confirmação
+    user.email_token = secrets.token_urlsafe(32)
 
     db.session.commit()
 
-    adicionar_atividade(
-        user.id,
-        "email",
-        "Email principal alterado",
-        email_antigo,
-        novo_email,
-        "user"
-    )
-
     return jsonify(
         status="ok",
-        msg="Email alterado com sucesso"
+        token=user.email_token,
+        email=novo_email
     )
 
+# ================= ALTERAR EMAIL DE RECUPERAÇÃO =================
 @app.route("/api/settings/change-recovery-email", methods=["POST"])
 def change_recovery_email():
 
@@ -6321,25 +6367,18 @@ def change_recovery_email():
             msg="Utilizador não encontrado"
         )
 
-    password = data.get("password", "")
     novo_email = (data.get("new_email") or "").strip().lower()
 
-    if not password or not novo_email:
+    if not novo_email:
         return jsonify(
             status="error",
-            msg="Preencha todos os campos"
+            msg="Introduza um email."
         )
 
-    if hash_password(password) != user.password:
+    if novo_email == (user.email_recuperacao or ""):
         return jsonify(
             status="error",
-            msg="Password incorreta"
-        )
-
-    if novo_email == user.email_recuperacao:
-        return jsonify(
-            status="error",
-            msg="Este já é o email de recuperação"
+            msg="Esse já é o email de recuperação."
         )
 
     existe = User.query.filter_by(
@@ -6349,83 +6388,24 @@ def change_recovery_email():
     if existe:
         return jsonify(
             status="error",
-            msg="Esse email já está a ser utilizado"
+            msg="Esse email já está a ser utilizado."
         )
 
-    antigo = user.email_recuperacao or ""
-
-    user.email_recuperacao = novo_email
+    # Guarda temporariamente
+    user.pending_recovery_email = novo_email
 
     user.recovery_email_status = "pending"
 
-    db.session.commit()
-
-    adicionar_atividade(
-        user.id,
-        "recovery_email",
-        "Email de recuperação alterado",
-        antigo,
-        novo_email,
-        "user"
-    )
-
-    return jsonify(
-        status="ok",
-        msg="Email de recuperação atualizado"
-    )
-
-@app.route("/api/settings/change-recovery-questions", methods=["POST"])
-def change_recovery_questions():
-
-    data = request.get_json(force=True)
-
-    user = User.query.get(data.get("user_id"))
-
-    if not user:
-        return jsonify(
-            status="error",
-            msg="Utilizador não encontrado"
-        )
-
-    password = data.get("password", "")
-
-    perguntas = data.get("questions")
-
-    if hash_password(password) != user.password:
-        return jsonify(
-            status="error",
-            msg="Password incorreta"
-        )
-
-    if not perguntas:
-        return jsonify(
-            status="error",
-            msg="Perguntas inválidas"
-        )
-
-    antigas = user.perguntas_recuperacao or ""
-
-    user.perguntas_recuperacao = json.dumps(
-        perguntas,
-        ensure_ascii=False
-    )
+    user.recovery_token = secrets.token_urlsafe(32)
 
     db.session.commit()
 
-    adicionar_atividade(
-        user.id,
-        "recovery_questions",
-        "Perguntas de recuperação alteradas",
-        "",
-        "",
-        "user"
-    )
-
     return jsonify(
         status="ok",
-        msg="Perguntas atualizadas"
+        token=user.recovery_token,
+        email=novo_email
     )
-
+    
 # ================= PERGUNTAS DE RECUPERAÇÃO (DEFINIÇÕES) =================
 @app.route("/api/settings/recovery-questions", methods=["POST"])
 def settings_recovery_questions():
@@ -6481,8 +6461,8 @@ def add_recovery_question():
         perguntas = []
 
     perguntas.append({
-        "question": pergunta,
-        "answer": resposta
+        "pergunta": pergunta,
+        "resposta": resposta
     })
 
     user.perguntas_recuperacao = json.dumps(
@@ -6541,7 +6521,7 @@ def delete_recovery_question():
         user.id,
         "recovery_questions",
         "Pergunta de recuperação removida",
-        removida["question"],
+        removida["pergunta"],
         "",
         "user"
     )
