@@ -6600,6 +6600,78 @@ def delete_recovery_question():
     )
 
     return jsonify(status="ok")
+
+# ================= ALTERAR PERGUNTAS DE RECUPERAÇÃO =================
+@app.route("/api/settings/change-recovery-questions", methods=["POST"])
+def change_recovery_questions():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Utilizador não encontrado"
+        )
+
+    password = data.get("password", "")
+
+    if hash_password(password) != user.password:
+        return jsonify(
+            status="error",
+            msg="Password incorreta"
+        )
+
+    perguntas = data.get("questions", [])
+
+    if not isinstance(perguntas, list):
+        return jsonify(
+            status="error",
+            msg="Formato inválido"
+        )
+
+    if len(perguntas) > 5:
+        return jsonify(
+            status="error",
+            msg="Máximo de 5 perguntas."
+        )
+
+    lista = []
+
+    for item in perguntas:
+
+        pergunta = (item.get("pergunta") or "").strip()
+        resposta = (item.get("resposta") or "").strip()
+
+        if not pergunta or not resposta:
+            continue
+
+        lista.append({
+            "pergunta": pergunta,
+            "resposta": resposta
+        })
+
+    user.perguntas_recuperacao = json.dumps(
+        lista,
+        ensure_ascii=False
+    )
+
+    db.session.commit()
+
+    adicionar_atividade(
+        user.id,
+        "recovery_questions",
+        "Perguntas de recuperação alteradas",
+        "",
+        "",
+        "user"
+    )
+
+    return jsonify(
+        status="ok",
+        msg="Perguntas atualizadas com sucesso."
+    )
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
