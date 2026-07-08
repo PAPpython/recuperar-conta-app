@@ -6877,6 +6877,63 @@ def cancel_recovery_email_change(token):
     db.session.commit()
 
     return render_template("recovery_change_email_cancelled.html")
+
+@app.route("/api/settings/check-email-status", methods=["POST"])
+def check_email_status():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(
+        data.get("user_id")
+    )
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Utilizador não encontrado"
+        )
+
+    return jsonify(
+
+        status="ok",
+
+        email=user.email,
+
+        pending_email=user.pending_email,
+
+        email_status=user.email_status,
+
+        email_changed=user.email_changed.strftime("%d/%m/%Y %H:%M")
+        if user.email_changed else None
+
+    )
+
+@app.route("/api/settings/check-recovery-email-status", methods=["POST"])
+def check_recovery_email_status():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(
+        data.get("user_id")
+    )
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Utilizador não encontrado"
+        )
+
+    return jsonify(
+
+        status="ok",
+
+        recovery_email=user.email_recuperacao,
+
+        pending_recovery_email=user.pending_recovery_email,
+
+        recovery_email_status=user.recovery_email_status
+
+    )
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
