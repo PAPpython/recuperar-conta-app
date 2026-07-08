@@ -6850,7 +6850,7 @@ def verify_recovery_email_change(token):
         "user"
     )
 
-    return render_template("recovery_email_verified.html")
+    return render_template("recovery_change_email_verified.html")
 
 @app.route("/cancel-recovery-email-change/<token>")
 def cancel_recovery_email_change(token):
@@ -6876,7 +6876,7 @@ def cancel_recovery_email_change(token):
 
     db.session.commit()
 
-    return render_template("recovery_email_cancelled.html")
+    return render_template("recovery_change_email_cancelled.html")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
