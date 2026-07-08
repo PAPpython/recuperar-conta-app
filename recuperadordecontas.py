@@ -6503,59 +6503,6 @@ def add_recovery_question():
 
     return jsonify(status="ok")
     
-@app.route("/api/settings/update-recovery-question", methods=["POST"])
-def update_recovery_question():
-
-    data = request.get_json(force=True)
-
-    user = User.query.get(data.get("user_id"))
-
-    if not user:
-        return jsonify(status="error")
-
-    indice = data.get("index")
-
-    pergunta = (data.get("question") or "").strip()
-    resposta = (data.get("answer") or "").strip()
-
-    try:
-        perguntas = json.loads(
-            user.perguntas_recuperacao or "[]"
-        )
-    except:
-        perguntas = []
-
-    if indice is None or indice >= len(perguntas):
-        return jsonify(
-            status="error",
-            msg="Pergunta inválida"
-        )
-
-    antiga = perguntas[indice]["question"]
-
-    perguntas[indice] = {
-        "question": pergunta,
-        "answer": resposta
-    }
-
-    user.perguntas_recuperacao = json.dumps(
-        perguntas,
-        ensure_ascii=False
-    )
-
-    db.session.commit()
-
-    adicionar_atividade(
-        user.id,
-        "recovery_questions",
-        "Pergunta de recuperação alterada",
-        antiga,
-        pergunta,
-        "user"
-    )
-
-    return jsonify(status="ok")
-
 @app.route("/api/settings/delete-recovery-question", methods=["POST"])
 def delete_recovery_question():
 
@@ -6603,7 +6550,7 @@ def delete_recovery_question():
 
 # ================= ALTERAR PERGUNTAS DE RECUPERAÇÃO =================
 @app.route("/api/settings/change-recovery-questions", methods=["POST"])
-def change_recovery_questions():
+def update_recovery_questions():
 
     data = request.get_json(force=True)
 
