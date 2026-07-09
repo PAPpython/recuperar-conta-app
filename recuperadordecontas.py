@@ -72,136 +72,109 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
     # ================= CONTA =================
-    username = db.Column(db.String(80), unique=True)
-    email = db.Column(db.String(120), unique=True)
-    password = db.Column(db.String(128))
 
-    provider = db.Column(db.String(20), default="local")
-    google_token = db.Column(db.String(64), unique=True)
-    google_name = db.Column(db.String(120))
-    google_picture = db.Column(db.String(300))
-    is_google_pending = db.Column(db.Boolean, default=False)
+    username = db.Column(
+        db.String(80),
+        unique=True
+    )
+
+    email = db.Column(
+        db.String(120),
+        unique=True
+    )
+
+    password = db.Column(
+        db.String(128)
+    )
+
+    provider = db.Column(
+        db.String(20),
+        default="local"
+    )
+
+    google_token = db.Column(
+        db.String(64),
+        unique=True
+    )
+
+    google_name = db.Column(
+        db.String(120)
+    )
+
+    google_picture = db.Column(
+        db.String(300)
+    )
+
+    is_google_pending = db.Column(
+        db.Boolean,
+        default=False
+    )
+
 
     # ================= PERFIL =================
-    nome = db.Column(db.String(120), nullable=True)
-    bio = db.Column(db.String(175), nullable=True)
-    avatar = db.Column(db.String(50), nullable=True)
-    banner = db.Column(db.String(255), nullable=True)
 
-    avatares_comprados = db.Column(db.Text, default="[]")
-    banners_comprados = db.Column(db.Text, default="[]")
-
-    # ================= PRIVACIDADE =================
-    mostrar_publicamente = db.Column(db.Boolean, default=True)
-    mostrar_nome = db.Column(db.Boolean, default=True)
-    perfil_privado = db.Column(db.Boolean, default=False)
-    mostrar_email = db.Column(db.Boolean, default=False)
-
-    # ================= SEGURANÇA =================
-    password_changed = db.Column(db.DateTime)
-
-    # ================= RECUPERAÇÃO =================
-    email_recuperacao = db.Column(db.String(120), nullable=True)
-    perguntas_recuperacao = db.Column(db.Text, nullable=True)
-    recovery_token = db.Column(db.String(64), nullable=True)
-
-    # pending / verified / rejected
-    recovery_email_status = db.Column(
-        db.String(20),
-        default="pending"
-    )
-
-    # ================= ESTADO DA CONTA =================
-    ativo = db.Column(db.Boolean, default=True)
-    apagado = db.Column(db.Boolean, default=False)
-
-    desativado_em = db.Column(db.DateTime, nullable=True)
-    reactivation_code = db.Column(db.String(32), nullable=True)
-
-    # ================= MODERAÇÃO =================
-    role = db.Column(db.String(20), default="user")
-
-    banido = db.Column(db.Boolean, default=False)
-    ban_reason = db.Column(db.String(255), nullable=True)
-
-    suspenso_ate = db.Column(db.DateTime, nullable=True)
-
-    bloqueado = db.Column(db.Boolean, default=False)
-    bloqueado_ate = db.Column(db.DateTime, nullable=True)
-
-    apagado_por_admin = db.Column(db.Boolean, default=False)
-
-    avisos = db.Column(db.Integer, default=0)
-
-    warn_count = db.Column(db.Integer, default=0)
-    warning_count = db.Column(db.Integer, default=0)
-
-    email_banido = db.Column(db.Boolean, default=False)
-
-    # ================= IA =================
-    ia_banido = db.Column(db.Boolean, default=False)
-    ia_ban_reason = db.Column(db.String(255), nullable=True)
-    ia_suspenso_ate = db.Column(db.DateTime, nullable=True)
-    ultima_punicao_ia = db.Column(db.DateTime, nullable=True)
-
-    # ================= ECONOMIA =================
-    moedas = db.Column(db.Integer, default=0)
-    ultima_recompensa_post = db.Column(db.DateTime, nullable=True)
-
-    # ================= ATIVIDADE =================
-
-    # Data da criação da conta
-    created_at = db.Column(
-        db.DateTime,
-        default=datetime.utcnow
-    )
-
-    # Último login
-    last_login = db.Column(
-        db.DateTime,
-        nullable=True
-    )
-
-    # Última alteração do perfil
-    last_profile_update = db.Column(
-        db.DateTime,
-        nullable=True
-    )
-
-    # Última alteração do email principal
-    email_changed = db.Column(
-        db.DateTime,
-        nullable=True
-    )
-    
-    # ================= EMAIL PRINCIPAL =================
-
-    # Email atual verificado?
-    email_verified = db.Column(
-        db.Boolean,
-        default=True
-    )
-
-    # Novo email à espera de confirmação
-    pending_email = db.Column(
+    nome = db.Column(
         db.String(120),
         nullable=True
     )
 
-    # pending / verified / rejected
-    pending_email_status = db.Column(
-        db.String(20),
-        default=None,
+    bio = db.Column(
+        db.String(175),
         nullable=True
     )
 
-    # Token para confirmar alteração
-    pending_email_token = db.Column(
-        db.String(64),
+    avatar = db.Column(
+        db.String(50),
         nullable=True
     )
-    
-    # ================= EMAIL RECUPERAÇÃO =================
+
+    banner = db.Column(
+        db.String(255),
+        nullable=True
+    )
+
+    avatares_comprados = db.Column(
+        db.Text,
+        default="[]"
+    )
+
+    banners_comprados = db.Column(
+        db.Text,
+        default="[]"
+    )
+
+
+    # ================= PRIVACIDADE =================
+
+    mostrar_publicamente = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    mostrar_nome = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    perfil_privado = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    mostrar_email = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+
+    # ================= SEGURANÇA =================
+
+    password_changed = db.Column(
+        db.DateTime
+    )
+
+
+    # ================= RECUPERAÇÃO =================
 
     email_recuperacao = db.Column(
         db.String(120),
@@ -218,12 +191,13 @@ class User(db.Model):
         nullable=True
     )
 
-    # Novo email de recuperação pendente
+    # Novo email de recuperação enquanto aguarda confirmação
     pending_recovery_email = db.Column(
         db.String(120),
         nullable=True
     )
 
+    # Token enviado no email de confirmação
     pending_recovery_token = db.Column(
         db.String(64),
         nullable=True
@@ -232,10 +206,174 @@ class User(db.Model):
     # pending / verified / rejected
     recovery_email_status = db.Column(
         db.String(20),
+        default="pending",
+        nullable=True
+    )
+
+
+    # ================= ESTADO DA CONTA =================
+
+    ativo = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    apagado = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    desativado_em = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    reactivation_code = db.Column(
+        db.String(32),
+        nullable=True
+    )
+
+
+    # ================= MODERAÇÃO =================
+
+    role = db.Column(
+        db.String(20),
+        default="user"
+    )
+
+    banido = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    ban_reason = db.Column(
+        db.String(255),
+        nullable=True
+    )
+
+    suspenso_ate = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    bloqueado = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    bloqueado_ate = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    apagado_por_admin = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    avisos = db.Column(
+        db.Integer,
+        default=0
+    )
+
+    warn_count = db.Column(
+        db.Integer,
+        default=0
+    )
+
+    warning_count = db.Column(
+        db.Integer,
+        default=0
+    )
+
+    email_banido = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+
+    # ================= IA =================
+
+    ia_banido = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    ia_ban_reason = db.Column(
+        db.String(255),
+        nullable=True
+    )
+
+    ia_suspenso_ate = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    ultima_punicao_ia = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+
+    # ================= ECONOMIA =================
+
+    moedas = db.Column(
+        db.Integer,
+        default=0
+    )
+
+    ultima_recompensa_post = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+
+    # ================= ATIVIDADE =================
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    last_login = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    last_profile_update = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    email_changed = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+
+    # ================= EMAIL PRINCIPAL =================
+
+    email_verified = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    pending_email = db.Column(
+        db.String(120),
+        nullable=True
+    )
+
+    pending_email_status = db.Column(
+        db.String(20),
         default=None,
         nullable=True
     )
 
+    pending_email_token = db.Column(
+        db.String(64),
+        nullable=True
+    )
+    
 from datetime import datetime
 
 class PasswordHistory(db.Model):
@@ -6676,44 +6814,65 @@ def send_email_change_code():
 @app.route("/verify-email-change/<token>")
 def verify_email_change(token):
 
-    if not token or token == "None":
-        return render_template("email_invalid.html")
+    try:
 
-    pedido = PendingEmailChange.query.filter_by(
-        token=token
-    ).first()
+        if not token or token == "None":
+            return render_template("email_invalid.html")
 
-    if not pedido:
-        return render_template("email_invalid.html")
 
-    if pedido.status != "pending":
-        return render_template("email_invalid.html")
+        user = User.query.filter_by(
+            pending_email_token=token
+        ).first()
 
-    user = User.query.get(pedido.user_id)
 
-    if not user:
-        return render_template("email_invalid.html")
+        if not user:
+            return render_template("email_invalid.html")
 
-    email_antigo = user.email
 
-    user.email = pedido.new_email
-    user.email_changed = datetime.utcnow()
+        if not user.pending_email:
+            return render_template("email_invalid.html")
 
-    pedido.status = "verified"
 
-    db.session.commit()
+        email_antigo = user.email
 
-    adicionar_atividade(
-        user.id,
-        "email",
-        "Email principal alterado",
-        email_antigo,
-        user.email,
-        "user"
-    )
 
-    return render_template("email_change_verified.html")
+        user.email = user.pending_email
 
+        user.pending_email = None
+
+        user.pending_email_token = None
+
+        user.pending_email_status = "verified"
+
+        user.email_changed = datetime.utcnow()
+
+
+        db.session.commit()
+
+
+        adicionar_atividade(
+            user.id,
+            "email",
+            "Email principal alterado",
+            email_antigo,
+            user.email,
+            "user"
+        )
+
+
+        return render_template(
+            "email_change_verified.html"
+        )
+
+
+    except Exception as e:
+
+        print("ERRO VERIFY EMAIL:", e)
+
+        return render_template(
+            "email_invalid.html"
+        )
+        
 @app.route("/cancel-email-change/<token>")
 def cancel_email_change(token):
 
@@ -6721,7 +6880,7 @@ def cancel_email_change(token):
         return render_template("email_invalid.html")
 
     user = User.query.filter_by(
-        email_change_token=token
+        pending_email_token=token
     ).first()
 
     if not user:
@@ -6732,9 +6891,9 @@ def cancel_email_change(token):
 
     user.pending_email = None
 
-    user.email_change_token = None
+    user.pending_email_token = None
 
-    user.email_status = "rejected"
+    user.pending_email_status = "rejected"
 
     db.session.commit()
 
