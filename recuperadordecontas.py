@@ -6943,7 +6943,7 @@ def send_recovery_email_change():
     token = secrets.token_hex(32)
 
     user.pending_recovery_email = novo_email
-    user.recovery_change_token = token
+    user.pending_recovery_token = token
     user.recovery_email_status = "pending"
 
     db.session.commit()
@@ -6966,7 +6966,7 @@ def verify_recovery_email_change(token):
 
 
         user = User.query.filter_by(
-            recovery_change_token=token
+            pending_recovery_token=token
         ).first()
 
 
@@ -6992,7 +6992,7 @@ def verify_recovery_email_change(token):
 
 
         # Invalidar token
-        user.recovery_change_token = None
+        user.pending_recovery_token = None
 
 
         # Estado confirmado
@@ -7045,7 +7045,7 @@ def cancel_recovery_email_change(token):
         return render_template("email_invalid.html")
 
     user = User.query.filter_by(
-        recovery_change_token=token
+        pending_recovery_token=token
     ).first()
 
     if not user:
@@ -7056,7 +7056,7 @@ def cancel_recovery_email_change(token):
 
     user.pending_recovery_email = None
 
-    user.recovery_change_token = None
+    user.pending_recovery_token = None
 
     user.recovery_email_status = "rejected"
 
