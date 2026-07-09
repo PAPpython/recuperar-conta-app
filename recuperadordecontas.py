@@ -7020,7 +7020,7 @@ def verify_recovery_email_change(token):
 
 
         return render_template(
-            "recovery_change_email_verified.html"
+            "recovery_email_change_verified.html"
         )
 
 
