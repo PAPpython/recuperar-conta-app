@@ -6755,22 +6755,14 @@ def send_recovery_email_change():
             msg="Utilizador não encontrado"
         )
 
-    password = data.get("password", "")
-
     novo_email = (
         data.get("new_email") or ""
     ).strip().lower()
 
-    if not password or not novo_email:
+    if not novo_email:
         return jsonify(
             status="error",
             msg="Preencha todos os campos"
-        )
-
-    if hash_password(password) != user.password:
-        return jsonify(
-            status="error",
-            msg="Password incorreta"
         )
 
     if novo_email == (user.email_recuperacao or "").lower():
@@ -6792,27 +6784,19 @@ def send_recovery_email_change():
     token = secrets.token_hex(32)
 
     user.pending_recovery_email = novo_email
-
     user.recovery_change_token = token
-
     user.recovery_email_status = "pending"
 
     db.session.commit()
 
     return jsonify(
-
         status="ok",
-
         token=token,
-
         username=user.username,
-
         current_email=user.email_recuperacao,
-
         new_email=novo_email
-
     )
-
+    
 @app.route("/verify-recovery-email-change/<token>")
 def verify_recovery_email_change(token):
 
