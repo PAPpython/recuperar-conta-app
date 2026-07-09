@@ -6800,41 +6800,84 @@ def send_recovery_email_change():
 @app.route("/verify-recovery-email-change/<token>")
 def verify_recovery_email_change(token):
 
-    if not token or token == "None":
-        return render_template("email_invalid.html")
+    try:
 
-    user = User.query.filter_by(
-        recovery_change_token=token
-    ).first()
+        if not token or token == "None":
+            return render_template("email_invalid.html")
 
-    if not user:
-        return render_template("email_invalid.html")
 
-    if not user.pending_recovery_email:
-        return render_template("email_invalid.html")
+        user = User.query.filter_by(
+            recovery_change_token=token
+        ).first()
 
-    antigo = user.email_recuperacao or ""
 
-    user.email_recuperacao = user.pending_recovery_email
+        if not user:
+            return render_template("email_invalid.html")
 
-    user.pending_recovery_email = None
 
-    user.recovery_change_token = None
+        if not user.pending_recovery_email:
+            return render_template("email_invalid.html")
 
-    user.recovery_email_status = "verified"
 
-    db.session.commit()
+        antigo = user.email_recuperacao or ""
 
-    adicionar_atividade(
-        user.id,
-        "recovery_email",
-        "Email de recuperação alterado",
-        antigo,
-        user.email_recuperacao,
-        "user"
-    )
+        novo = user.pending_recovery_email
 
-    return render_template("recovery_change_email_verified.html")
+
+        # Alterar email de recuperação
+        user.email_recuperacao = novo
+
+
+        # Limpar pedido pendente
+        user.pending_recovery_email = None
+
+
+        # Invalidar token
+        user.recovery_change_token = None
+
+
+        # Estado confirmado
+        user.recovery_email_status = "verified"
+
+
+        db.session.commit()
+
+
+
+        # ==============================
+        # HISTÓRICO DA CONTA
+        # ==============================
+        #
+        # Deixa comentado primeiro para testar
+        #
+        # adicionar_atividade(
+        #     user.id,
+        #     "recovery_email",
+        #     "Email de recuperação alterado",
+        #     antigo,
+        #     user.email_recuperacao,
+        #     "user"
+        # )
+
+
+        return render_template(
+            "recovery_change_email_verified.html"
+        )
+
+
+    except Exception as e:
+
+        print("==============================")
+        print("ERRO VERIFY RECOVERY EMAIL")
+        print(e)
+        print("==============================")
+
+
+        return f"""
+        <h2>Erro ao confirmar email</h2>
+        <pre>{e}</pre>
+        """, 500
+        
 
 @app.route("/cancel-recovery-email-change/<token>")
 def cancel_recovery_email_change(token):
