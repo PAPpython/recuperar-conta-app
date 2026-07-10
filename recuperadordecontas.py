@@ -3957,8 +3957,8 @@ def send_recovery_verification():
 
     data = request.get_json(force=True)
 
-    email = data.get("email")                     # Email principal
-    recovery_email = data.get("recovery_email")   # Email de recuperação
+    email = data.get("email")
+    recovery_email = data.get("recovery_email")
 
     if not email or not recovery_email:
         return jsonify({
@@ -3976,8 +3976,14 @@ def send_recovery_verification():
 
     token = secrets.token_hex(16)
 
+    # Guarda o email de recuperação
     user.email_recuperacao = recovery_email
+
+    # Token de verificação
     user.recovery_token = token
+
+    # Estado enquanto não clicar no link
+    user.recovery_email_status = "pending"
 
     db.session.commit()
 
@@ -4004,7 +4010,14 @@ def verify_recovery_email(token):
         if not user:
             return render_template("email_invalid.html")
 
+        # O token deixa de ser válido
         user.recovery_token = None
+
+        # O email de recuperação fica oficialmente verificado
+        user.recovery_email_status = "verified"
+
+        # Já não há nenhum email pendente
+        user.pending_recovery_email = None
 
         db.session.commit()
 
@@ -7104,6 +7117,8 @@ def check_recovery_email_status():
 
         status="ok",
 
+        email=user.email,
+
         recovery_email=user.email_recuperacao,
 
         pending_recovery_email=user.pending_recovery_email,
@@ -7113,6 +7128,37 @@ def check_recovery_email_status():
         needs_verification_email=user.needs_verification_email
 
     )
+    
+@app.route("/api/settings/clear-recovery-verification", methods=["POST"])
+def clear_recovery_verification():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(status="error")
+
+    user.needs_verification_email = False
+    db.session.commit()
+
+    return jsonify(status="ok")
+
+@app.route("/api/settings/recovery-email-sent", methods=["POST"])
+def recovery_email_sent():
+
+    data = request.get_json(force=True)
+
+    user = User.query.get(data.get("user_id"))
+
+    if not user:
+        return jsonify(status="error")
+
+    user.needs_verification_email = False
+
+    db.session.commit()
+
+    return jsonify(status="ok")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
