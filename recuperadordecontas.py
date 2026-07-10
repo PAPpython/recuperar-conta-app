@@ -7094,35 +7094,6 @@ def check_email_status():
         if user.email_changed else None
 
     )
-
-@app.route("/api/settings/check-recovery-email-status", methods=["POST"])
-def check_recovery_email_status():
-
-    data = request.get_json(force=True)
-
-    user = User.query.get(data.get("user_id"))
-
-    if not user:
-        return jsonify(
-            status="error",
-            msg="Utilizador não encontrado"
-        )
-
-    return jsonify(
-
-        status="ok",
-
-        email=user.email,
-
-        recovery_email=user.email_recuperacao,
-
-        pending_recovery_email=user.pending_recovery_email,
-
-        recovery_email_status=user.recovery_email_status,
-
-        needs_verification_email=user.needs_verification_email
-
-    )
     
 @app.route("/api/settings/clear-recovery-verification", methods=["POST"])
 def clear_recovery_verification():
