@@ -6182,20 +6182,27 @@ def settings_user_info():
 
     return jsonify(
         status="ok",
+
         username=user.username,
         nome=user.nome,
+
         email=user.email,
+        email_status=user.email_status,
+
         email_recuperacao=user.email_recuperacao,
+        recovery_email_status=user.recovery_email_status,
+
         provider=user.provider,
         avatar=user.avatar,
         banner=user.banner,
+
         created_at=user.created_at.strftime("%d/%m/%Y %H:%M")
         if user.created_at else None,
+
         password_changed=user.password_changed.strftime("%d/%m/%Y %H:%M")
         if user.password_changed else None
     )
-
-
+    
 @app.route("/api/settings/privacy", methods=["POST"])
 def settings_privacy():
 
