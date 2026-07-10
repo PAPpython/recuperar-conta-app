@@ -3997,58 +3997,55 @@ def send_recovery_verification():
 def verify_recovery_email(token):
 
     try:
-        print("TOKEN RECEBIDO:", token)
 
         if not token or token == "None":
-            print("TOKEN INVÁLIDO")
             return render_template("email_invalid.html")
 
         user = User.query.filter_by(recovery_token=token).first()
 
-        print("USER ENCONTRADO:", user)
-
         if not user:
             return render_template("email_invalid.html")
 
-        # O token deixa de ser válido
         user.recovery_token = None
 
-        # O email de recuperação fica oficialmente verificado
+        # EMAIL VERIFICADO
         user.recovery_email_status = "verified"
 
-        # Já não há nenhum email pendente
-        user.pending_recovery_email = None
-
         db.session.commit()
-
-        print("EMAIL VERIFICADO COM SUCESSO")
 
         return render_template("email_recovery_verify.html")
 
     except Exception as e:
-        print("ERRO NA VERIFY-RECOVERY:", str(e))
+        print(e)
         return render_template("email_invalid.html")
-
-@app.route("/check-recovery-email", methods=["POST"])
-def check_recovery_email_verification():
+        
+@app.route("/api/settings/check-recovery-email-status", methods=["POST"])
+def check_recovery_email_status():
 
     data = request.get_json(force=True)
 
-    email = data.get("email")
-
-    user = User.query.filter_by(email=email).first()
+    user = User.query.get(data.get("user_id"))
 
     if not user:
-        return jsonify({
-            "verified": False
-        })
-
-    return jsonify({
-        "verified": (
-            user.email_recuperacao is not None and
-            user.recovery_token is None
+        return jsonify(
+            status="error",
+            msg="Utilizador não encontrado"
         )
-    })
+
+    return jsonify(
+
+        status="ok",
+
+        email=user.email,
+
+        recovery_email=user.email_recuperacao,
+
+        pending_recovery_email=user.pending_recovery_email,
+
+        recovery_email_status=user.recovery_email_status or "not_configured",
+
+        needs_verification_email=bool(user.needs_verification_email)
+    )
     
 @app.route("/cancel-recovery-email/<token>")
 def cancel_recovery_email(token):
@@ -7000,19 +6997,17 @@ def verify_recovery_email_change(token):
         # ==============================
 
         user.email_recuperacao = novo
-
-        # Limpar pedido pendente
+        
         user.pending_recovery_email = None
-
-        # Invalidar token da alteração
+        
         user.pending_recovery_token = None
-
-        # Ainda NÃO está verificado
+        
+        # Ainda falta verificar o novo email
         user.recovery_email_status = "pending"
-
-        # O Tkinter deverá enviar o email de verificação
+        
+        # O Tkinter deve enviar o email de verificação
         user.needs_verification_email = True
-
+        
         db.session.commit()
 
         # ==============================
