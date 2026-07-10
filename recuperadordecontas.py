@@ -581,19 +581,41 @@ class PendingEmailChange(db.Model):
     )
     
 class Post(db.Model):
+
     __tablename__ = "posts"
 
-    id = db.Column(db.String, primary_key=True)
-    autor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
 
-    texto = db.Column(db.Text)
+    id = db.Column(
+        db.String,
+        primary_key=True
+    )
 
-    imagem = db.Column(db.String)
+
+    autor_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+
+    texto = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+
+    imagem = db.Column(
+        db.String(500),
+        nullable=True
+    )
+
 
     original_post_id = db.Column(
         db.String,
-        db.ForeignKey("posts.id")
+        db.ForeignKey("posts.id"),
+        nullable=True
     )
+
 
     data = db.Column(
         db.DateTime,
@@ -1272,161 +1294,317 @@ def check_recovery_email():
     )
 
 #================= POSTS LIST =================
+#================= POSTS LIST =================
+
 @app.route("/posts", methods=["GET"])
 def listar_posts():
-    user_id = request.args.get("user_id", type=int)
 
-    posts = Post.query.order_by(Post.data.desc()).all()
+    user_id = request.args.get(
+        "user_id",
+        type=int
+    )
+
+
+    posts = Post.query.order_by(
+        Post.data.desc()
+    ).all()
+
+
     res = []
 
+
     for p in posts:
-        autor = User.query.get(p.autor_id)
-        real_id = p.original_post_id or p.id
+
+
+        autor = User.query.get(
+            p.autor_id
+        )
+
+
+        if not autor:
+            continue
+
+
+        real_id = (
+            p.original_post_id
+            or p.id
+        )
+
+
+        imagem_url = None
+
+
+        if p.imagem:
+
+            imagem_url = (
+                request.host_url.rstrip("/")
+                + p.imagem
+            )
+
+
 
         res.append({
+
             "id": p.id,
+
 
             "texto": p.texto,
 
-            "imagem": p.imagem,  # 🔥 FALTAVA ISTO
 
-            "data": p.data.strftime("%d/%m/%Y %H:%M"),
+            "imagem": imagem_url,
 
-            "likes": Like.query.filter_by(post_id=real_id).count(),
 
-            "comentarios": Comment.query.filter_by(post_id=real_id).count(),
+            "data": p.data.strftime(
+                "%d/%m/%Y %H:%M"
+            ),
+
+
+            "likes": Like.query.filter_by(
+                post_id=real_id
+            ).count(),
+
+
+            "comentarios": Comment.query.filter_by(
+                post_id=real_id
+            ).count(),
+
 
             "autor": {
+
                 "id": autor.id,
+
                 "username": autor.username,
+
                 "avatar": autor.avatar
+
             }
+
         })
+
 
     return jsonify(res)
 #================= CREATE POST =================
+#================= CREATE POST =================
+
 @app.route("/posts", methods=["POST"])
 def criar_post():
 
+
     # ==========================================
-    # JSON OU FORM-DATA
+    # RECEBER FORM DATA
     # ==========================================
 
-    if request.form:
-        data = request.form
-    else:
-        data = request.get_json(force=True)
+    data = request.form
 
-    user = User.query.get(data["autor_id"])
+
+
+    autor_id = data.get(
+        "autor_id"
+    )
+
+
+    if not autor_id:
+
+        return jsonify(
+            error="Autor inválido"
+        ),400
+
+
+
+    user = User.query.get(
+        autor_id
+    )
+
 
     if not user:
-        return jsonify(error="User não encontrado"), 404
+
+        return jsonify(
+            error="User não encontrado"
+        ),404
+
+
 
     # ==========================================
-    # 🔒 UTILIZADOR BLOQUEADO
+    # BLOQUEIO
     # ==========================================
 
     if user.bloqueado:
+
+
         return jsonify(
             error="Conta bloqueada"
-        ), 403
+        ),403
+
+
 
     # ==========================================
-    # IMAGEM
+    # TEXTO
     # ==========================================
 
-    imagem = data.get("imagem")
+    texto = data.get(
+        "texto",
+        ""
+    )
 
-    # upload real
+
+
+    imagem = None
+
+
+
+    # ==========================================
+    # UPLOAD IMAGEM
+    # ==========================================
+
     if "imagem" in request.files:
+
 
         file = request.files["imagem"]
 
+
+
         if file.filename != "":
 
-            nome = f"{uuid.uuid4()}.png"
+
+            extensao = os.path.splitext(
+                file.filename
+            )[1].lower()
+
+
+
+            if extensao not in [
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".webp"
+            ]:
+
+                extensao = ".png"
+
+
+
+            nome = (
+                str(uuid.uuid4())
+                + extensao
+            )
+
+
 
             pasta = os.path.join(
                 "static",
                 "posts"
             )
 
+
+
             os.makedirs(
                 pasta,
                 exist_ok=True
             )
+
+
 
             caminho = os.path.join(
                 pasta,
                 nome
             )
 
-            file.save(caminho)
 
-            imagem = f"/static/posts/{nome}"
+
+            file.save(
+                caminho
+            )
+
+
+
+            imagem = (
+                "/static/posts/"
+                + nome
+            )
+
+
 
     # ==========================================
     # CRIAR POST
     # ==========================================
 
     post = Post(
-        id=str(uuid.uuid4()),
-        autor_id=data["autor_id"],
-        texto=data.get("texto"),
-        imagem=imagem,
-        original_post_id=data.get("original_post_id")
+
+        id=str(
+            uuid.uuid4()
+        ),
+
+        autor_id=user.id,
+
+        texto=texto,
+
+        imagem=imagem
+
     )
 
-    db.session.add(post)
+
+
+    db.session.add(
+        post
+    )
+
+
 
     # ==========================================
-    # 🎁 MISSÃO DIÁRIA
+    # RECOMPENSA
     # ==========================================
-
-    from datetime import datetime
 
     hoje = datetime.utcnow().date()
 
+
     if user.ultima_recompensa_post:
-        ultimo = user.ultima_recompensa_post.date()
+
+        ultimo = (
+            user.ultima_recompensa_post.date()
+        )
+
     else:
+
         ultimo = None
+
+
 
     if ultimo != hoje:
 
+
         user.moedas += 500
 
-        user.ultima_recompensa_post = datetime.utcnow()
 
-        print(
-            "🎁 Recompensa diária atribuída: +500 moedas"
+        user.ultima_recompensa_post = (
+            datetime.utcnow()
         )
+
+
 
     db.session.commit()
 
-    # ==========================================
-    # RETORNO COMPLETO
-    # ==========================================
+
 
     return jsonify({
 
-        "status": "ok",
+        "status":"ok",
 
-        "id": post.id,  # ✅ ID POST
+        "id":post.id,
 
-        "texto": post.texto,
+        "texto":post.texto,
 
-        "imagem": post.imagem,
+        "imagem":post.imagem,
 
-        "moedas": user.moedas,
+        "moedas":user.moedas,
 
-        "autor": {
 
-            "id": user.id,
+        "autor":{
 
-            "username": user.username,
+            "id":user.id,
 
-            "avatar": user.avatar
+            "username":user.username,
+
+            "avatar":user.avatar
 
         }
 
