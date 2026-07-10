@@ -374,6 +374,11 @@ class User(db.Model):
         nullable=True
     )
     
+    needs_verification_email = db.Column(
+        db.Boolean,
+        default=False
+    )
+    
 from datetime import datetime
 
 class PasswordHistory(db.Model):
@@ -6964,51 +6969,43 @@ def verify_recovery_email_change(token):
         if not token or token == "None":
             return render_template("email_invalid.html")
 
-
         user = User.query.filter_by(
             pending_recovery_token=token
         ).first()
 
-
         if not user:
             return render_template("email_invalid.html")
-
 
         if not user.pending_recovery_email:
             return render_template("email_invalid.html")
 
-
         antigo = user.email_recuperacao or ""
-
         novo = user.pending_recovery_email
 
+        # ==============================
+        # ALTERAR O EMAIL
+        # ==============================
 
-        # Alterar email de recuperação
         user.email_recuperacao = novo
-
 
         # Limpar pedido pendente
         user.pending_recovery_email = None
 
-
-        # Invalidar token
+        # Invalidar token da alteração
         user.pending_recovery_token = None
 
+        # Ainda NÃO está verificado
+        user.recovery_email_status = "pending"
 
-        # Estado confirmado
-        user.recovery_email_status = "verified"
-
+        # O Tkinter deverá enviar o email de verificação
+        user.needs_verification_email = True
 
         db.session.commit()
 
-
-
         # ==============================
-        # HISTÓRICO DA CONTA
+        # HISTÓRICO (opcional)
         # ==============================
-        #
-        # Deixa comentado primeiro para testar
-        #
+
         # adicionar_atividade(
         #     user.id,
         #     "recovery_email",
@@ -7018,11 +7015,9 @@ def verify_recovery_email_change(token):
         #     "user"
         # )
 
-
         return render_template(
             "recovery_email_change_verified.html"
         )
-
 
     except Exception as e:
 
@@ -7031,13 +7026,11 @@ def verify_recovery_email_change(token):
         print(e)
         print("==============================")
 
-
         return f"""
         <h2>Erro ao confirmar email</h2>
         <pre>{e}</pre>
         """, 500
         
-
 @app.route("/cancel-recovery-email-change/<token>")
 def cancel_recovery_email_change(token):
 
@@ -7099,9 +7092,7 @@ def check_recovery_email_status():
 
     data = request.get_json(force=True)
 
-    user = User.query.get(
-        data.get("user_id")
-    )
+    user = User.query.get(data.get("user_id"))
 
     if not user:
         return jsonify(
@@ -7117,7 +7108,9 @@ def check_recovery_email_status():
 
         pending_recovery_email=user.pending_recovery_email,
 
-        recovery_email_status=user.recovery_email_status
+        recovery_email_status=user.recovery_email_status,
+
+        needs_verification_email=user.needs_verification_email
 
     )
 #================= START =================
