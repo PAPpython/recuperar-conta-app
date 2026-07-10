@@ -368,6 +368,13 @@ class User(db.Model):
         default=None,
         nullable=True
     )
+    
+    # pending / verified / rejected
+    email_status = db.Column(
+        db.String(20),
+        default="verified",
+        nullable=True
+    )
 
     pending_email_token = db.Column(
         db.String(64),
