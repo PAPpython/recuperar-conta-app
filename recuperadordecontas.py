@@ -1334,34 +1334,21 @@ def check_recovery_email():
     )
 
 #================= POSTS LIST =================
-
 @app.route("/posts", methods=["GET"])
 def listar_posts():
 
-    user_id = request.args.get(
-        "user_id",
-        type=int
-    )
-
-    posts = Post.query.order_by(
-        Post.data.desc()
-    ).all()
+    posts = Post.query.order_by(Post.data.desc()).all()
 
     res = []
 
     for p in posts:
 
-        autor = User.query.get(
-            p.autor_id
-        )
+        autor = User.query.get(p.autor_id)
 
         if not autor:
             continue
 
-        real_id = (
-            p.original_post_id
-            or p.id
-        )
+        real_id = p.original_post_id or p.id
 
         # ================= IMAGENS =================
 
@@ -1370,10 +1357,7 @@ def listar_posts():
         for img in PostImage.query.filter_by(post_id=p.id).all():
 
             imagens.append(
-
-                request.host_url.rstrip("/")
-                + img.caminho
-
+                request.host_url.rstrip("/") + img.caminho
             )
 
         # ================= FICHEIROS =================
@@ -1383,19 +1367,10 @@ def listar_posts():
         for f in PostFile.query.filter_by(post_id=p.id).all():
 
             ficheiros.append({
-
                 "id": f.id,
-
                 "nome": f.nome,
-
-                "url": (
-                    request.host_url.rstrip("/")
-                    + f.caminho
-                )
-
+                "url": request.host_url.rstrip("/") + f.caminho
             })
-
-        # ============================================
 
         res.append({
 
@@ -1405,13 +1380,12 @@ def listar_posts():
 
             "formatacao": p.formatacao,
 
+            # <-- lista de imagens
             "imagens": imagens,
 
             "ficheiros": ficheiros,
 
-            "data": p.data.strftime(
-                "%d/%m/%Y %H:%M"
-            ),
+            "data": p.data.strftime("%d/%m/%Y %H:%M"),
 
             "likes": Like.query.filter_by(
                 post_id=real_id
@@ -1437,10 +1411,6 @@ def listar_posts():
 #================= CREATE POST =================
 @app.route("/posts", methods=["POST"])
 def criar_post():
-
-    # ==========================================
-    # RECEBER FORM DATA
-    # ==========================================
 
     print("FILES:", request.files)
     print("IMAGENS:", request.files.getlist("imagem"))
@@ -1471,69 +1441,68 @@ def criar_post():
     texto = data.get("texto", "")
     formatacao = data.get("formatacao", "")
 
-    imagem = None
-    
-    # ==========================================
-    # UPLOAD IMAGENS
-    # ==========================================
-    pasta = os.path.join("static", "posts")
-    os.makedirs(pasta, exist_ok=True)
-    
-    imagens = request.files.getlist("imagem")
-    
-    for file in imagens[:10]:
-        
-        if file.filename == "":
-            continue
-            
-            extensao = os.path.splitext(file.filename)[1].lower()
-            
-            if extensao not in [
-                ".png",
-                ".jpg",
-                ".jpeg",
-                ".webp"
-            ]:
-                extensao = ".png"
-                
-                nome = str(uuid.uuid4()) + extensao
-                
-                caminho = os.path.join(
-                    pasta,
-                    nome
-                )
-                
-                file.save(caminho)
-                
-                pi = PostImage(
-                    post_id=post.id,
-                    caminho="/static/posts/" + nome
-                )
-                
-                db.session.add(pi)
     # ==========================================
     # CRIAR POST
     # ==========================================
 
     post = Post(
-
         id=str(uuid.uuid4()),
-
         autor_id=user.id,
-
         texto=texto,
-
-        formatacao=formatacao,
-
+        formatacao=formatacao
     )
 
     db.session.add(post)
 
-    # IMPORTANTE!
+    # cria o ID antes de adicionar imagens/ficheiros
     db.session.flush()
 
     # ==========================================
-    # UPLOAD DOS FICHEIROS
+    # UPLOAD IMAGENS
+    # ==========================================
+
+    pasta_posts = os.path.join("static", "posts")
+    os.makedirs(pasta_posts, exist_ok=True)
+
+    imagens = request.files.getlist("imagem")
+
+    print("Recebi", len(imagens), "imagem(ns)")
+
+    for file in imagens[:10]:
+
+        if file.filename == "":
+            continue
+
+        extensao = os.path.splitext(file.filename)[1].lower()
+
+        if extensao not in [
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp"
+        ]:
+            extensao = ".png"
+
+        nome = str(uuid.uuid4()) + extensao
+
+        caminho = os.path.join(
+            pasta_posts,
+            nome
+        )
+
+        file.save(caminho)
+
+        print("Imagem guardada:", caminho)
+
+        db.session.add(
+            PostImage(
+                post_id=post.id,
+                caminho="/static/posts/" + nome
+            )
+        )
+
+    # ==========================================
+    # UPLOAD FICHEIROS
     # ==========================================
 
     pasta_ficheiros = os.path.join("static", "files")
@@ -1541,7 +1510,7 @@ def criar_post():
 
     ficheiros = request.files.getlist("ficheiros")
 
-    for file in ficheiros[:5]:
+    for file in ficheiros[:10]:
 
         if file.filename == "":
             continue
@@ -1557,17 +1526,13 @@ def criar_post():
 
         file.save(caminho)
 
-        pf = PostFile(
-
-            post_id=post.id,
-
-            nome=file.filename,
-
-            caminho="/static/files/" + novo_nome
-
+        db.session.add(
+            PostFile(
+                post_id=post.id,
+                nome=file.filename,
+                caminho="/static/files/" + novo_nome
+            )
         )
-
-        db.session.add(pf)
 
     # ==========================================
     # RECOMPENSA
@@ -1575,10 +1540,11 @@ def criar_post():
 
     hoje = datetime.utcnow().date()
 
-    if user.ultima_recompensa_post:
-        ultimo = user.ultima_recompensa_post.date()
-    else:
-        ultimo = None
+    ultimo = (
+        user.ultima_recompensa_post.date()
+        if user.ultima_recompensa_post
+        else None
+    )
 
     if ultimo != hoje:
 
@@ -1595,8 +1561,6 @@ def criar_post():
         "id": post.id,
 
         "texto": post.texto,
-
-        "imagem": post.imagem,
 
         "moedas": user.moedas,
 
