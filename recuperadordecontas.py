@@ -471,6 +471,60 @@ class FollowRequest(db.Model):
         default="pending"
     )
 
+class UserSession(db.Model):
+
+    __tablename__ = "user_sessions"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    session_token = db.Column(
+        db.String(128),
+        unique=True,
+        nullable=False
+    )
+
+    platform = db.Column(
+        db.String(50),
+        default="Tkinter"
+    )
+
+    ip_address = db.Column(
+        db.String(100)
+    )
+
+    location = db.Column(
+        db.String(150),
+        default="Desconhecida"
+    )
+
+    remember_me = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    active = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    terminated_at = db.Column(
+        db.DateTime
+    )
+
 class AccountActivity(db.Model):
 
     __tablename__ = "account_activity"
