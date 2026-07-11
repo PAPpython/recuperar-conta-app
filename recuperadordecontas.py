@@ -1442,6 +1442,9 @@ def criar_post():
     # RECEBER FORM DATA
     # ==========================================
 
+    print("FILES:", request.files)
+    print("IMAGENS:", request.files.getlist("imagem"))
+
     data = request.form
 
     autor_id = data.get("autor_id")
