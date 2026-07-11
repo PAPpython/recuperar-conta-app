@@ -388,6 +388,20 @@ class User(db.Model):
     
 from datetime import datetime
 
+class PostFile(db.Model):
+    __tablename__ = "post_files"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    post_id = db.Column(
+        db.String(36),
+        db.ForeignKey("post.id"),
+        nullable=False
+    )
+
+    nome = db.Column(db.String(255))
+    caminho = db.Column(db.String(500))
+
 class PasswordHistory(db.Model):
     __tablename__ = "password_history"
 
@@ -599,6 +613,12 @@ class Post(db.Model):
 
 
     texto = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    # NOVO CAMPO
+    formatacao = db.Column(
         db.Text,
         nullable=True
     )
@@ -1294,7 +1314,6 @@ def check_recovery_email():
     )
 
 #================= POSTS LIST =================
-#================= POSTS LIST =================
 
 @app.route("/posts", methods=["GET"])
 def listar_posts():
@@ -1304,35 +1323,27 @@ def listar_posts():
         type=int
     )
 
-
     posts = Post.query.order_by(
         Post.data.desc()
     ).all()
 
-
     res = []
 
-
     for p in posts:
-
 
         autor = User.query.get(
             p.autor_id
         )
 
-
         if not autor:
             continue
-
 
         real_id = (
             p.original_post_id
             or p.id
         )
 
-
         imagem_url = None
-
 
         if p.imagem:
 
@@ -1341,33 +1352,50 @@ def listar_posts():
                 + p.imagem
             )
 
+        # ================= FICHEIROS =================
 
+        ficheiros = []
+
+        for f in PostFile.query.filter_by(post_id=p.id).all():
+
+            ficheiros.append({
+
+                "id": f.id,
+
+                "nome": f.nome,
+
+                "url": (
+                    request.host_url.rstrip("/")
+                    + f.caminho
+                )
+
+            })
+
+        # ============================================
 
         res.append({
 
             "id": p.id,
 
-
             "texto": p.texto,
 
+            "formatacao": p.formatacao,
 
             "imagem": imagem_url,
 
+            "ficheiros": ficheiros,
 
             "data": p.data.strftime(
                 "%d/%m/%Y %H:%M"
             ),
 
-
             "likes": Like.query.filter_by(
                 post_id=real_id
             ).count(),
 
-
             "comentarios": Comment.query.filter_by(
                 post_id=real_id
             ).count(),
-
 
             "autor": {
 
@@ -1381,14 +1409,12 @@ def listar_posts():
 
         })
 
-
     return jsonify(res)
-#================= CREATE POST =================
+    
 #================= CREATE POST =================
 
 @app.route("/posts", methods=["POST"])
 def criar_post():
-
 
     # ==========================================
     # RECEBER FORM DATA
@@ -1396,61 +1422,31 @@ def criar_post():
 
     data = request.form
 
-
-
-    autor_id = data.get(
-        "autor_id"
-    )
-
+    autor_id = data.get("autor_id")
 
     if not autor_id:
+        return jsonify(error="Autor inválido"), 400
 
-        return jsonify(
-            error="Autor inválido"
-        ),400
-
-
-
-    user = User.query.get(
-        autor_id
-    )
-
+    user = User.query.get(autor_id)
 
     if not user:
-
-        return jsonify(
-            error="User não encontrado"
-        ),404
-
-
+        return jsonify(error="User não encontrado"), 404
 
     # ==========================================
     # BLOQUEIO
     # ==========================================
 
     if user.bloqueado:
-
-
-        return jsonify(
-            error="Conta bloqueada"
-        ),403
-
-
+        return jsonify(error="Conta bloqueada"), 403
 
     # ==========================================
     # TEXTO
     # ==========================================
 
-    texto = data.get(
-        "texto",
-        ""
-    )
-
-
+    texto = data.get("texto", "")
+    formatacao = data.get("formatacao", "")
 
     imagem = None
-
-
 
     # ==========================================
     # UPLOAD IMAGEM
@@ -1458,19 +1454,11 @@ def criar_post():
 
     if "imagem" in request.files:
 
-
-        file = request.files["imagem"]
-
-
+        imagens = request.files.getlist("imagem")
 
         if file.filename != "":
 
-
-            extensao = os.path.splitext(
-                file.filename
-            )[1].lower()
-
-
+            extensao = os.path.splitext(file.filename)[1].lower()
 
             if extensao not in [
                 ".png",
@@ -1478,51 +1466,18 @@ def criar_post():
                 ".jpeg",
                 ".webp"
             ]:
-
                 extensao = ".png"
 
+            nome = str(uuid.uuid4()) + extensao
 
+            pasta = os.path.join("static", "posts")
+            os.makedirs(pasta, exist_ok=True)
 
-            nome = (
-                str(uuid.uuid4())
-                + extensao
-            )
+            caminho = os.path.join(pasta, nome)
 
+            file.save(caminho)
 
-
-            pasta = os.path.join(
-                "static",
-                "posts"
-            )
-
-
-
-            os.makedirs(
-                pasta,
-                exist_ok=True
-            )
-
-
-
-            caminho = os.path.join(
-                pasta,
-                nome
-            )
-
-
-
-            file.save(
-                caminho
-            )
-
-
-
-            imagem = (
-                "/static/posts/"
-                + nome
-            )
-
-
+            imagem = "/static/posts/" + nome
 
     # ==========================================
     # CRIAR POST
@@ -1530,25 +1485,59 @@ def criar_post():
 
     post = Post(
 
-        id=str(
-            uuid.uuid4()
-        ),
+        id=str(uuid.uuid4()),
 
         autor_id=user.id,
 
         texto=texto,
 
+        formatacao=formatacao,
+
         imagem=imagem
 
     )
 
+    db.session.add(post)
 
+    # IMPORTANTE!
+    db.session.flush()
 
-    db.session.add(
-        post
-    )
+    # ==========================================
+    # UPLOAD DOS FICHEIROS
+    # ==========================================
 
+    pasta_ficheiros = os.path.join("static", "files")
+    os.makedirs(pasta_ficheiros, exist_ok=True)
 
+    ficheiros = request.files.getlist("ficheiros")
+
+    for file in ficheiros[:5]:
+
+        if file.filename == "":
+            continue
+
+        extensao = os.path.splitext(file.filename)[1]
+
+        novo_nome = str(uuid.uuid4()) + extensao
+
+        caminho = os.path.join(
+            pasta_ficheiros,
+            novo_nome
+        )
+
+        file.save(caminho)
+
+        pf = PostFile(
+
+            post_id=post.id,
+
+            nome=file.filename,
+
+            caminho="/static/files/" + novo_nome
+
+        )
+
+        db.session.add(pf)
 
     # ==========================================
     # RECOMPENSA
@@ -1556,55 +1545,38 @@ def criar_post():
 
     hoje = datetime.utcnow().date()
 
-
     if user.ultima_recompensa_post:
-
-        ultimo = (
-            user.ultima_recompensa_post.date()
-        )
-
+        ultimo = user.ultima_recompensa_post.date()
     else:
-
         ultimo = None
-
-
 
     if ultimo != hoje:
 
-
         user.moedas += 500
 
-
-        user.ultima_recompensa_post = (
-            datetime.utcnow()
-        )
-
-
+        user.ultima_recompensa_post = datetime.utcnow()
 
     db.session.commit()
 
-
-
     return jsonify({
 
-        "status":"ok",
+        "status": "ok",
 
-        "id":post.id,
+        "id": post.id,
 
-        "texto":post.texto,
+        "texto": post.texto,
 
-        "imagem":post.imagem,
+        "imagem": post.imagem,
 
-        "moedas":user.moedas,
+        "moedas": user.moedas,
 
+        "autor": {
 
-        "autor":{
+            "id": user.id,
 
-            "id":user.id,
+            "username": user.username,
 
-            "username":user.username,
-
-            "avatar":user.avatar
+            "avatar": user.avatar
 
         }
 
