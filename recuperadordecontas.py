@@ -1496,7 +1496,23 @@ def criar_post():
             
             file.save(caminho)
             
-            imagem = "/static/posts/" + nome
+            imagens = request.files.getlist("imagem")
+            
+            for file in imagens[:10]:
+                
+                if file.filename == "":
+                    continue
+                    
+                    ...
+                    
+                    pi = PostImage(
+                        
+                        post_id=post.id,
+                        
+                        caminho="/static/posts/" + nome
+                    )
+                    
+                    db.session.add(pi)
     # ==========================================
     # CRIAR POST
     # ==========================================
