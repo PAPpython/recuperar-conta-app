@@ -1144,6 +1144,7 @@ def register():
         username=user.username
     )
 # ================= LOGIN =================
+# ================= LOGIN =================
 @app.route("/login", methods=["POST"])
 def login():
 
@@ -1179,9 +1180,10 @@ def login():
             msg="Conta banida"
         ), 403
 
-    # ================= NOVO =================
+    # ================= ATIVIDADE =================
+
     user.last_login = datetime.utcnow()
-    
+
     adicionar_atividade(
         user.id,
         "login",
@@ -1191,18 +1193,10 @@ def login():
         "user"
     )
 
-    user.last_login = datetime.utcnow()
-    
-    adicionar_atividade(
-        user.id,
-        "login",
-        "Novo início de sessão"
-    )
-    
-    db.session.commit()
+    # ================= CRIAR SESSÃO =================
 
     session_token = secrets.token_hex(32)
-    
+
     nova_sessao = UserSession(
         user_id=user.id,
         session_token=session_token,
@@ -1212,13 +1206,19 @@ def login():
         remember_me=data.get("remember_me", False),
         active=True
     )
-    
+
     db.session.add(nova_sessao)
-    # ========================================
+
+    # Guarda o last_login e a nova sessão
+    db.session.commit()
+
+    # ================= SESSÃO FLASK =================
 
     session.clear()
     session["user_id"] = user.id
     session.permanent = True
+
+    # ================= RESPOSTA =================
 
     return jsonify(
         status="ok",
@@ -1229,7 +1229,7 @@ def login():
         banner=user.banner,
         moedas=user.moedas,
         role=user.role,
-        session_token=session_token,   # <-- NOVO
+        session_token=session_token,
         avatares_comprados=json.loads(user.avatares_comprados or "[]"),
         banners_comprados=json.loads(user.banners_comprados or "[]")
     )
