@@ -1363,13 +1363,17 @@ def listar_posts():
             or p.id
         )
 
-        imagem_url = None
+        # ================= IMAGENS =================
 
-        if p.imagem:
+        imagens = []
 
-            imagem_url = (
+        for img in PostImage.query.filter_by(post_id=p.id).all():
+
+            imagens.append(
+
                 request.host_url.rstrip("/")
-                + p.imagem
+                + img.caminho
+
             )
 
         # ================= FICHEIROS =================
@@ -1401,7 +1405,7 @@ def listar_posts():
 
             "formatacao": p.formatacao,
 
-            "imagem": imagem_url,
+            "imagens": imagens,
 
             "ficheiros": ficheiros,
 
@@ -1430,9 +1434,7 @@ def listar_posts():
         })
 
     return jsonify(res)
-    
 #================= CREATE POST =================
-
 @app.route("/posts", methods=["POST"])
 def criar_post():
 
