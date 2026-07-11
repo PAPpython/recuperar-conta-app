@@ -1145,6 +1145,20 @@ def login():
     )
     
     db.session.commit()
+
+    session_token = secrets.token_hex(32)
+    
+    nova_sessao = UserSession(
+        user_id=user.id,
+        session_token=session_token,
+        platform=data.get("platform", "Tkinter"),
+        ip_address=request.remote_addr,
+        location=data.get("location", "Desconhecida"),
+        remember_me=data.get("remember_me", False),
+        active=True
+    )
+    
+    db.session.add(nova_sessao)
     # ========================================
 
     session.clear()
@@ -1160,6 +1174,7 @@ def login():
         banner=user.banner,
         moedas=user.moedas,
         role=user.role,
+        session_token=session_token,   # <-- NOVO
         avatares_comprados=json.loads(user.avatares_comprados or "[]"),
         banners_comprados=json.loads(user.banners_comprados or "[]")
     )
