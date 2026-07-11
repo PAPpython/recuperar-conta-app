@@ -388,6 +388,26 @@ class User(db.Model):
     
 from datetime import datetime
 
+class PostImage(db.Model):
+
+    __tablename__ = "post_images"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    post_id = db.Column(
+        db.String,
+        db.ForeignKey("posts.id"),
+        nullable=False
+    )
+
+    caminho = db.Column(
+        db.String(500),
+        nullable=False
+    )
+
 class PostFile(db.Model):
     __tablename__ = "post_files"
 
@@ -1447,19 +1467,18 @@ def criar_post():
     formatacao = data.get("formatacao", "")
 
     imagem = None
-
+    
     # ==========================================
-    # UPLOAD IMAGEM
+    # UPLOAD IMAGENS
     # ==========================================
-
     if "imagem" in request.files:
-
-        imagens = request.files.getlist("imagem")
-
+        
+        file = request.files["imagem"]
+        
         if file.filename != "":
-
+            
             extensao = os.path.splitext(file.filename)[1].lower()
-
+            
             if extensao not in [
                 ".png",
                 ".jpg",
@@ -1467,18 +1486,17 @@ def criar_post():
                 ".webp"
             ]:
                 extensao = ".png"
-
+                
             nome = str(uuid.uuid4()) + extensao
-
+            
             pasta = os.path.join("static", "posts")
             os.makedirs(pasta, exist_ok=True)
-
+            
             caminho = os.path.join(pasta, nome)
-
+            
             file.save(caminho)
-
+            
             imagem = "/static/posts/" + nome
-
     # ==========================================
     # CRIAR POST
     # ==========================================
