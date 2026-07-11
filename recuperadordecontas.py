@@ -1473,11 +1473,15 @@ def criar_post():
     # ==========================================
     # UPLOAD IMAGENS
     # ==========================================
-    if "imagem" in request.files:
+    pasta = os.path.join("static", "posts")
+    os.makedirs(pasta, exist_ok=True)
+    
+    imagens = request.files.getlist("imagem")
+    
+    for file in imagens[:10]:
         
-        file = request.files["imagem"]
-        
-        if file.filename != "":
+        if file.filename == "":
+            continue
             
             extensao = os.path.splitext(file.filename)[1].lower()
             
@@ -1489,32 +1493,21 @@ def criar_post():
             ]:
                 extensao = ".png"
                 
-            nome = str(uuid.uuid4()) + extensao
-            
-            pasta = os.path.join("static", "posts")
-            os.makedirs(pasta, exist_ok=True)
-            
-            caminho = os.path.join(pasta, nome)
-            
-            file.save(caminho)
-            
-            imagens = request.files.getlist("imagem")
-            
-            for file in imagens[:10]:
+                nome = str(uuid.uuid4()) + extensao
                 
-                if file.filename == "":
-                    continue
-                    
-                    ...
-                    
-                    pi = PostImage(
-                        
-                        post_id=post.id,
-                        
-                        caminho="/static/posts/" + nome
-                    )
-                    
-                    db.session.add(pi)
+                caminho = os.path.join(
+                    pasta,
+                    nome
+                )
+                
+                file.save(caminho)
+                
+                pi = PostImage(
+                    post_id=post.id,
+                    caminho="/static/posts/" + nome
+                )
+                
+                db.session.add(pi)
     # ==========================================
     # CRIAR POST
     # ==========================================
@@ -1528,8 +1521,6 @@ def criar_post():
         texto=texto,
 
         formatacao=formatacao,
-
-        imagem=imagem
 
     )
 
