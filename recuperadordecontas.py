@@ -394,8 +394,8 @@ class PostFile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
     post_id = db.Column(
-        db.String(36),
-        db.ForeignKey("post.id"),
+        db.String,
+        db.ForeignKey("posts.id"),
         nullable=False
     )
 
