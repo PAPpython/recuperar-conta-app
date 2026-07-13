@@ -7337,6 +7337,21 @@ def recovery_email_sent():
     db.session.commit()
 
     return jsonify(status="ok")
+
+@app.route("/security-app/<token>")
+def security_app(token):
+
+    sessao = UserSession.query.filter_by(
+        session_token=token,
+        active=True
+    ).first()
+
+    if not sessao:
+        return redirect("/security-login")
+
+    session["security_user"] = sessao.user_id
+
+    return redirect("/security-sessions")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
