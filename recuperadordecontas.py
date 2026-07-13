@@ -7347,9 +7347,11 @@ def security_app(token):
     ).first()
 
     if not sessao:
-        return redirect("/security-login")
+        return "Sessão inválida", 401
 
+    session.clear()
     session["security_user"] = sessao.user_id
+    session.permanent = True
 
     return redirect("/security-sessions")
 #================= START =================
