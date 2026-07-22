@@ -30,11 +30,28 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(os.path.join(UPLOAD_FOLDER, "fotos"), exist_ok=True)
 
 google_login_state = {
-    "logged": False,
-    "exists": False,
-    "id": None,
-    "email": None,
-    "username": None
+    "logged": True,
+    "exists": (
+        user is not None
+        and user.username is not None
+    ),
+    "id": (
+        user.id
+        if user and user.username
+        else None
+    ),
+    "email": email,
+    "username": (
+        user.username
+        if user else None
+    ),
+    "picture": google_picture,
+    "google_name": google_name,
+    "session_token": (
+        session_token
+        if user and user.username
+        else None
+    )
 }
 
 # ================= SERVIR AVATARES =================
@@ -3705,6 +3722,45 @@ def google_callback():
 
     user = User.query.filter_by(email=email).first()
 
+    session_token = None
+
+if user and user.username:
+
+    # Sessão Flask
+    session.clear()
+    session["user_id"] = user.id
+    session["security_user"] = user.id
+    session.permanent = True
+
+    # Atualizar último login
+    user.last_login = datetime.utcnow()
+
+    # Registar atividade
+    adicionar_atividade(
+        user.id,
+        "login",
+        "Novo início de sessão com Google",
+        "",
+        "",
+        "user"
+    )
+
+    # Criar sessão
+    session_token = secrets.token_hex(32)
+
+    nova_sessao = UserSession(
+        user_id=user.id,
+        session_token=session_token,
+        platform="Google",
+        ip_address=request.remote_addr,
+        location="Desconhecida",
+        remember_me=True,
+        active=True
+    )
+
+    db.session.add(nova_sessao)
+    db.session.commit()
+
     # 🔥 TOKEN ÚNICO PARA TKINTER
     global google_login_state
     
@@ -3726,6 +3782,7 @@ def google_callback():
         ),
         "picture": google_picture,
         "google_name": google_name
+        "session_token": session_token
     }
 
     return f"""
@@ -3938,6 +3995,7 @@ def auto_login():
         username=user.username,
         avatar=user.avatar,
         role=user.role
+        session_token=token
     )
 
 @app.route("/security-login", methods=["GET", "POST"])
