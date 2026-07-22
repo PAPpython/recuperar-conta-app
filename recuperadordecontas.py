@@ -3839,21 +3839,26 @@ def register_google():
         avatares_comprados=json.dumps([]),
         banners_comprados=json.dumps([]),
 
-        moedas=0
+        moedas=0,
+        role="user"
     )
-    
+
     db.session.add(user)
     db.session.commit()
-    
+
+    # 🔥 Se for o primeiro utilizador, torna-o admin
+    if user.id == 1:
+        user.role = "admin"
+        db.session.commit()
+
     google_login_state["exists"] = True
     google_login_state["id"] = user.id
     google_login_state["username"] = username
-    
+
     return jsonify(
         status="ok",
         id=user.id
     )
-
 @app.route("/sessions/<int:user_id>")
 def get_sessions(user_id):
 
