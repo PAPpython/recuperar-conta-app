@@ -7347,16 +7347,16 @@ def security_app(token):
     ).first()
 
     if not sessao:
-        return "Sessão inválida", 401
+        return redirect("/security-login")
 
-    session.clear()
     session["security_user"] = sessao.user_id
-    session.permanent = True
+    session["admin_ticket_id"] = sessao.user_id
+    session["user_id"] = sessao.user_id
 
     return redirect("/security-sessions")
-
-@app.route("/admin/tickets-app/<token>")
-def admin_tickets_app(token):
+    
+@app.route("/admin-ticket-app/<token>")
+def admin_ticket_app(token):
 
     sessao = UserSession.query.filter_by(
         session_token=token,
@@ -7364,9 +7364,14 @@ def admin_tickets_app(token):
     ).first()
 
     if not sessao:
-        return redirect("/security-login")
+        return redirect("/admin/tickets/login")
 
-    session["user_id"] = sessao.user_id
+    user = User.query.get(sessao.user_id)
+
+    if not user or user.role != "admin":
+        return "Sem permissão", 403
+
+    session["admin_ticket_id"] = user.id
 
     return redirect("/admin/tickets")
 #================= START =================
