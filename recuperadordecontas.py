@@ -3994,10 +3994,10 @@ def auto_login():
         id=user.id,
         username=user.username,
         avatar=user.avatar,
-        role=user.role
+        role=user.role,
         session_token=token
     )
-
+    
 @app.route("/security-login", methods=["GET", "POST"])
 def security_login():
 
