@@ -3781,7 +3781,7 @@ if user and user.username:
             if user else None
         ),
         "picture": google_picture,
-        "google_name": google_name
+        "google_name": google_name,
         "session_token": session_token
     }
 
