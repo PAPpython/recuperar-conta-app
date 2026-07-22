@@ -435,7 +435,7 @@ class Report(db.Model):
     )
 
     post_id = db.Column(
-        db.String(100),
+        db.String,
         db.ForeignKey("post.id"),
         nullable=True
     )
