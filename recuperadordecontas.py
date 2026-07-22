@@ -7354,6 +7354,21 @@ def security_app(token):
     session.permanent = True
 
     return redirect("/security-sessions")
+
+@app.route("/admin/tickets-app/<token>")
+def admin_tickets_app(token):
+
+    sessao = UserSession.query.filter_by(
+        session_token=token,
+        active=True
+    ).first()
+
+    if not sessao:
+        return redirect("/security-login")
+
+    session["user_id"] = sessao.user_id
+
+    return redirect("/admin/tickets")
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
