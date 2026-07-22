@@ -4638,23 +4638,56 @@ def edit_user(user_id):
 @app.route("/admin/tickets")
 def admin_tickets():
 
+    print("======================================")
+    print("ENTROU EM /admin/tickets")
+    print("SESSION:", dict(session))
+
     admin_id = session.get("admin_ticket_id")
 
+    print("ADMIN_ID:", admin_id)
+
+    if admin_id is None:
+        print("ADMIN_ID É NONE")
+        return redirect("/admin/tickets/login")
+
+    user = User.query.get(admin_id)
+
+    print("USER:", user)
+
+    if user:
+        print("ROLE:", user.role)
+    else:
+        print("UTILIZADOR NÃO ENCONTRADO")
+
     if not is_admin(admin_id):
+        print("SEM PERMISSÃO")
         return jsonify(error="Sem permissão"), 403
+
+    print("LOGIN ADMIN OK")
 
     filter_type = request.args.get("filter", "all")
 
     if filter_type == "open":
-        tickets = Ticket.query.filter_by(status="open").order_by(Ticket.id.desc()).all()
+        tickets = Ticket.query.filter_by(
+            status="open"
+        ).order_by(
+            Ticket.id.desc()
+        ).all()
 
     elif filter_type == "closed":
-        tickets = Ticket.query.filter_by(status="closed").order_by(Ticket.id.desc()).all()
+        tickets = Ticket.query.filter_by(
+            status="closed"
+        ).order_by(
+            Ticket.id.desc()
+        ).all()
 
     else:
-        tickets = Ticket.query.order_by(Ticket.id.desc()).all()
+        tickets = Ticket.query.order_by(
+            Ticket.id.desc()
+        ).all()
 
     def card(t, color):
+
         user = User.query.get(t.user_id)
 
         return f"""
@@ -4670,30 +4703,53 @@ def admin_tickets():
                style="display:inline-block;margin-top:10px;padding:8px 12px;background:{color};color:white;border-radius:8px;text-decoration:none;">
                Abrir
             </a>
+
         </div>
         """
 
-    html_cards = "".join(card(t, "#facc15") for t in tickets)
+    html_cards = "".join(
+        card(t, "#facc15")
+        for t in tickets
+    )
 
     return f"""
     <html>
+
     <body style="margin:0;font-family:Arial;background:#0f172a;color:white;">
 
-    <div style="text-align:center;padding:20px;">
-        <h1>🎫 Sistema de Tickets</h1>
+        <div style="text-align:center;padding:20px;">
 
-        <div>
-            <a href="/admin/tickets" style="margin:5px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;">Todos</a>
-            <a href="/admin/tickets?filter=open" style="margin:5px;padding:8px 12px;background:#facc15;color:black;border-radius:8px;">Abertos</a>
-            <a href="/admin/tickets?filter=closed" style="margin:5px;padding:8px 12px;background:#22c55e;color:black;border-radius:8px;">Fechados</a>
+            <h1>🎫 Sistema de Tickets</h1>
+
+            <div>
+
+                <a href="/admin/tickets"
+                   style="margin:5px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;">
+                   Todos
+                </a>
+
+                <a href="/admin/tickets?filter=open"
+                   style="margin:5px;padding:8px 12px;background:#facc15;color:black;border-radius:8px;">
+                   Abertos
+                </a>
+
+                <a href="/admin/tickets?filter=closed"
+                   style="margin:5px;padding:8px 12px;background:#22c55e;color:black;border-radius:8px;">
+                   Fechados
+                </a>
+
+            </div>
+
         </div>
-    </div>
 
-    <div style="max-width:900px;margin:auto;">
-        {html_cards if html_cards else "<p>Sem tickets</p>"}
-    </div>
+        <div style="max-width:900px;margin:auto;">
+
+            {html_cards if html_cards else "<p>Sem tickets</p>"}
+
+        </div>
 
     </body>
+
     </html>
     """
     
@@ -7358,32 +7414,24 @@ def security_app(token):
 @app.route("/admin-ticket-app/<token>")
 def admin_ticket_app(token):
 
-    print("TOKEN:", token)
-
     sessao = UserSession.query.filter_by(
         session_token=token,
         active=True
     ).first()
 
-    print("SESSAO:", sessao)
-
     if not sessao:
-        print("SESSÃO NÃO ENCONTRADA")
         return redirect("/admin/tickets/login")
 
     user = User.query.get(sessao.user_id)
 
-    print("USER:", user)
-    print("USER ID:", sessao.user_id)
-    print("ROLE:", user.role if user else None)
-
     if not user or user.role != "admin":
-        print("SEM PERMISSÃO")
         return "Sem permissão", 403
 
-    session["admin_ticket_id"] = user.id
+    session.clear()
 
-    print("SESSION:", dict(session))
+    session["user_id"] = user.id
+    session["admin_ticket_id"] = user.id
+    session.permanent = True
 
     return redirect("/admin/tickets")
 #================= START =================
