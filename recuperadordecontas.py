@@ -424,13 +424,13 @@ class Report(db.Model):
 
     reporter_id = db.Column(
         db.Integer,
-        db.ForeignKey("user.id"),
+        db.ForeignKey("users.id"),
         nullable=False
     )
 
     reported_user_id = db.Column(
         db.Integer,
-        db.ForeignKey("user.id"),
+        db.ForeignKey("users.id"),
         nullable=True
     )
 
@@ -462,7 +462,7 @@ class Report(db.Model):
 
     resolvido_por = db.Column(
         db.Integer,
-        db.ForeignKey("user.id"),
+        db.ForeignKey("users.id"),
         nullable=True
     )
 
