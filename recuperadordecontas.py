@@ -7611,7 +7611,7 @@ def admin_ticket_app(token):
     return redirect("/admin/tickets")
 
 @app.route("/admin/admin-stats", methods=["GET"])
-def admin_stats():
+def admin_admin_stats():
 
     requester_id = request.args.get("user_id", type=int)
 
@@ -7640,7 +7640,6 @@ def admin_stats():
 
         for a in atividades:
 
-            # ações que contam para atividade
             if a.action not in [
                 "ban",
                 "warn",
@@ -7663,14 +7662,11 @@ def admin_stats():
                 continue
 
             dia = a.created_at.strftime("%Y-%m-%d")
-
             dias[dia] = dias.get(dia, 0) + 1
 
         resultado.append({
-
             "id": admin.id,
             "username": admin.username,
-
             "dados": [
                 {
                     "dia": d,
@@ -7678,7 +7674,6 @@ def admin_stats():
                 }
                 for d in sorted(dias.keys())
             ]
-
         })
 
     return jsonify(resultado)
