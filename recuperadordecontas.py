@@ -30,28 +30,14 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(os.path.join(UPLOAD_FOLDER, "fotos"), exist_ok=True)
 
 google_login_state = {
-    "logged": True,
-    "exists": (
-        user is not None
-        and user.username is not None
-    ),
-    "id": (
-        user.id
-        if user and user.username
-        else None
-    ),
-    "email": email,
-    "username": (
-        user.username
-        if user else None
-    ),
-    "picture": google_picture,
-    "google_name": google_name,
-    "session_token": (
-        session_token
-        if user and user.username
-        else None
-    )
+    "logged": False,
+    "exists": False,
+    "id": None,
+    "email": None,
+    "username": None,
+    "picture": None,
+    "google_name": None,
+    "session_token": None
 }
 
 # ================= SERVIR AVATARES =================
