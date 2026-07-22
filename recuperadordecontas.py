@@ -7358,20 +7358,32 @@ def security_app(token):
 @app.route("/admin-ticket-app/<token>")
 def admin_ticket_app(token):
 
+    print("TOKEN:", token)
+
     sessao = UserSession.query.filter_by(
         session_token=token,
         active=True
     ).first()
 
+    print("SESSAO:", sessao)
+
     if not sessao:
+        print("SESSÃO NÃO ENCONTRADA")
         return redirect("/admin/tickets/login")
 
     user = User.query.get(sessao.user_id)
 
+    print("USER:", user)
+    print("USER ID:", sessao.user_id)
+    print("ROLE:", user.role if user else None)
+
     if not user or user.role != "admin":
+        print("SEM PERMISSÃO")
         return "Sem permissão", 403
 
     session["admin_ticket_id"] = user.id
+
+    print("SESSION:", dict(session))
 
     return redirect("/admin/tickets")
 #================= START =================
