@@ -3724,46 +3724,46 @@ def google_callback():
 
     session_token = None
 
-if user and user.username:
+    if user and user.username:
 
-    # Sessão Flask
-    session.clear()
-    session["user_id"] = user.id
-    session["security_user"] = user.id
-    session.permanent = True
+        # Sessão Flask
+        session.clear()
+        session["user_id"] = user.id
+        session["security_user"] = user.id
+        session.permanent = True
 
-    # Atualizar último login
-    user.last_login = datetime.utcnow()
+        # Atualizar último login
+        user.last_login = datetime.utcnow()
 
-    # Registar atividade
-    adicionar_atividade(
-        user.id,
-        "login",
-        "Novo início de sessão com Google",
-        "",
-        "",
-        "user"
-    )
+        # Registar atividade
+        adicionar_atividade(
+            user.id,
+            "login",
+            "Novo início de sessão com Google",
+            "",
+            "",
+            "user"
+        )
 
-    # Criar sessão
-    session_token = secrets.token_hex(32)
+        # Criar sessão
+        session_token = secrets.token_hex(32)
 
-    nova_sessao = UserSession(
-        user_id=user.id,
-        session_token=session_token,
-        platform="Google",
-        ip_address=request.remote_addr,
-        location="Desconhecida",
-        remember_me=True,
-        active=True
-    )
+        nova_sessao = UserSession(
+            user_id=user.id,
+            session_token=session_token,
+            platform="Google",
+            ip_address=request.remote_addr,
+            location="Desconhecida",
+            remember_me=True,
+            active=True
+        )
 
-    db.session.add(nova_sessao)
-    db.session.commit()
+        db.session.add(nova_sessao)
+        db.session.commit()
 
     # 🔥 TOKEN ÚNICO PARA TKINTER
     global google_login_state
-    
+
     google_login_state = {
         "logged": True,
         "exists": (
