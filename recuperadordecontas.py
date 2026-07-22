@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory, session, url_for,redirect
+from sqlalchemy import func
 import os
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -3462,27 +3463,152 @@ def listar_admins_admin():
 
     requester_id = request.args.get("user_id", type=int)
 
-    # só admins podem ver tudo
     if not is_admin(requester_id):
         return jsonify(error="Sem permissão"), 403
 
-    admins = User.query.filter_by(role="admin").all()
+    admins = (
+        User.query
+        .filter_by(role="admin")
+        .order_by(User.id.asc())
+        .all()
+    )
 
-    res = []
+    resultado = []
 
-    for u in admins:
-        res.append({
-            "id": u.id,
-            "username": u.username,
-            "nome": u.nome,
-            "avatar": u.avatar,
-            "banner": u.banner,
-            "bio": u.bio,
-            "mostrar_publicamente": u.mostrar_publicamente
+    for admin in admins:
+
+        # ================= TICKETS =================
+
+        tickets = Ticket.query.filter_by(
+            admin_id=admin.id
+        ).count()
+
+        # Média das avaliações (1 a 5 estrelas)
+        avaliacoes = (
+            db.session.query(func.avg(Ticket.rating))
+            .filter(
+                Ticket.admin_id == admin.id,
+                Ticket.rating != None
+            )
+            .scalar()
+        )
+
+        total_avaliacoes = (
+            Ticket.query.filter(
+                Ticket.admin_id == admin.id,
+                Ticket.rating != None
+            ).count()
+        )
+
+        satisfacao = (
+            round((avaliacoes / 5) * 100, 1)
+            if avaliacoes
+            else 0
+        )
+
+        # ================= DENÚNCIAS =================
+
+        denuncias = Report.query.filter_by(
+            admin_id=admin.id,
+            status="resolved"
+        ).count()
+
+        # ================= AÇÕES ADMIN =================
+
+        bans = AdminActivity.query.filter_by(
+            user_id=admin.id,
+            action="ban"
+        ).count()
+
+        avisos = AdminActivity.query.filter_by(
+            user_id=admin.id,
+            action="warn"
+        ).count()
+
+        suspensoes = AdminActivity.query.filter_by(
+            user_id=admin.id,
+            action="suspend"
+        ).count()
+
+        remover_posts = AdminActivity.query.filter_by(
+            user_id=admin.id,
+            action="delete_post"
+        ).count()
+
+        remover_comentarios = AdminActivity.query.filter_by(
+            user_id=admin.id,
+            action="delete_comment"
+        ).count()
+
+        media, total_avaliacoes = db.session.query(
+            func.avg(Ticket.rating),
+            func.count(Ticket.rating)
+        ).filter(
+            Ticket.admin_id == admin.id,
+            Ticket.rating.isnot(None)
+        ).first()
+        
+        if media is None:
+            media = 0
+
+        resultado.append({
+
+            "id": admin.id,
+
+            "username": admin.username,
+
+            "nome": admin.nome,
+
+            "avatar": admin.avatar,
+
+            "banner": admin.banner,
+
+            "bio": admin.bio,
+
+            "last_login": (
+                admin.last_login.strftime("%d/%m/%Y %H:%M")
+                if admin.last_login
+                else None
+            ),
+
+            "created_at": (
+                admin.created_at.strftime("%d/%m/%Y")
+                if admin.created_at
+                else None
+            ),
+
+            "tickets": tickets,
+
+            "avaliacao_media": (
+                round(avaliacoes, 2)
+                if avaliacoes
+                else 0
+            ),
+
+            "media_estrelas": round(float(media), 2),
+            
+            "avaliacoes": total_avaliacoes,
+
+            "total_avaliacoes": total_avaliacoes,
+
+            "satisfacao": satisfacao,
+
+            "denuncias": denuncias,
+
+            "bans": bans,
+
+            "avisos": avisos,
+
+            "suspensoes": suspensoes,
+
+            "posts_removidos": remover_posts,
+
+            "comentarios_removidos": remover_comentarios
+
         })
 
-    return jsonify(res)
-
+    return jsonify(resultado)
+    
 @app.route("/admins", methods=["GET"])
 def listar_admins_publico():
 
@@ -7483,6 +7609,162 @@ def admin_ticket_app(token):
     session.permanent = True
 
     return redirect("/admin/tickets")
+
+@app.route("/admin/admin-stats", methods=["GET"])
+def admin_stats():
+
+    requester_id = request.args.get("user_id", type=int)
+
+    if not is_admin(requester_id):
+        return jsonify(error="Sem permissão"), 403
+
+    admins = (
+        User.query
+        .filter_by(role="admin")
+        .order_by(User.id.asc())
+        .all()
+    )
+
+    resultado = []
+
+    for admin in admins:
+
+        dias = {}
+
+        atividades = (
+            AdminActivity.query
+            .filter_by(user_id=admin.id)
+            .order_by(AdminActivity.created_at.asc())
+            .all()
+        )
+
+        for a in atividades:
+
+            # ações que contam para atividade
+            if a.action not in [
+                "ban",
+                "warn",
+                "suspend",
+                "unsuspend",
+                "close_ticket",
+                "reply_ticket",
+                "resolve_report",
+                "approve_report",
+                "reject_report",
+                "delete_post",
+                "restore_post",
+                "delete_comment",
+                "restore_comment",
+                "block_user",
+                "unblock_user",
+                "ban_ia",
+                "unban_ia"
+            ]:
+                continue
+
+            dia = a.created_at.strftime("%Y-%m-%d")
+
+            dias[dia] = dias.get(dia, 0) + 1
+
+        resultado.append({
+
+            "id": admin.id,
+            "username": admin.username,
+
+            "dados": [
+                {
+                    "dia": d,
+                    "acoes": dias[d]
+                }
+                for d in sorted(dias.keys())
+            ]
+
+        })
+
+    return jsonify(resultado)
+
+@app.route("/admin/admin/<int:admin_id>/stats")
+def admin_stats_details(admin_id):
+
+    requester_id = request.args.get("user_id", type=int)
+
+    if not is_admin(requester_id):
+        return jsonify(error="Sem permissão"), 403
+
+    admin = User.query.get_or_404(admin_id)
+
+    tickets = Ticket.query.filter_by(admin_id=admin.id).count()
+
+    denuncias = Report.query.filter_by(
+        admin_id=admin.id,
+        status="resolved"
+    ).count()
+
+    bans = AdminActivity.query.filter_by(
+        user_id=admin.id,
+        action="ban"
+    ).count()
+
+    avisos = AdminActivity.query.filter_by(
+        user_id=admin.id,
+        action="warn"
+    ).count()
+
+    suspensoes = AdminActivity.query.filter_by(
+        user_id=admin.id,
+        action="suspend"
+    ).count()
+
+    posts = AdminActivity.query.filter_by(
+        user_id=admin.id,
+        action="delete_post"
+    ).count()
+
+    comentarios = AdminActivity.query.filter_by(
+        user_id=admin.id,
+        action="delete_comment"
+    ).count()
+
+    ratings = (
+        db.session.query(
+            db.func.avg(Ticket.rating),
+            db.func.count(Ticket.rating)
+        )
+        .filter(
+            Ticket.admin_id == admin.id,
+            Ticket.rating.isnot(None)
+        )
+        .first()
+    )
+
+    media = round(ratings[0], 2) if ratings[0] else 0
+    total = ratings[1] or 0
+
+    return jsonify({
+
+        "id": admin.id,
+
+        "username": admin.username,
+
+        "tickets": tickets,
+
+        "denuncias": denuncias,
+
+        "bans": bans,
+
+        "avisos": avisos,
+
+        "suspensoes": suspensoes,
+
+        "posts": posts,
+
+        "comentarios": comentarios,
+
+        "media_estrelas": media,
+
+        "avaliacoes": total
+
+    })
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
