@@ -3714,157 +3714,352 @@ def listar_users():
 
     return jsonify(res)
 
+# =========================================================
+# LISTAR ADMINISTRADORES
+# =========================================================
+
 @app.route("/admin/admins", methods=["GET"])
 def listar_admins_admin():
 
-    requester_id = request.args.get("user_id", type=int)
+    try:
 
-    if not is_admin(requester_id):
-        return jsonify(error="Sem permissão"), 403
-
-    admins = (
-        User.query
-        .filter_by(role="admin")
-        .order_by(User.id.asc())
-        .all()
-    )
-
-    resultado = []
-
-    for admin in admins:
-
-        # ================= TICKETS =================
-
-        tickets = Ticket.query.filter_by(
-            admin_id=admin.id
-        ).count()
-
-        # Média das avaliações (1 a 5 estrelas)
-        avaliacoes = (
-            db.session.query(func.avg(Ticket.rating))
-            .filter(
-                Ticket.admin_id == admin.id,
-                Ticket.rating != None
-            )
-            .scalar()
+        requester_id = request.args.get(
+            "user_id",
+            type=int
         )
 
-        total_avaliacoes = (
-            Ticket.query.filter(
-                Ticket.admin_id == admin.id,
-                Ticket.rating != None
+        # =====================================================
+        # VERIFICAR PERMISSÃO
+        # =====================================================
+
+        if not requester_id:
+            return jsonify(
+                error="ID do administrador não fornecido"
+            ), 400
+
+        if not is_admin(requester_id):
+            return jsonify(
+                error="Sem permissão"
+            ), 403
+
+        # =====================================================
+        # OBTER ADMINISTRADORES
+        # =====================================================
+
+        admins = (
+            User.query
+            .filter_by(role="admin")
+            .order_by(User.id.asc())
+            .all()
+        )
+
+        resultado = []
+
+        # =====================================================
+        # PROCESSAR CADA ADMIN
+        # =====================================================
+
+        for admin in admins:
+
+            # =================================================
+            # TICKETS
+            # =================================================
+
+            tickets = Ticket.query.filter_by(
+                admin_id=admin.id
             ).count()
-        )
 
-        satisfacao = (
-            round((avaliacoes / 5) * 100, 1)
-            if avaliacoes
-            else 0
-        )
+            # =================================================
+            # AVALIAÇÕES DOS TICKETS
+            # =================================================
 
-        # ================= DENÚNCIAS =================
+            rating_result = (
+                db.session.query(
+                    func.avg(Ticket.rating),
+                    func.count(Ticket.rating)
+                )
+                .filter(
+                    Ticket.admin_id == admin.id,
+                    Ticket.rating.isnot(None)
+                )
+                .first()
+            )
 
-        denuncias = Report.query.filter_by(
-            admin_id=admin.id,
-            status="resolved"
-        ).count()
-
-        # ================= AÇÕES ADMIN =================
-
-        bans = AdminActivity.query.filter_by(
-            user_id=admin.id,
-            action="ban"
-        ).count()
-
-        avisos = AdminActivity.query.filter_by(
-            user_id=admin.id,
-            action="warn"
-        ).count()
-
-        suspensoes = AdminActivity.query.filter_by(
-            user_id=admin.id,
-            action="suspend"
-        ).count()
-
-        remover_posts = AdminActivity.query.filter_by(
-            user_id=admin.id,
-            action="delete_post"
-        ).count()
-
-        remover_comentarios = AdminActivity.query.filter_by(
-            user_id=admin.id,
-            action="delete_comment"
-        ).count()
-
-        media, total_avaliacoes = db.session.query(
-            func.avg(Ticket.rating),
-            func.count(Ticket.rating)
-        ).filter(
-            Ticket.admin_id == admin.id,
-            Ticket.rating.isnot(None)
-        ).first()
-        
-        if media is None:
-            media = 0
-
-        resultado.append({
-
-            "id": admin.id,
-
-            "username": admin.username,
-
-            "nome": admin.nome,
-
-            "avatar": admin.avatar,
-
-            "banner": admin.banner,
-
-            "bio": admin.bio,
-
-            "last_login": (
-                admin.last_login.strftime("%d/%m/%Y %H:%M")
-                if admin.last_login
-                else None
-            ),
-
-            "created_at": (
-                admin.created_at.strftime("%d/%m/%Y")
-                if admin.created_at
-                else None
-            ),
-
-            "tickets": tickets,
-
-            "avaliacao_media": (
-                round(avaliacoes, 2)
-                if avaliacoes
+            media = (
+                float(rating_result[0])
+                if rating_result
+                and rating_result[0] is not None
                 else 0
-            ),
+            )
 
-            "media_estrelas": round(float(media), 2),
-            
-            "avaliacoes": total_avaliacoes,
+            total_avaliacoes = (
+                int(rating_result[1])
+                if rating_result
+                and rating_result[1] is not None
+                else 0
+            )
 
-            "total_avaliacoes": total_avaliacoes,
+            media = round(
+                media,
+                2
+            )
 
-            "satisfacao": satisfacao,
+            # =================================================
+            # SATISFAÇÃO
+            # =================================================
 
-            "denuncias": denuncias,
+            satisfacao = (
+                round(
+                    (media / 5) * 100,
+                    1
+                )
+                if media > 0
+                else 0
+            )
 
-            "bans": bans,
+            # =================================================
+            # AÇÕES DO ADMIN
+            #
+            # IMPORTANTE:
+            # Agora usamos AdminAction.
+            # NÃO usamos AdminActivity.
+            # =================================================
 
-            "avisos": avisos,
+            acoes = (
+                AdminAction.query
+                .filter_by(
+                    admin_id=admin.id
+                )
+                .all()
+            )
 
-            "suspensoes": suspensoes,
+            # =================================================
+            # FUNÇÃO CONTADOR
+            # =================================================
 
-            "posts_removidos": remover_posts,
+            def contar(*tipos):
 
-            "comentarios_removidos": remover_comentarios
+                tipos = set(tipos)
 
-        })
+                return sum(
+                    1
+                    for acao in acoes
+                    if acao.action in tipos
+                )
 
-    return jsonify(resultado)
-    
+            # =================================================
+            # ESTATÍSTICAS
+            # =================================================
+
+            bans = contar(
+                "ban"
+            )
+
+            avisos = contar(
+                "warning",
+                "warn"
+            )
+
+            suspensoes = contar(
+                "suspension",
+                "suspend"
+            )
+
+            remover_posts = contar(
+                "post_removed",
+                "delete_post"
+            )
+
+            remover_comentarios = contar(
+                "comment_removed",
+                "delete_comment"
+            )
+
+            # =================================================
+            # DENÚNCIAS
+            #
+            # NÃO fazemos:
+            #
+            # Report.query.filter_by(admin_id=...)
+            #
+            # porque Report NÃO tem admin_id.
+            #
+            # Usamos AdminAction.
+            # =================================================
+
+            denuncias = contar(
+                "report_resolved",
+                "resolve_report",
+                "approve_report",
+                "reject_report"
+            )
+
+            # =================================================
+            # TOTAL DE AÇÕES
+            # =================================================
+
+            total_acoes = len(
+                acoes
+            )
+
+            # =================================================
+            # ATIVIDADE DO MÊS
+            # =================================================
+
+            agora = datetime.utcnow()
+
+            inicio_mes = datetime(
+                agora.year,
+                agora.month,
+                1
+            )
+
+            atividade_mes = sum(
+                1
+                for acao in acoes
+                if acao.created_at
+                and acao.created_at >= inicio_mes
+            )
+
+            # =================================================
+            # ÚLTIMA AÇÃO
+            # =================================================
+
+            ultima_acao = None
+
+            if acoes:
+
+                ultima = max(
+                    acoes,
+                    key=lambda a: (
+                        a.created_at
+                        if a.created_at
+                        else datetime.min
+                    )
+                )
+
+                ultima_acao = {
+                    "action": ultima.action,
+
+                    "description": (
+                        ultima.description
+                        or ""
+                    ),
+
+                    "data": (
+                        ultima.created_at.strftime(
+                            "%d/%m/%Y %H:%M"
+                        )
+                        if ultima.created_at
+                        else None
+                    )
+                }
+
+            # =================================================
+            # RESULTADO
+            # =================================================
+
+            resultado.append({
+
+                "id": admin.id,
+
+                "username": admin.username,
+
+                "nome": admin.nome,
+
+                "avatar": admin.avatar,
+
+                "banner": admin.banner,
+
+                "bio": admin.bio,
+
+                "last_login": (
+                    admin.last_login.strftime(
+                        "%d/%m/%Y %H:%M"
+                    )
+                    if admin.last_login
+                    else None
+                ),
+
+                "created_at": (
+                    admin.created_at.strftime(
+                        "%d/%m/%Y"
+                    )
+                    if admin.created_at
+                    else None
+                ),
+
+                # -------------------------------
+                # TICKETS
+                # -------------------------------
+
+                "tickets": tickets,
+
+                # -------------------------------
+                # AVALIAÇÕES
+                # -------------------------------
+
+                "avaliacao_media": media,
+
+                "media_estrelas": media,
+
+                "avaliacoes": total_avaliacoes,
+
+                "total_avaliacoes": total_avaliacoes,
+
+                "satisfacao": satisfacao,
+
+                # -------------------------------
+                # AÇÕES
+                # -------------------------------
+
+                "denuncias": denuncias,
+
+                "bans": bans,
+
+                "avisos": avisos,
+
+                "suspensoes": suspensoes,
+
+                "posts_removidos": remover_posts,
+
+                "comentarios_removidos": (
+                    remover_comentarios
+                ),
+
+                "total_acoes": total_acoes,
+
+                "atividade_mes": atividade_mes,
+
+                "ultima_acao": ultima_acao
+
+            })
+
+        # =====================================================
+        # DEVOLVER
+        # =====================================================
+
+        return jsonify(
+            resultado
+        )
+
+    except Exception as e:
+
+        db.session.rollback()
+
+        print(
+            f"[LISTAR ADMINS ERROR] "
+            f"{type(e).__name__}: {e}"
+        )
+
+        import traceback
+
+        traceback.print_exc()
+
+        return jsonify(
+            error="Erro interno ao carregar administradores"
+        ), 500
+        
 @app.route("/admins", methods=["GET"])
 def listar_admins_publico():
 
