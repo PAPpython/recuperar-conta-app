@@ -8090,7 +8090,7 @@ def estatisticas_admin(admin_id):
             }), 400
 
         # ==========================================
-        # TODAS AS AÇÕES REAIS
+        # TODAS AS AÇÕES DO ADMIN
         # ==========================================
 
         acoes = (
@@ -8105,10 +8105,12 @@ def estatisticas_admin(admin_id):
         )
 
         # ==========================================
-        # CONTADOR
+        # FUNÇÃO PARA CONTAR ADMIN ACTIONS
         # ==========================================
 
         def contar(*tipos):
+
+            tipos = set(tipos)
 
             return sum(
                 1
@@ -8117,47 +8119,77 @@ def estatisticas_admin(admin_id):
             )
 
         # ==========================================
-        # ESTATÍSTICAS
+        # 🎫 TICKETS
+        #
+        # Ticket.admin_id guarda diretamente
+        # o administrador responsável pelo ticket.
         # ==========================================
 
-        tickets = contar(
-            "ticket_resolved"
+        tickets = (
+            Ticket.query
+            .filter(
+                Ticket.admin_id == admin.id
+            )
+            .count()
         )
 
-        denuncias = contar(
-            "report_resolved",
-            "report_approved",
-            "report_rejected"
+        # ==========================================
+        # 🚨 DENÚNCIAS
+        #
+        # Report.resolvido_por guarda diretamente
+        # o administrador que resolveu a denúncia.
+        # ==========================================
+
+        denuncias = (
+            Report.query
+            .filter(
+                Report.resolvido_por == admin.id
+            )
+            .count()
         )
+
+        # ==========================================
+        # 🚫 BANS
+        # ==========================================
 
         bans = contar(
             "ban"
         )
 
+        # ==========================================
+        # ⚠ AVISOS
+        # ==========================================
+
         avisos = contar(
             "warning"
         )
+
+        # ==========================================
+        # ⛔ SUSPENSÕES
+        # ==========================================
 
         suspensoes = contar(
             "suspension"
         )
 
+        # ==========================================
+        # 📄 POSTS REMOVIDOS
+        # ==========================================
+
         posts = contar(
             "post_removed"
         )
+
+        # ==========================================
+        # 💬 COMENTÁRIOS REMOVIDOS
+        # ==========================================
 
         comentarios = contar(
             "comment_removed"
         )
 
         # ==========================================
-        # TOTAL
-        # ==========================================
-
-        total = len(acoes)
-
-        # ==========================================
-        # AVALIAÇÕES DOS TICKETS
+        # ⭐ AVALIAÇÕES DOS TICKETS
         # ==========================================
 
         ratings = (
@@ -8185,12 +8217,38 @@ def estatisticas_admin(admin_id):
         )
 
         # ==========================================
-        # ATIVIDADE DO MÊS
+        # 📊 TOTAL DE AÇÕES
+        #
+        # Aqui usamos os valores das estatísticas
+        # para não contar a mesma ação duas vezes.
+        # ==========================================
+
+        total = (
+            tickets
+            + denuncias
+            + bans
+            + avisos
+            + suspensoes
+            + posts
+            + comentarios
+        )
+
+        # ==========================================
+        # 📈 ATIVIDADE DO MÊS
+        # ==========================================
+        #
+        # Como tickets e denúncias podem não estar
+        # registados em AdminAction, contamos:
+        #
+        # 1. AdminAction deste mês
+        # 2. Tickets deste mês
+        # 3. Denúncias deste mês
+        #
         # ==========================================
 
         agora = datetime.utcnow()
 
-        atividade_mes = sum(
+        atividade_admin_action_mes = sum(
             1
             for acao in acoes
             if (
@@ -8200,24 +8258,137 @@ def estatisticas_admin(admin_id):
             )
         )
 
+        atividade_tickets_mes = (
+            Ticket.query
+            .filter(
+                Ticket.admin_id == admin.id,
+                Ticket.updated_at.isnot(None),
+                db.extract(
+                    "year",
+                    Ticket.updated_at
+                ) == agora.year,
+                db.extract(
+                    "month",
+                    Ticket.updated_at
+                ) == agora.month
+            )
+            .count()
+        )
+
+        atividade_denuncias_mes = (
+            Report.query
+            .filter(
+                Report.resolvido_por == admin.id,
+                Report.resolvido_em.isnot(None),
+                db.extract(
+                    "year",
+                    Report.resolvido_em
+                ) == agora.year,
+                db.extract(
+                    "month",
+                    Report.resolvido_em
+                ) == agora.month
+            )
+            .count()
+        )
+
+        atividade_mes = (
+            atividade_admin_action_mes
+            + atividade_tickets_mes
+            + atividade_denuncias_mes
+        )
+
         # ==========================================
-        # ÚLTIMA AÇÃO
+        # 📅 ÚLTIMA AÇÃO
         # ==========================================
 
         ultima_acao = None
 
-        if acoes:
+        # ------------------------------------------
+        # Última AdminAction
+        # ------------------------------------------
 
-            ultima = acoes[-1]
+        ultima_admin_action = None
+
+        if acoes:
+            ultima_admin_action = acoes[-1]
+
+        # ------------------------------------------
+        # Último ticket
+        # ------------------------------------------
+
+        ultimo_ticket = (
+            Ticket.query
+            .filter(
+                Ticket.admin_id == admin.id
+            )
+            .order_by(
+                Ticket.updated_at.desc()
+            )
+            .first()
+        )
+
+        # ------------------------------------------
+        # Última denúncia
+        # ------------------------------------------
+
+        ultima_denuncia = (
+            Report.query
+            .filter(
+                Report.resolvido_por == admin.id,
+                Report.resolvido_em.isnot(None)
+            )
+            .order_by(
+                Report.resolvido_em.desc()
+            )
+            .first()
+        )
+
+        # ==========================================
+        # COMPARAR DATAS
+        # ==========================================
+
+        candidatos = []
+
+        if ultima_admin_action:
+            candidatos.append({
+                "tipo": "admin_action",
+                "data": ultima_admin_action.created_at,
+                "action": ultima_admin_action.action,
+                "description": ultima_admin_action.description
+            })
+
+        if ultimo_ticket and ultimo_ticket.updated_at:
+            candidatos.append({
+                "tipo": "ticket",
+                "data": ultimo_ticket.updated_at,
+                "action": "ticket_resolved",
+                "description": "Atendimento de ticket"
+            })
+
+        if ultima_denuncia and ultima_denuncia.resolvido_em:
+            candidatos.append({
+                "tipo": "report",
+                "data": ultima_denuncia.resolvido_em,
+                "action": "report_resolved",
+                "description": "Denúncia resolvida"
+            })
+
+        if candidatos:
+
+            ultima = max(
+                candidatos,
+                key=lambda x: x["data"]
+            )
 
             ultima_acao = {
-                "action": ultima.action,
-                "description": ultima.description,
+                "action": ultima["action"],
+                "description": ultima["description"],
                 "data": (
-                    ultima.created_at.strftime(
+                    ultima["data"].strftime(
                         "%Y-%m-%d %H:%M:%S"
                     )
-                    if ultima.created_at
+                    if ultima["data"]
                     else None
                 )
             }
@@ -8232,6 +8403,7 @@ def estatisticas_admin(admin_id):
 
             "username": admin.username,
 
+            # Estatísticas
             "tickets": tickets,
 
             "denuncias": denuncias,
@@ -8248,12 +8420,15 @@ def estatisticas_admin(admin_id):
 
             "total": total,
 
+            # Avaliações
             "avaliacoes": avaliacoes,
 
             "media_estrelas": media_estrelas,
 
+            # Atividade
             "atividade_mes": atividade_mes,
 
+            # Última ação
             "ultima_acao": ultima_acao
 
         })
@@ -8264,8 +8439,12 @@ def estatisticas_admin(admin_id):
             f"[ADMIN STATS ERROR] {e}"
         )
 
+        import traceback
+        traceback.print_exc()
+
         return jsonify({
-            "erro": "Erro interno"
+            "erro": "Erro interno",
+            "detalhes": str(e)
         }), 500
         
 @app.route("/admin-ticket-app/<token>")
