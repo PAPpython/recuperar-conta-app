@@ -3096,7 +3096,7 @@ def demote_user():
         action="demote",
         target_type="user",
         target_id=user.id,
-        description=f"Administrador {user.username} deixou de ser administrador
+        description=f"Administrador {user.username} deixou de ser administrador"
         )
         
     return jsonify(status="ok")
