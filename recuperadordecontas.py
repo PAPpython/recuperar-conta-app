@@ -3589,8 +3589,6 @@ def admin_unsuspend_ia(user_id):
         description=f"Suspensão da IA removida para {user.username}"
     )
 
-return jsonify(status="ok")
-
     return jsonify(status="ok")
     
 # =========================================================
