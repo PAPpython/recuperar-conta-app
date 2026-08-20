@@ -3051,6 +3051,14 @@ def promote_user():
     user.role = "admin"
     db.session.commit()
 
+    registar_acao_admin(
+        admin_id=admin_id,
+        action="promote",
+        target_type="user",
+        target_id=user.id,
+        description=f"Utilizador {user.username} promovido a administrador"
+    )
+
     return jsonify(status="ok", msg=f"{user.username} agora é admin")
     
 # =========================================================
@@ -3080,9 +3088,17 @@ def demote_user():
         ), 403
 
     user.role = "user"
-
+    
     db.session.commit()
-
+    
+    registar_acao_admin(
+        admin_id=admin_id,
+        action="demote",
+        target_type="user",
+        target_id=user.id,
+        description=f"Administrador {user.username} deixou de ser administrador
+        )
+        
     return jsonify(status="ok")
 # =========================================================
 # LOGS ADMIN
@@ -3184,6 +3200,14 @@ def admin_delete_post(post_id):
     db.session.delete(post)
     db.session.commit()
 
+    registar_acao_admin(
+        admin_id=admin_id,
+        action="post_removed",
+        target_type="post",
+        target_id=post_id_registo,
+        description=f"Post {post_id_registo} removido pelo administrador"
+    )
+
     return jsonify(status="ok")
     
 # =========================================================
@@ -3209,7 +3233,15 @@ def admin_delete_comment(comment_id):
 
     db.session.delete(comment)
     db.session.commit()
-
+    
+    registar_acao_admin(
+        admin_id=admin_id,
+        action="comment_removed",
+        target_type="comment",
+        target_id=comment_id_registo,
+        description=f"Comentário {comment_id_registo} removido pelo administrador"
+    )
+    
     return jsonify(status="ok")
     
 # =========================================================
@@ -3232,6 +3264,7 @@ def admin_ban_user(user_id):
     if not user:
         return jsonify(error="User não encontrado"), 404
 
+    
     if user.role == "admin":
         return jsonify(
             error="Não podes banir outro admin"
@@ -3324,6 +3357,14 @@ def admin_ban_user(user_id):
 
     db.session.commit()
 
+    registar_acao_admin(
+        admin_id=admin_id,
+        action="ban",
+        target_type="user",
+        target_id=user.id,
+        description=f"Utilizador {user.username} banido. Motivo: {motivo}"
+    )
+
     return jsonify(status="ok")
 
 
@@ -3351,6 +3392,14 @@ def admin_unban_user(user_id):
     user.ban_reason = None
 
     db.session.commit()
+
+    registar_acao_admin(
+        admin_id=admin_id,
+        action="unban",
+        target_type="user",
+        target_id=user.id,
+        description=f"Utilizador {user.username} desbanido"
+    )
 
     return jsonify(status="ok")
     
@@ -3381,6 +3430,14 @@ def admin_block_user(user_id):
 
     db.session.commit()
 
+    registar_acao_admin(
+        admin_id=admin_id,
+        action="block_user",
+        target_type="user",
+        target_id=user.id,
+        description=f"Utilizador {user.username} bloqueado durante {dias} dias"
+    )
+
     return jsonify(status="ok")
     
 # =========================================================
@@ -3406,6 +3463,14 @@ def admin_unblock_user(user_id):
     user.bloqueado_ate = None
 
     db.session.commit()
+
+    registar_acao_admin(
+        admin_id=admin_id,
+        action="unblock_user",
+        target_type="user",
+        target_id=user.id,
+        description=f"Utilizador {user.username} desbloqueado"
+    )
 
     return jsonify(status="ok")
     
@@ -3463,6 +3528,14 @@ def suspend_ia(user_id):
         user.ia_suspenso_ate = None
 
         db.session.commit()
+        
+        registar_acao_admin(
+            admin_id=admin_id,
+            action="ban_ia",
+            target_type="user",
+            target_id=user.id,
+            description=f"IA banida permanentemente para {user.username}"
+        )
 
         return jsonify(status="banido")
 
@@ -3471,6 +3544,14 @@ def suspend_ia(user_id):
     user.ia_suspenso_ate = datetime.utcnow() + timedelta(hours=horas)
 
     db.session.commit()
+
+    registar_acao_admin(
+        admin_id=admin_id,
+        action="suspension",
+        target_type="user",
+        target_id=user.id,
+        description=f"IA suspensa para {user.username} durante {horas} horas"
+    )
 
     return jsonify(
         status="suspenso",
@@ -3499,6 +3580,16 @@ def admin_unsuspend_ia(user_id):
     user.ia_suspenso_ate = None
 
     db.session.commit()
+
+    registar_acao_admin(
+        admin_id=admin_id,
+        action="unsuspend",
+        target_type="user",
+        target_id=user.id,
+        description=f"Suspensão da IA removida para {user.username}"
+    )
+
+return jsonify(status="ok")
 
     return jsonify(status="ok")
     
@@ -7759,6 +7850,10 @@ def estatisticas_admin(admin_id):
 
     try:
 
+        # ==========================================
+        # ADMIN QUE ESTÁ A CONSULTAR
+        # ==========================================
+
         requester_id = request.args.get(
             "user_id",
             type=int
@@ -7783,6 +7878,10 @@ def estatisticas_admin(admin_id):
                 "erro": "Acesso negado"
             }), 403
 
+        # ==========================================
+        # ADMIN A CONSULTAR
+        # ==========================================
+
         admin = User.query.get(
             admin_id
         )
@@ -7792,19 +7891,147 @@ def estatisticas_admin(admin_id):
                 "erro": "Administrador não encontrado"
             }), 404
 
-        acoes = AdminAction.query.filter_by(
-            admin_id=admin_id
-        ).all()
+        if admin.role != "admin":
+            return jsonify({
+                "erro": "O utilizador selecionado não é administrador"
+            }), 400
 
-        def contar(tipo):
+        # ==========================================
+        # TODAS AS AÇÕES REAIS
+        # ==========================================
+
+        acoes = (
+            AdminAction.query
+            .filter_by(
+                admin_id=admin.id
+            )
+            .order_by(
+                AdminAction.created_at.asc()
+            )
+            .all()
+        )
+
+        # ==========================================
+        # CONTADOR
+        # ==========================================
+
+        def contar(*tipos):
 
             return sum(
                 1
-                for a in acoes
-                if a.action == tipo
+                for acao in acoes
+                if acao.action in tipos
             )
 
+        # ==========================================
+        # ESTATÍSTICAS
+        # ==========================================
+
+        tickets = contar(
+            "ticket_resolved"
+        )
+
+        denuncias = contar(
+            "report_resolved",
+            "report_approved",
+            "report_rejected"
+        )
+
+        bans = contar(
+            "ban"
+        )
+
+        avisos = contar(
+            "warning"
+        )
+
+        suspensoes = contar(
+            "suspension"
+        )
+
+        posts = contar(
+            "post_removed"
+        )
+
+        comentarios = contar(
+            "comment_removed"
+        )
+
+        # ==========================================
+        # TOTAL
+        # ==========================================
+
         total = len(acoes)
+
+        # ==========================================
+        # AVALIAÇÕES DOS TICKETS
+        # ==========================================
+
+        ratings = (
+            db.session.query(
+                db.func.avg(Ticket.rating),
+                db.func.count(Ticket.rating)
+            )
+            .filter(
+                Ticket.admin_id == admin.id,
+                Ticket.rating.isnot(None)
+            )
+            .first()
+        )
+
+        media_estrelas = (
+            round(float(ratings[0]), 2)
+            if ratings[0] is not None
+            else 0
+        )
+
+        avaliacoes = (
+            ratings[1]
+            if ratings[1] is not None
+            else 0
+        )
+
+        # ==========================================
+        # ATIVIDADE DO MÊS
+        # ==========================================
+
+        agora = datetime.utcnow()
+
+        atividade_mes = sum(
+            1
+            for acao in acoes
+            if (
+                acao.created_at
+                and acao.created_at.year == agora.year
+                and acao.created_at.month == agora.month
+            )
+        )
+
+        # ==========================================
+        # ÚLTIMA AÇÃO
+        # ==========================================
+
+        ultima_acao = None
+
+        if acoes:
+
+            ultima = acoes[-1]
+
+            ultima_acao = {
+                "action": ultima.action,
+                "description": ultima.description,
+                "data": (
+                    ultima.created_at.strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    if ultima.created_at
+                    else None
+                )
+            }
+
+        # ==========================================
+        # RESPOSTA
+        # ==========================================
 
         return jsonify({
 
@@ -7812,39 +8039,29 @@ def estatisticas_admin(admin_id):
 
             "username": admin.username,
 
-            "tickets": contar(
-                "ticket_resolved"
-            ),
+            "tickets": tickets,
 
-            "denuncias": contar(
-                "report_resolved"
-            ),
+            "denuncias": denuncias,
 
-            "bans": contar(
-                "ban"
-            ),
+            "bans": bans,
 
-            "avisos": contar(
-                "warning"
-            ),
+            "avisos": avisos,
 
-            "suspensoes": contar(
-                "suspension"
-            ),
+            "suspensoes": suspensoes,
 
-            "posts": contar(
-                "post_removed"
-            ),
+            "posts": posts,
 
-            "comentarios": contar(
-                "comment_removed"
-            ),
+            "comentarios": comentarios,
 
             "total": total,
 
-            "avaliacoes": 0,
+            "avaliacoes": avaliacoes,
 
-            "media_estrelas": 0
+            "media_estrelas": media_estrelas,
+
+            "atividade_mes": atividade_mes,
+
+            "ultima_acao": ultima_acao
 
         })
 
@@ -7857,7 +8074,7 @@ def estatisticas_admin(admin_id):
         return jsonify({
             "erro": "Erro interno"
         }), 500
-    
+        
 @app.route("/admin-ticket-app/<token>")
 def admin_ticket_app(token):
 
@@ -7885,10 +8102,15 @@ def admin_ticket_app(token):
 @app.route("/admin/admin-stats", methods=["GET"])
 def admin_admin_stats():
 
-    requester_id = request.args.get("user_id", type=int)
+    requester_id = request.args.get(
+        "user_id",
+        type=int
+    )
 
     if not is_admin(requester_id):
-        return jsonify(error="Sem permissão"), 403
+        return jsonify({
+            "error": "Sem permissão"
+        }), 403
 
     admins = (
         User.query
@@ -7901,55 +8123,61 @@ def admin_admin_stats():
 
     for admin in admins:
 
-        dias = {}
+        # ==========================================
+        # AÇÕES REAIS DO ADMIN
+        # ==========================================
 
-        atividades = (
-            AdminActivity.query
-            .filter_by(user_id=admin.id)
-            .order_by(AdminActivity.created_at.asc())
+        acoes = (
+            AdminAction.query
+            .filter_by(
+                admin_id=admin.id
+            )
+            .order_by(
+                AdminAction.created_at.asc()
+            )
             .all()
         )
 
-        for a in atividades:
+        dias = {}
 
-            if a.action not in [
-                "ban",
-                "warn",
-                "suspend",
-                "unsuspend",
-                "close_ticket",
-                "reply_ticket",
-                "resolve_report",
-                "approve_report",
-                "reject_report",
-                "delete_post",
-                "restore_post",
-                "delete_comment",
-                "restore_comment",
-                "block_user",
-                "unblock_user",
-                "ban_ia",
-                "unban_ia"
-            ]:
+        # ==========================================
+        # CONTAR AÇÕES POR DIA
+        # ==========================================
+
+        for acao in acoes:
+
+            if not acao.created_at:
                 continue
 
-            dia = a.created_at.strftime("%Y-%m-%d")
-            dias[dia] = dias.get(dia, 0) + 1
+            dia = acao.created_at.strftime(
+                "%Y-%m-%d"
+            )
+
+            dias[dia] = (
+                dias.get(dia, 0) + 1
+            )
+
+        # ==========================================
+        # RESULTADO
+        # ==========================================
 
         resultado.append({
+
             "id": admin.id,
+
             "username": admin.username,
+
             "dados": [
                 {
-                    "dia": d,
-                    "acoes": dias[d]
+                    "dia": dia,
+                    "acoes": dias[dia]
                 }
-                for d in sorted(dias.keys())
+                for dia in sorted(dias.keys())
             ]
+
         })
 
     return jsonify(resultado)
-
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
