@@ -41,6 +41,32 @@ google_login_state = {
     "session_token": None
 }
 
+ADMIN_ACTIONS = {
+
+    "ban": "Ban",
+
+    "unban": "Desbloqueio",
+
+    "warning": "Aviso",
+
+    "suspension": "Suspensão",
+
+    "report_resolved": "Denúncia resolvida",
+
+    "post_removed": "Post removido",
+
+    "comment_removed": "Comentário removido",
+
+    "ticket_resolved": "Ticket resolvido",
+
+    "promote": "Administrador promovido",
+
+    "demote": "Administrador despromovido",
+
+    "user_unblocked": "Utilizador desbloqueado",
+
+}
+
 # ================= SERVIR AVATARES =================
 @app.route('/avatar/<filename>')
 def servir_avatar(filename):
@@ -411,6 +437,55 @@ class PostImage(db.Model):
     caminho = db.Column(
         db.String(500),
         nullable=False
+    )
+
+class AdminAction(db.Model):
+
+    __tablename__ = "admin_actions"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    admin_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+
+    action = db.Column(
+        db.String(50),
+        nullable=False,
+        index=True
+    )
+
+    target_type = db.Column(
+        db.String(50),
+        nullable=True
+    )
+
+    target_id = db.Column(
+        db.String(100),
+        nullable=True
+    )
+
+    description = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        index=True
+    )
+
+    admin = db.relationship(
+        "User",
+        foreign_keys=[admin_id]
     )
 
 class Report(db.Model):
@@ -956,6 +1031,35 @@ def validate_code(token, tipo_esperado):
 
 def hash_resposta(resposta: str) -> str:
     return hashlib.sha256(resposta.strip().lower().encode()).hexdigest()
+
+def registar_acao_admin(
+    admin_id,
+    action,
+    target_type=None,
+    target_id=None,
+    description=None
+):
+
+    try:
+
+        acao = AdminAction(
+            admin_id=admin_id,
+            action=action,
+            target_type=target_type,
+            target_id=str(target_id) if target_id is not None else None,
+            description=description
+        )
+
+        db.session.add(acao)
+        db.session.commit()
+
+    except Exception as e:
+
+        db.session.rollback()
+
+        print(
+            f"[ADMIN ACTION ERROR] {e}"
+        )
 
 def existe_bloqueio(a, b):
     return db.session.query(Block.id).filter(
@@ -7648,6 +7752,111 @@ def security_app(token):
     session["user_id"] = sessao.user_id
 
     return redirect("/security-sessions")
+
+
+@app.route("/admin/admin/<int:admin_id>/stats", methods=["GET"])
+def estatisticas_admin(admin_id):
+
+    try:
+
+        requester_id = request.args.get(
+            "user_id",
+            type=int
+        )
+
+        if not requester_id:
+            return jsonify({
+                "erro": "ID do administrador não fornecido"
+            }), 400
+
+        requester = User.query.get(
+            requester_id
+        )
+
+        if not requester:
+            return jsonify({
+                "erro": "Utilizador não encontrado"
+            }), 404
+
+        if requester.role != "admin":
+            return jsonify({
+                "erro": "Acesso negado"
+            }), 403
+
+        admin = User.query.get(
+            admin_id
+        )
+
+        if not admin:
+            return jsonify({
+                "erro": "Administrador não encontrado"
+            }), 404
+
+        acoes = AdminAction.query.filter_by(
+            admin_id=admin_id
+        ).all()
+
+        def contar(tipo):
+
+            return sum(
+                1
+                for a in acoes
+                if a.action == tipo
+            )
+
+        total = len(acoes)
+
+        return jsonify({
+
+            "id": admin.id,
+
+            "username": admin.username,
+
+            "tickets": contar(
+                "ticket_resolved"
+            ),
+
+            "denuncias": contar(
+                "report_resolved"
+            ),
+
+            "bans": contar(
+                "ban"
+            ),
+
+            "avisos": contar(
+                "warning"
+            ),
+
+            "suspensoes": contar(
+                "suspension"
+            ),
+
+            "posts": contar(
+                "post_removed"
+            ),
+
+            "comentarios": contar(
+                "comment_removed"
+            ),
+
+            "total": total,
+
+            "avaliacoes": 0,
+
+            "media_estrelas": 0
+
+        })
+
+    except Exception as e:
+
+        print(
+            f"[ADMIN STATS ERROR] {e}"
+        )
+
+        return jsonify({
+            "erro": "Erro interno"
+        }), 500
     
 @app.route("/admin-ticket-app/<token>")
 def admin_ticket_app(token):
@@ -7741,88 +7950,6 @@ def admin_admin_stats():
 
     return jsonify(resultado)
 
-@app.route("/admin/admin/<int:admin_id>/stats")
-def admin_stats_details(admin_id):
-
-    requester_id = request.args.get("user_id", type=int)
-
-    if not is_admin(requester_id):
-        return jsonify(error="Sem permissão"), 403
-
-    admin = User.query.get_or_404(admin_id)
-
-    tickets = Ticket.query.filter_by(admin_id=admin.id).count()
-
-    denuncias = Report.query.filter_by(
-        admin_id=admin.id,
-        status="resolved"
-    ).count()
-
-    bans = AdminActivity.query.filter_by(
-        user_id=admin.id,
-        action="ban"
-    ).count()
-
-    avisos = AdminActivity.query.filter_by(
-        user_id=admin.id,
-        action="warn"
-    ).count()
-
-    suspensoes = AdminActivity.query.filter_by(
-        user_id=admin.id,
-        action="suspend"
-    ).count()
-
-    posts = AdminActivity.query.filter_by(
-        user_id=admin.id,
-        action="delete_post"
-    ).count()
-
-    comentarios = AdminActivity.query.filter_by(
-        user_id=admin.id,
-        action="delete_comment"
-    ).count()
-
-    ratings = (
-        db.session.query(
-            db.func.avg(Ticket.rating),
-            db.func.count(Ticket.rating)
-        )
-        .filter(
-            Ticket.admin_id == admin.id,
-            Ticket.rating.isnot(None)
-        )
-        .first()
-    )
-
-    media = round(ratings[0], 2) if ratings[0] else 0
-    total = ratings[1] or 0
-
-    return jsonify({
-
-        "id": admin.id,
-
-        "username": admin.username,
-
-        "tickets": tickets,
-
-        "denuncias": denuncias,
-
-        "bans": bans,
-
-        "avisos": avisos,
-
-        "suspensoes": suspensoes,
-
-        "posts": posts,
-
-        "comentarios": comentarios,
-
-        "media_estrelas": media,
-
-        "avaliacoes": total
-
-    })
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
