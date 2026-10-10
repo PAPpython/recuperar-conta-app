@@ -1267,6 +1267,43 @@ def admin_ticket_required(func):
         return func(*args, **kwargs)
 
     return wrapper
+
+# ============================================================
+# FRIEND ZONE — FUNÇÕES AUXILIARES
+# ============================================================
+
+def friend_zone_user_json(user):
+    return {
+        "id": user.id,
+        "username": getattr(user, "username", None),
+        "nome": getattr(user, "nome", None),
+        "apelido": getattr(user, "apelido", None),
+        "avatar": getattr(user, "avatar", None)
+    }
+
+
+def friend_zone_bloqueados_ids(user_id):
+    """
+    Devolve os IDs de contas envolvidas num bloqueio
+    com o utilizador indicado.
+    """
+    bloqueios = Block.query.filter(
+        db.or_(
+            Block.blocker_id == user_id,
+            Block.blocked_id == user_id
+        )
+    ).all()
+
+    ids = set()
+
+    for bloqueio in bloqueios:
+        ids.add(int(bloqueio.blocker_id))
+        ids.add(int(bloqueio.blocked_id))
+
+    ids.discard(int(user_id))
+    return ids
+
+
 # ================= ROTAS PÁGINAS =================
 @app.route("/")
 def home():
@@ -9303,6 +9340,160 @@ def block_status(user_id, other_user_id):
     ).first() is not None
 
     return jsonify({"blocked": bloqueado}), 200
+
+# ============================================================
+# FRIEND ZONE — PESQUISAR POR USERNAME OU ID
+# GET /users/search?q=ana&user_id=12
+# ============================================================
+
+@app.route("/users/search", methods=["GET"])
+def friend_zone_pesquisar():
+
+    termo = request.args.get("q", "").strip()
+    requester_id = request.args.get("user_id", type=int)
+
+    if not requester_id:
+        return jsonify(error="ID do utilizador em falta"), 400
+
+    if not termo:
+        return jsonify(users=[]), 200
+
+    requester = db.session.get(User, requester_id)
+
+    if not requester:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    bloqueados = friend_zone_bloqueados_ids(requester_id)
+
+    query = User.query.filter(User.id != requester_id)
+
+    # Pesquisa pelo ID exato ou pelo username.
+    if termo.isdigit():
+        query = query.filter(
+            db.or_(
+                User.id == int(termo),
+                User.username.ilike(f"%{termo}%")
+            )
+        )
+    else:
+        query = query.filter(
+            User.username.ilike(f"%{termo}%")
+        )
+
+    utilizadores = query.order_by(User.username.asc()).limit(50).all()
+
+    resultados = [
+        friend_zone_user_json(user)
+        for user in utilizadores
+        if int(user.id) not in bloqueados
+    ]
+
+    return jsonify(users=resultados), 200
+
+
+# ============================================================
+# FRIEND ZONE — SUGESTÕES
+# GET /users/<user_id>/suggestions
+# ============================================================
+
+@app.route(
+    "/users/<int:user_id>/suggestions",
+    methods=["GET"]
+)
+def friend_zone_sugestoes(user_id):
+
+    utilizador = db.session.get(User, user_id)
+
+    if not utilizador:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    bloqueados = friend_zone_bloqueados_ids(user_id)
+
+    # Contas que este utilizador já segue.
+    seguidos = {
+        int(row.followed_id)
+        for row in Follow.query.filter_by(
+            follower_id=user_id
+        ).all()
+    }
+
+    # Não sugerir contas com pedidos pendentes em qualquer direção.
+    pedidos_pendentes = FollowRequest.query.filter(
+        FollowRequest.status == "pending",
+        db.or_(
+            FollowRequest.from_user == user_id,
+            FollowRequest.to_user == user_id
+        )
+    ).all()
+
+    ids_pendentes = set()
+
+    for pedido in pedidos_pendentes:
+        ids_pendentes.add(int(pedido.from_user))
+        ids_pendentes.add(int(pedido.to_user))
+
+    excluidos = bloqueados | seguidos | ids_pendentes
+    excluidos.add(user_id)
+
+    candidatos = (
+        User.query
+        .filter(~User.id.in_(excluidos))
+        .order_by(User.id.desc())
+        .limit(100)
+        .all()
+    )
+
+    return jsonify(
+        users=[
+            friend_zone_user_json(user)
+            for user in candidatos
+        ]
+    ), 200
+
+
+# ============================================================
+# FRIEND ZONE — LISTAR PESSOAS BLOQUEADAS POR MIM
+# GET /users/<user_id>/blocked
+# ============================================================
+
+@app.route(
+    "/users/<int:user_id>/blocked",
+    methods=["GET"]
+)
+def friend_zone_listar_bloqueados(user_id):
+
+    utilizador = db.session.get(User, user_id)
+
+    if not utilizador:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    bloqueios = (
+        Block.query
+        .filter_by(blocker_id=user_id)
+        .all()
+    )
+
+    ids = [
+        int(bloqueio.blocked_id)
+        for bloqueio in bloqueios
+    ]
+
+    if not ids:
+        return jsonify(users=[]), 200
+
+    pessoas = (
+        User.query
+        .filter(User.id.in_(ids))
+        .order_by(User.username.asc())
+        .all()
+    )
+
+    return jsonify(
+        users=[
+            friend_zone_user_json(user)
+            for user in pessoas
+        ]
+    ), 200
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
