@@ -8750,6 +8750,52 @@ def listar_conversas(user_id):
         }
 
     return jsonify(list(conversas.values()))
+
+
+@app.route("/messages/state/<int:user_a>/<int:user_b>", methods=["GET"])
+def estado_conversa_mensagens(user_a, user_b):
+
+    if user_a == user_b:
+        return jsonify(error="Não podes conversar contigo próprio."), 400
+
+    menor, maior = sorted((user_a, user_b))
+
+    conversa = MessageConversation.query.filter_by(
+        user1_id=menor,
+        user2_id=maior
+    ).first()
+
+    # Compatibilidade com conversas antigas que já têm mensagens.
+    if conversa is None:
+        mensagens_existentes = Message.query.filter(
+            db.or_(
+                db.and_(
+                    Message.from_user_id == user_a,
+                    Message.to_user_id == user_b
+                ),
+                db.and_(
+                    Message.from_user_id == user_b,
+                    Message.to_user_id == user_a
+                )
+            )
+        ).first()
+
+        if mensagens_existentes:
+            return jsonify({
+                "status": "accepted",
+                "requested_by_id": None
+            }), 200
+
+        return jsonify({
+            "status": "none",
+            "requested_by_id": None
+        }), 200
+
+    return jsonify({
+        "status": conversa.status,
+        "requested_by_id": conversa.requested_by_id
+    }), 200
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
