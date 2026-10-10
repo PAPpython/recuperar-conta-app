@@ -8689,6 +8689,67 @@ def admin_admin_stats():
         })
 
     return jsonify(resultado)
+
+@app.route("/messages/inbox/<int:user_id>", methods=["GET"])
+def listar_conversas(user_id):
+
+    user = db.session.get(User, user_id)
+
+    if not user:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    mensagens = (
+        Message.query
+        .filter(
+            db.or_(
+                Message.from_user_id == user_id,
+                Message.to_user_id == user_id
+            )
+        )
+        .order_by(Message.data.desc())
+        .all()
+    )
+
+    conversas = {}
+
+    for msg in mensagens:
+        outro_id = (
+            msg.to_user_id
+            if msg.from_user_id == user_id
+            else msg.from_user_id
+        )
+
+        if outro_id == user_id or outro_id in conversas:
+            continue
+
+        outro = db.session.get(User, outro_id)
+
+        if not outro:
+            continue
+
+        if existe_bloqueio(user_id, outro_id):
+            continue
+
+        conversas[outro_id] = {
+            "user": {
+                "id": outro.id,
+                "username": outro.username,
+                "nome": outro.nome,
+                "avatar": outro.avatar,
+                "google_picture": outro.google_picture
+            },
+            "ultima_mensagem": {
+                "texto": msg.texto,
+                "data": (
+                    msg.data.strftime("%d/%m/%Y %H:%M:%S")
+                    if msg.data else ""
+                ),
+                "minha": msg.from_user_id == user_id,
+                "lida": bool(msg.lida)
+            }
+        }
+
+    return jsonify(list(conversas.values()))
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
