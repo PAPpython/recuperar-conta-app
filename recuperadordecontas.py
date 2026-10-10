@@ -1311,6 +1311,42 @@ class Message(db.Model):
     lida = db.Column(db.Boolean, default=False)
     data = db.Column(db.DateTime, default=datetime.utcnow)
 
+
+# ==========================================
+# PUBLICAÇÕES CONTADAS NA MISSÃO DE PARTILHAS
+# ==========================================
+class DailyMissionShare(db.Model):
+    __tablename__ = "daily_mission_shares"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    data = db.Column(
+        db.Date,
+        nullable=False
+    )
+
+    post_id = db.Column(
+        db.String,
+        db.ForeignKey("posts.id"),
+        nullable=False
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "user_id",
+            "data",
+            "post_id",
+            name="uq_daily_mission_shared_post"
+        ),
+    )
+
+
 class Share(db.Model):
     __tablename__ = "shares"
 
@@ -1357,6 +1393,86 @@ def hash_password(p):
 def generate_code(tipo):
     # 16 caracteres hex (compatível com o app)
     return os.urandom(16).hex()
+
+
+# ==========================================
+# AUXILIARES DAS MISSÕES DIÁRIAS
+# ==========================================
+def obter_missoes_diarias(user_id, criar=True):
+    hoje = datetime.utcnow().date()
+
+    missao = DailyMission.query.filter_by(
+        user_id=user_id,
+        data=hoje
+    ).first()
+
+    if missao is None and criar:
+        missao = DailyMission(
+            user_id=user_id,
+            data=hoje
+        )
+        db.session.add(missao)
+        db.session.flush()
+
+    return missao
+
+
+def concluir_primeiro_post(user_id):
+    missao = obter_missoes_diarias(user_id)
+
+    if missao is None:
+        return
+
+    # A recompensa de 500 moedas já é atribuída
+    # pela rota de publicação existente.
+    missao.primeiro_post = True
+
+
+def registar_partilha(user_id):
+    missao = obter_missoes_diarias(user_id)
+
+    if missao is None:
+        return
+
+    # Não contar acima de 5.
+    if missao.compartilhar_5 < 5:
+        missao.compartilhar_5 += 1
+
+    # Atribuir recompensa apenas ao atingir 5.
+    if missao.compartilhar_5 == 5:
+        user = db.session.get(User, user_id)
+
+        if user:
+            user.moedas = (user.moedas or 0) + 250
+
+
+def registar_seguimento(user_id):
+    missao = obter_missoes_diarias(user_id)
+
+    if missao is None or missao.seguiu_alguem:
+        return
+
+    missao.seguiu_alguem = True
+
+    user = db.session.get(User, user_id)
+
+    if user:
+        user.moedas = (user.moedas or 0) + 250
+
+
+def registar_novo_seguidor(user_id):
+    missao = obter_missoes_diarias(user_id)
+
+    if missao is None or missao.ganhou_seguidor:
+        return
+
+    missao.ganhou_seguidor = True
+
+    user = db.session.get(User, user_id)
+
+    if user:
+        user.moedas = (user.moedas or 0) + 1000
+
 
 def validate_code(token, tipo_esperado):
     if (
@@ -2712,51 +2828,143 @@ def like(post_id):
         app.logger.exception("Erro ao processar gosto do post %s", post_id)
 
         return jsonify(error="Não foi possível atualizar o gosto"), 500
-#================= COMPARTILHAR =================
+
+# ================= COMPARTILHAR =================
 @app.route("/posts/<post_id>/share", methods=["POST"])
 def share_post(post_id):
-    data = request.get_json(force=True)
 
-    from_user = data["from_user_id"]
-    to_user = data["to_user_id"]
+    data = request.get_json(silent=True) or {}
 
-    # 🔒 VER UTILIZADOR
-    user = User.query.get(from_user)
+    from_user = data.get("from_user_id")
+    to_user = data.get("to_user_id")
+
+    if from_user is None or to_user is None:
+        return jsonify(
+            error="É necessário indicar quem partilha e quem recebe"
+        ), 400
+
+    try:
+        from_user = int(from_user)
+        to_user = int(to_user)
+    except (ValueError, TypeError):
+        return jsonify(error="ID de utilizador inválido"), 400
+
+    # ==========================================
+    # VALIDAR REMETENTE E DESTINATÁRIO
+    # ==========================================
+    user = db.session.get(User, from_user)
+    destinatario = db.session.get(User, to_user)
 
     if not user:
-        return jsonify(error="User não encontrado"), 404
+        return jsonify(error="Utilizador que partilha não encontrado"), 404
 
-    # 🚫 UTILIZADOR BLOQUEADO/SUSPENSO
-    if user.bloqueado:
+    if not destinatario:
+        return jsonify(error="Destinatário não encontrado"), 404
+
+    if from_user == to_user:
         return jsonify(
-            error="Estás bloqueado e não podes partilhar posts"
+            error="Não podes partilhar uma publicação contigo próprio"
+        ), 400
+
+    # ==========================================
+    # VALIDAR ESTADO DAS CONTAS
+    # ==========================================
+    if (
+        user.bloqueado
+        or user.banido
+        or not user.ativo
+        or user.apagado
+        or user.desativado_em is not None
+    ):
+        return jsonify(
+            error="A tua conta não pode partilhar publicações"
         ), 403
 
-    post = Post.query.get(post_id)
+    if (
+        destinatario.bloqueado
+        or destinatario.banido
+        or not destinatario.ativo
+        or destinatario.apagado
+        or destinatario.desativado_em is not None
+    ):
+        return jsonify(
+            error="Este destinatário não está disponível"
+        ), 403
+
+    # ==========================================
+    # VALIDAR PUBLICAÇÃO
+    # ==========================================
+    post = db.session.get(Post, post_id)
 
     if not post:
-        return jsonify(error="Post não encontrado"), 404
+        return jsonify(error="Publicação não encontrada"), 404
 
-    # 🚫 BLOQUEIO entre quem envia e autor do post
+    # ==========================================
+    # VERIFICAR BLOQUEIOS
+    # ==========================================
     if existe_bloqueio(from_user, post.autor_id):
-        return jsonify(error="Utilizador bloqueado"), 403
+        return jsonify(
+            error="Não podes partilhar esta publicação"
+        ), 403
 
-    # 🚫 BLOQUEIO entre quem envia e quem recebe
     if existe_bloqueio(from_user, to_user):
-        return jsonify(error="Utilizador bloqueado"), 403
+        return jsonify(
+            error="Não podes partilhar com este utilizador"
+        ), 403
 
-    share = Share(
-        id=str(uuid.uuid4()),
-        post_id=post_id,
-        from_user_id=from_user,
-        to_user_id=to_user
-    )
+    if existe_bloqueio(to_user, from_user):
+        return jsonify(
+            error="Não podes partilhar com este utilizador"
+        ), 403
 
-    db.session.add(share)
-    db.session.commit()
+    if existe_bloqueio(to_user, post.autor_id):
+        return jsonify(
+            error="O destinatário não pode receber esta publicação"
+        ), 403
 
-    return jsonify(status="ok")
-    
+    # ==========================================
+    # CRIAR PARTILHA E ATUALIZAR MISSÃO
+    # ==========================================
+    try:
+        share = Share(
+            id=str(uuid.uuid4()),
+            post_id=post_id,
+            from_user_id=from_user,
+            to_user_id=to_user
+        )
+
+        db.session.add(share)
+
+        # Contar apenas depois de validar a partilha.
+        # A função não faz commit: tudo é guardado junto.
+        registar_partilha(from_user, post_id)
+
+        db.session.commit()
+
+        missao = obter_missoes_diarias(from_user, criar=False)
+
+        return jsonify({
+            "status": "ok",
+            "message": "Publicação partilhada com sucesso",
+            "moedas": user.moedas or 0,
+            "missao": {
+                "compartilhar_5": (
+                    missao.compartilhar_5 if missao else 0
+                ),
+                "concluida": (
+                    missao.compartilhar_5 >= 5 if missao else False
+                )
+            }
+        }), 201
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao partilhar publicação")
+
+        return jsonify(
+            error="Não foi possível partilhar a publicação"
+        ), 500
+
 # ================= recebidos =================
 @app.route("/shares/<int:user_id>", methods=["GET"])
 def inbox(user_id):
@@ -3085,49 +3293,125 @@ def report_user(user_id):
 
     return jsonify(status="ok")
 
-#================= SEGUIR / DEIXAR DE SEGUIR =================
+
+# ================= SEGUIR / DEIXAR DE SEGUIR =================
 @app.route("/users/<user_id>/follow", methods=["POST"])
 def follow_user(user_id):
-    data = request.get_json(force=True)
-    follower_id = data["user_id"]
 
-    # ❌ Não pode seguir a si próprio
-    if str(follower_id) == str(user_id):
+    data = request.get_json(silent=True) or {}
+    follower_id = data.get("user_id")
+
+    if follower_id is None:
+        return jsonify(error="ID do utilizador em falta"), 400
+
+    try:
+        follower_id = int(follower_id)
+        followed_id = int(user_id)
+    except (ValueError, TypeError):
+        return jsonify(error="ID de utilizador inválido"), 400
+
+    # ==========================================
+    # VALIDAR UTILIZADORES
+    # ==========================================
+    follower = db.session.get(User, follower_id)
+    followed = db.session.get(User, followed_id)
+
+    if not follower or not followed:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    if (
+        not follower.ativo
+        or follower.apagado
+        or follower.banido
+        or follower.bloqueado
+        or follower.desativado_em is not None
+    ):
+        return jsonify(error="A tua conta não pode seguir utilizadores"), 403
+
+    if (
+        not followed.ativo
+        or followed.apagado
+        or followed.banido
+        or followed.bloqueado
+        or followed.desativado_em is not None
+    ):
+        return jsonify(error="Este utilizador não está disponível"), 403
+
+    # ==========================================
+    # NÃO PODE SEGUIR A SI PRÓPRIO
+    # ==========================================
+    if follower_id == followed_id:
         return jsonify(error="Não podes seguir a ti próprio"), 400
 
-    # 🚫 BLOQUEIO (em qualquer sentido)
-    if existe_bloqueio(follower_id, user_id):
+    # ==========================================
+    # BLOQUEIO EM QUALQUER SENTIDO
+    # ==========================================
+    if existe_bloqueio(follower_id, followed_id):
         return jsonify(error="Não podes seguir este utilizador"), 403
 
+    # ==========================================
+    # VERIFICAR RELAÇÃO EXISTENTE
+    # ==========================================
     existente = Follow.query.filter_by(
         follower_id=follower_id,
-        followed_id=user_id
+        followed_id=followed_id
     ).first()
 
-    # 🔁 Deixar de seguir
+    # ==========================================
+    # DEIXAR DE SEGUIR
+    # ==========================================
     if existente:
         db.session.delete(existente)
         db.session.commit()
-        return jsonify(following=False)
 
-    # ➕ Seguir
-    db.session.add(Follow(
-        id=str(uuid.uuid4()),
-        follower_id=follower_id,
-        followed_id=user_id
-    ))
+        return jsonify({
+            "following": False,
+            "moedas": follower.moedas or 0
+        })
 
-    # 🔔 Notificação
-    db.session.add(Notification(
-        id=str(uuid.uuid4()),
-        user_id=user_id,
-        tipo="follow",
-        origem_id=follower_id
-    ))
+    # ==========================================
+    # COMEÇAR A SEGUIR
+    # ==========================================
+    try:
+        nova_relacao = Follow(
+            id=str(uuid.uuid4()),
+            follower_id=follower_id,
+            followed_id=followed_id
+        )
 
-    db.session.commit()
-    return jsonify(following=True)
+        db.session.add(nova_relacao)
 
+        # ======================================
+        # NOTIFICAÇÃO
+        # ======================================
+        db.session.add(Notification(
+            id=str(uuid.uuid4()),
+            user_id=followed_id,
+            tipo="follow",
+            origem_id=follower_id
+        ))
+
+        # ======================================
+        # MISSÕES DIÁRIAS
+        # Requer as funções auxiliares anteriores
+        # ======================================
+        registar_seguimento(follower_id)
+        registar_novo_seguidor(followed_id)
+
+        db.session.commit()
+
+        return jsonify({
+            "following": True,
+            "moedas": follower.moedas or 0
+        })
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao seguir utilizador")
+
+        return jsonify(
+            error="Não foi possível atualizar o seguimento"
+        ), 500
 
 #================= BLOQUEAR UTILIZADOR =================
 @app.route("/users/<user_id>/block", methods=["POST"])
@@ -10717,6 +11001,40 @@ def traduzir_post():
             error="O serviço de tradução está temporariamente indisponível"
         ), 502
 
+
+# ==========================================
+# CONSULTAR MISSÕES DIÁRIAS
+# ==========================================
+@app.route("/users/<int:user_id>/missoes-diarias", methods=["GET"])
+def consultar_missoes_diarias(user_id):
+
+    user = db.session.get(User, user_id)
+
+    if not user:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    missao = obter_missoes_diarias(user_id)
+
+    db.session.commit()
+
+    concluidas = sum([
+        bool(missao.primeiro_post),
+        missao.compartilhar_5 >= 5,
+        bool(missao.seguiu_alguem),
+        bool(missao.ganhou_seguidor)
+    ])
+
+    return jsonify({
+        "data": missao.data.isoformat(),
+        "primeiro_post": missao.primeiro_post,
+        "compartilhar_5": missao.compartilhar_5,
+        "seguiu_alguem": missao.seguiu_alguem,
+        "ganhou_seguidor": missao.ganhou_seguidor,
+        "concluidas": concluidas,
+        "total": 4,
+        "progresso": int(concluidas / 4 * 100),
+        "moedas": user.moedas or 0
+    })
 
 #================= START =================
 if __name__ == "__main__":
