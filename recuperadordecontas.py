@@ -2792,52 +2792,90 @@ def obter_user(user_id):
         "bio": user.bio
     })
 # ================= ATUALIZAR PERFIL =================
+# ================= ATUALIZAR PERFIL =================
 @app.route("/users/update", methods=["POST"])
 def atualizar_perfil():
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
 
-    user_id = data.get("id")
-    username = (data.get("username") or "").strip().lower()
-    apelido = data.get("apelido")
-    avatar = data.get("avatar")
-    banner = data.get("banner")
-    bio = data.get("bio", "")
+    if not isinstance(data, dict):
+        return jsonify(error="Dados inválidos"), 400
 
-    user = User.query.get(user_id)
-    
-    if not user:
-        return jsonify(error="Utilizador não encontrado"), 404
+    # O Tkinter envia user_id, não id
+    user_id = data.get("user_id") or data.get("id")
 
-    print("USER:", user_id, "MOEDAS:", user.moedas)
+    if user_id is None:
+        return jsonify(error="ID do utilizador em falta"), 400
+
+    user = db.session.get(User, user_id)
+
     if not user or user.apagado:
         return jsonify(error="Utilizador não encontrado"), 404
 
-    bio = data.get("bio", "")
-    
-    if bio is not None:
-        user.bio = bio[:175]
+    # ================= USERNAME =================
+    if "username" in data:
+        username = (data.get("username") or "").strip().lower()
 
-    # 🔒 garantir username único
-    existente = User.query.filter(
-        User.username == username,
-        User.id != user_id
-    ).first()
+        if not username:
+            return jsonify(error="Username inválido"), 400
 
-    if existente:
-        return jsonify(error="Username já em uso"), 409
+        existente = User.query.filter(
+            User.username == username,
+            User.id != user.id
+        ).first()
 
-    user.username = username
-    user.nome = apelido
+        if existente:
+            return jsonify(error="Username já em uso"), 409
 
-    if avatar:
-        user.avatar = avatar
+        user.username = username
 
-    if banner:
-        user.banner = banner
+    # ================= APELIDO =================
+    if "apelido" in data:
+        user.nome = (data.get("apelido") or "").strip()
 
-    db.session.commit()
-    return jsonify(status="ok")
+    # ================= BIOGRAFIA =================
+    if "bio" in data:
+        bio = data.get("bio")
 
+        if not isinstance(bio, str):
+            return jsonify(error="Biografia inválida"), 400
+
+        bio = bio.strip()
+
+        if len(bio) > 175:
+            return jsonify(error="Máximo de 175 caracteres"), 400
+
+        user.bio = bio
+
+    # ================= AVATAR =================
+    if data.get("avatar"):
+        user.avatar = data["avatar"]
+
+    # ================= BANNER =================
+    if data.get("banner"):
+        user.banner = data["banner"]
+
+    # ================= GUARDAR NA BASE DE DADOS =================
+    try:
+        db.session.commit()
+
+        # Confirmar o valor efetivamente guardado
+        db.session.refresh(user)
+
+        return jsonify(
+            status="ok",
+            user_id=user.id,
+            bio=user.bio or "",
+            username=user.username,
+            apelido=user.nome or ""
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao guardar perfil")
+
+        return jsonify(
+            error="Erro ao guardar o perfil na base de dados"
+        ), 500
 # ================= LOJA DE AVATARES =================
 
 AVATARES_LOJA = [
