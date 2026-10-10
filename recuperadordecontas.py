@@ -9270,6 +9270,17 @@ def bloquear_conversa_mensagens(user_a, user_b):
             error="Não foi possível bloquear esta conversa."
         ), 500
 
+@app.route(
+    "/users/<int:user_id>/block-status/<int:other_user_id>",
+    methods=["GET"]
+)
+def block_status(user_id, other_user_id):
+    bloqueado = Block.query.filter_by(
+        blocker_id=user_id,
+        blocked_id=other_user_id
+    ).first() is not None
+
+    return jsonify({"blocked": bloqueado}), 200
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
