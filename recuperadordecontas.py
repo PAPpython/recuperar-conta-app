@@ -2079,21 +2079,31 @@ def apagar_post(post_id):
 
     return jsonify(status="ok")
 
+# ================= LIKE / DESCURTIR =================
 
-#================= LIKE =================
 @app.route("/posts/<post_id>/like", methods=["POST"])
 def like(post_id):
-    data = request.get_json(force=True)
-    user_id = data["user_id"]
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id")
+
+    if user_id is None:
+        return jsonify(error="user_id obrigatório"), 400
 
     post = Post.query.get(post_id)
+
     if not post:
         return jsonify(error="Post não encontrado"), 404
 
-    # 🚫 BLOQUEIO
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify(error="Utilizador não encontrado"), 404
+
     if existe_bloqueio(user_id, post.autor_id):
         return jsonify(error="Utilizador bloqueado"), 403
 
+    # Os gostos ficam associados à publicação original,
+    # caso o post apresentado seja uma cópia/republicação.
     real_id = post.original_post_id or post.id
 
     existente = Like.query.filter_by(
@@ -2101,41 +2111,60 @@ def like(post_id):
         user_id=user_id
     ).first()
 
-    # ❌ DESCURTIR
-    if existente:
-        db.session.delete(existente)
+    try:
+        if existente:
+            # Retirar gosto
+            db.session.delete(existente)
 
-        # 🧹 remover notificação de like
-        Notification.query.filter_by(
-            tipo="like",
-            origem_id=user_id,
+            Notification.query.filter_by(
+                tipo="like",
+                origem_id=user_id,
+                post_id=real_id
+            ).delete(synchronize_session=False)
+
+            liked = False
+
+        else:
+            # Adicionar gosto
+            novo_like = Like(
+                id=str(uuid.uuid4()),
+                post_id=real_id,
+                user_id=user_id
+            )
+            db.session.add(novo_like)
+
+            # Notificação apenas quando não é o próprio autor
+            if str(post.autor_id) != str(user_id):
+                db.session.add(Notification(
+                    id=str(uuid.uuid4()),
+                    user_id=post.autor_id,
+                    tipo="like",
+                    origem_id=user_id,
+                    post_id=real_id
+                ))
+
+            liked = True
+
+        db.session.flush()
+
+        # Contagem atual dos gostos na publicação original
+        total_likes = Like.query.filter_by(
             post_id=real_id
-        ).delete(synchronize_session=False)
+        ).count()
 
         db.session.commit()
-        return jsonify(liked=False)
 
-    # ❤️ CURTIR
-    like = Like(
-        id=str(uuid.uuid4()),
-        post_id=real_id,
-        user_id=user_id
-    )
-    db.session.add(like)
+        return jsonify({
+            "liked": liked,
+            "likes": total_likes,
+            "post_id": real_id
+        }), 200
 
-    # 🔔 NOTIFICAÇÃO (se não for o próprio autor)
-    if post.autor_id != user_id:
-        db.session.add(Notification(
-            id=str(uuid.uuid4()),
-            user_id=post.autor_id,
-            tipo="like",
-            origem_id=user_id,
-            post_id=real_id
-        ))
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao processar gosto do post %s", post_id)
 
-    db.session.commit()
-    return jsonify(liked=True)
-
+        return jsonify(error="Não foi possível atualizar o gosto"), 500
 #================= COMPARTILHAR =================
 @app.route("/posts/<post_id>/share", methods=["POST"])
 def share_post(post_id):
@@ -9506,7 +9535,68 @@ def friend_zone_listar_bloqueados(user_id):
             for user in pessoas
         ]
     ), 200
-    
+
+
+# ================= ESTATÍSTICAS DO PERFIL =================
+
+@app.route("/users/<int:user_id>/stats", methods=["GET"])
+def obter_stats_user(user_id):
+    try:
+        # Confirmar que o utilizador existe
+        utilizador = User.query.get(user_id)
+
+        if not utilizador:
+            return jsonify(error="Utilizador não encontrado"), 404
+
+        # Publicações criadas pelo utilizador
+        total_posts = Post.query.filter(
+            Post.autor_id == user_id
+        ).count()
+
+        # Pessoas que seguem este utilizador
+        total_seguidores = Follow.query.filter(
+            Follow.followed_id == user_id
+        ).count()
+
+        # Pessoas que este utilizador segue
+        total_seguindo = Follow.query.filter(
+            Follow.follower_id == user_id
+        ).count()
+
+        # Gostos recebidos nas publicações deste utilizador
+        total_likes = (
+            db.session.query(Like.id)
+            .join(Post, Like.post_id == Post.id)
+            .filter(Post.autor_id == user_id)
+            .count()
+        )
+
+        # Partilhas enviadas pelo utilizador.
+        # Isto conta partilhas para outros utilizadores,
+        # não necessariamente republicações no perfil.
+        total_partilhas = Share.query.filter(
+            Share.from_user_id == user_id
+        ).count()
+
+        return jsonify({
+            "posts": total_posts,
+            "seguidores": total_seguidores,
+            "seguindo": total_seguindo,
+            "likes": total_likes,
+            "partilhas": total_partilhas
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception(
+            "Erro ao calcular estatísticas do utilizador %s",
+            user_id
+        )
+
+        return jsonify(
+            error="Não foi possível carregar as estatísticas"
+        ), 500
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
