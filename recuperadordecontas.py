@@ -6801,39 +6801,61 @@ def notifications(user_id):
         for n in notifs
     ])
 
+
 @app.route("/follow/request", methods=["POST"])
 def follow_request():
+    data = request.get_json(silent=True) or {}
 
-    data = request.get_json(force=True)
+    from_user = data.get("from")
+    to_user = data.get("to")
 
-    from_user = data["from"]
-    to_user = data["to"]
+    if from_user is None or to_user is None:
+        return jsonify(error="Falta identificar os utilizadores"), 400
 
-    # ❌ evitar auto-follow
-    if str(from_user) == str(to_user):
-        return jsonify(error="Inválido"), 400
+    try:
+        from_user = int(from_user)
+        to_user = int(to_user)
+    except (TypeError, ValueError):
+        return jsonify(error="IDs inválidos"), 400
 
-    # 🚫 já existe pedido pendente?
+    if from_user == to_user:
+        return jsonify(error="Não podes seguir a tua própria conta"), 400
+
+    sender = db.session.get(User, from_user)
+    receiver = db.session.get(User, to_user)
+
+    if not sender or not receiver:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    # Não permitir pedidos entre utilizadores bloqueados.
+    if existe_bloqueio(from_user, to_user):
+        return jsonify(error="Não é possível enviar este pedido"), 403
+
+    # Não criar pedidos duplicados pendentes.
     existing = FollowRequest.query.filter_by(
-        from_user=from_user,
-        to_user=to_user,
+        sender_id=from_user,
+        receiver_id=to_user,
         status="pending"
     ).first()
 
     if existing:
-        return jsonify(status="already_pending")
+        return jsonify(status="already_pending"), 200
 
-    # ➕ criar pedido
-    fr = FollowRequest(
-        from_user=from_user,
-        to_user=to_user,
+    pedido = FollowRequest(
+        sender_id=from_user,
+        receiver_id=to_user,
         status="pending"
     )
 
-    db.session.add(fr)
-    db.session.commit()
+    try:
+        db.session.add(pedido)
+        db.session.commit()
+        return jsonify(ok=True, status="pending"), 201
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao criar pedido para seguir")
+        return jsonify(error="Não foi possível criar o pedido"), 500
 
-    return jsonify(ok=True)
 
 @app.route("/follow/accept", methods=["POST"])
 def accept_follow():
@@ -9396,12 +9418,8 @@ def friend_zone_pesquisar():
 # GET /users/<user_id>/suggestions
 # ============================================================
 
-@app.route(
-    "/users/<int:user_id>/suggestions",
-    methods=["GET"]
-)
+@app.route("/users/<int:user_id>/suggestions", methods=["GET"])
 def friend_zone_sugestoes(user_id):
-
     utilizador = db.session.get(User, user_id)
 
     if not utilizador:
@@ -9409,28 +9427,26 @@ def friend_zone_sugestoes(user_id):
 
     bloqueados = friend_zone_bloqueados_ids(user_id)
 
-    # Contas que este utilizador já segue.
     seguidos = {
-        int(row.followed_id)
+        row.followed_id
         for row in Follow.query.filter_by(
             follower_id=user_id
         ).all()
     }
 
-    # Não sugerir contas com pedidos pendentes em qualquer direção.
-    pedidos_pendentes = FollowRequest.query.filter(
+    pedidos = FollowRequest.query.filter(
         FollowRequest.status == "pending",
         db.or_(
-            FollowRequest.from_user == user_id,
-            FollowRequest.to_user == user_id
+            FollowRequest.sender_id == user_id,
+            FollowRequest.receiver_id == user_id
         )
     ).all()
 
     ids_pendentes = set()
 
-    for pedido in pedidos_pendentes:
-        ids_pendentes.add(int(pedido.from_user))
-        ids_pendentes.add(int(pedido.to_user))
+    for pedido in pedidos:
+        ids_pendentes.add(pedido.sender_id)
+        ids_pendentes.add(pedido.receiver_id)
 
     excluidos = bloqueados | seguidos | ids_pendentes
     excluidos.add(user_id)
@@ -9444,12 +9460,8 @@ def friend_zone_sugestoes(user_id):
     )
 
     return jsonify(
-        users=[
-            friend_zone_user_json(user)
-            for user in candidatos
-        ]
+        users=[friend_zone_user_json(u) for u in candidatos]
     ), 200
-
 
 # ============================================================
 # FRIEND ZONE — LISTAR PESSOAS BLOQUEADAS POR MIM
