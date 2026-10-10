@@ -950,6 +950,56 @@ class Follow(db.Model):
     follower_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     followed_id = db.Column(db.Integer, db.ForeignKey("users.id"))
 
+
+class MessageConversation(db.Model):
+    __tablename__ = "message_conversations"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user1_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    user2_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    requested_by_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="pending"
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    accepted_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "user1_id",
+            "user2_id",
+            name="uq_message_conversation_pair"
+        ),
+    )
+
+
 class Block(db.Model):
     __tablename__ = "blocks"
 
