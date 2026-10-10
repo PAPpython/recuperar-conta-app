@@ -1488,24 +1488,100 @@ def validate_username_code():
     return jsonify(status="ok")
 
 # ================= API ALTERAR PASSWORD =================
+
+# ================= API ALTERAR PASSWORD =================
 @app.route("/api/change-password", methods=["POST"])
 def change_password():
-    data = request.get_json(force=True)
+
+    data = request.get_json(silent=True) or {}
 
     email = (data.get("email") or "").strip().lower()
-    new_password = data.get("password")
+    old_password = data.get("old_password") or ""
+    new_password = data.get("new_password") or ""
 
-    if not email or not new_password:
-        return jsonify(status="error", msg="Dados inválidos")
+    # Validar os dados recebidos
+    if not email or not old_password or not new_password:
+        return jsonify(
+            status="error",
+            msg="Preenche o email, a palavra-passe antiga e a nova palavra-passe."
+        ), 400
 
+    if old_password == new_password:
+        return jsonify(
+            status="error",
+            msg="A nova palavra-passe não pode ser igual à antiga."
+        ), 400
+
+    # Procurar o utilizador
     user = User.query.filter_by(email=email).first()
+
     if not user:
-        return jsonify(status="error", msg="Email não encontrado")
+        return jsonify(
+            status="error",
+            msg="Email não encontrado."
+        ), 404
 
-    user.password = hash_password(new_password)
-    db.session.commit()
+    # Verificar se existe uma palavra-passe local
+    if not user.password:
+        return jsonify(
+            status="error",
+            msg="Esta conta não tem uma palavra-passe local definida."
+        ), 400
 
-    return jsonify(status="ok", msg="Password alterada com sucesso")
+    # Confirmar a palavra-passe antiga
+    if user.password != hash_password(old_password):
+        return jsonify(
+            status="error",
+            msg="A palavra-passe antiga está incorreta."
+        ), 401
+
+    # Gerar o hash da nova palavra-passe
+    new_password_hash = hash_password(new_password)
+
+    # Obter o histórico de palavras-passe deste utilizador
+    historico = PasswordHistory.query.filter_by(
+        user_id=user.id
+    ).all()
+
+    # Impedir a reutilização de qualquer palavra-passe registada
+    for registo in historico:
+        if registo.password_hash == new_password_hash:
+            return jsonify(
+                status="error",
+                msg="Já utilizaste esta palavra-passe anteriormente. Escolhe outra."
+            ), 400
+
+    # Guardar a palavra-passe atual no histórico
+    registo_antigo = PasswordHistory(
+        user_id=user.id,
+        password_hash=user.password
+    )
+
+    db.session.add(registo_antigo)
+
+    # Atualizar a palavra-passe
+    user.password = new_password_hash
+
+    # Registar a data da alteração, se o campo existir
+    if hasattr(user, "password_changed"):
+        user.password_changed = datetime.utcnow()
+
+    try:
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        return jsonify(
+            status="error",
+            msg="Não foi possível alterar a palavra-passe. Tenta novamente."
+        ), 500
+
+    return jsonify(
+        status="ok",
+        msg="Palavra-passe alterada com sucesso."
+    ), 200
+
 # ================= API OBTER USERNAME =================
 @app.route("/api/get-username-by-email", methods=["POST"])
 def get_username_by_email():
@@ -1655,12 +1731,29 @@ def login():
             status="error",
             msg="Utilizador não encontrado"
         ), 404
-
+        
+        
     if user.password != hash_password(password):
+
+    # Verificar se a palavra-passe introduzida já foi utilizada
+    password_hash = hash_password(password)
+
+    password_antiga = PasswordHistory.query.filter_by(
+        user_id=user.id,
+        password_hash=password_hash
+    ).first()
+
+    if password_antiga:
         return jsonify(
             status="error",
-            msg="Password inválida"
+            msg="Esta é uma palavra-passe antiga. A tua palavra-passe foi alterada. Utiliza a palavra-passe atual."
         ), 401
+
+    return jsonify(
+        status="error",
+        msg="Palavra-passe incorreta."
+    ), 401
+
 
     if user.apagado:
         return jsonify(
