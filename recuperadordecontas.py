@@ -1204,6 +1204,32 @@ class Notification(db.Model):
     lida = db.Column(db.Boolean, default=False)
     data = db.Column(db.DateTime, default=datetime.utcnow)
 
+class MessageReply(db.Model):
+    __tablename__ = "message_replies"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    message_id = db.Column(
+        db.String,
+        db.ForeignKey("messages.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True
+    )
+
+    reply_to_message_id = db.Column(
+        db.String,
+        db.ForeignKey("messages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+
 class Message(db.Model):
     __tablename__ = "messages"
 
@@ -2986,7 +3012,8 @@ def posts_perfil(user_id):
 
     return jsonify(res)
 
-#================= ENVIAR MENSAGEM =================
+
+# ================= ENVIAR MENSAGEM =================
 
 @app.route("/messages/send", methods=["POST"])
 def enviar_mensagem():
@@ -3000,6 +3027,8 @@ def enviar_mensagem():
         return jsonify(error="IDs de utilizadores inválidos"), 400
 
     texto = (data.get("texto") or "").strip()
+    reply_to_id = data.get("reply_to_id")
+    mensagem_original = None
 
     if not texto:
         return jsonify(error="Mensagem vazia"), 400
@@ -3030,6 +3059,39 @@ def enviar_mensagem():
             error="Não é possível enviar mensagens a este utilizador."
         ), 403
 
+    # Validar a mensagem original, se for uma resposta.
+    if reply_to_id is not None:
+        reply_to_id = str(reply_to_id).strip()
+
+        if not reply_to_id:
+            return jsonify(error="Mensagem original inválida."), 400
+
+        mensagem_original = db.session.get(Message, reply_to_id)
+
+        if mensagem_original is None:
+            return jsonify(
+                error="A mensagem a que queres responder já não existe."
+            ), 404
+
+        participantes = {
+            mensagem_original.from_user_id,
+            mensagem_original.to_user_id
+        }
+
+        if participantes != {from_user, to_user}:
+            return jsonify(
+                error="Só podes responder a mensagens desta conversa."
+            ), 403
+
+        original_apagada = MessageDeletedForEveryone.query.filter_by(
+            message_id=mensagem_original.id
+        ).first()
+
+        if original_apagada:
+            return jsonify(
+                error="Não podes responder a uma mensagem apagada."
+            ), 400
+
     menor, maior = sorted((from_user, to_user))
 
     try:
@@ -3039,8 +3101,6 @@ def enviar_mensagem():
         ).with_for_update().first()
 
         if conversa is None:
-            # Compatibilidade: se já existem mensagens antigas,
-            # não criar um pedido pendente para uma conversa antiga.
             mensagem_antiga = Message.query.filter(
                 db.or_(
                     db.and_(
@@ -3063,8 +3123,6 @@ def enviar_mensagem():
                     accepted_at=datetime.utcnow()
                 )
             else:
-                # O primeiro remetente fica registado como
-                # autor do pedido de conversa.
                 conversa = MessageConversation(
                     user1_id=menor,
                     user2_id=maior,
@@ -3088,7 +3146,6 @@ def enviar_mensagem():
                     error="Tens de aceitar o pedido antes de responder."
                 ), 403
 
-            # Só pode existir a primeira mensagem durante o pedido.
             ja_enviou = Message.query.filter_by(
                 from_user_id=from_user,
                 to_user_id=to_user
@@ -3112,6 +3169,16 @@ def enviar_mensagem():
         )
 
         db.session.add(mensagem)
+        db.session.flush()
+
+        # Guardar a ligação à mensagem original.
+        if mensagem_original is not None:
+            db.session.add(
+                MessageReply(
+                    message_id=mensagem.id,
+                    reply_to_message_id=mensagem_original.id
+                )
+            )
 
         db.session.add(Notification(
             id=str(uuid.uuid4()),
@@ -3124,20 +3191,27 @@ def enviar_mensagem():
 
         return jsonify(
             status="ok",
+            message_id=mensagem.id,
             conversation_status=conversa.status,
             requested_by_id=conversa.requested_by_id
         ), 201
 
-    except Exception as erro:
+    except Exception:
         db.session.rollback()
         app.logger.exception("Erro ao enviar mensagem")
+
         return jsonify(
             error="Não foi possível enviar a mensagem."
         ), 500
 
+
 #================= CONVERSA =================
 # ============================================================
 # CONVERSA — HISTÓRICO, ELIMINAÇÕES E REAÇÕES
+# ============================================================
+
+# ============================================================
+# CONVERSA — HISTÓRICO, ELIMINAÇÕES, REAÇÕES E RESPOSTAS
 # ============================================================
 
 @app.route("/messages/<int:user1>/<int:user2>", methods=["GET"])
@@ -3163,7 +3237,6 @@ def conversa(user1, user2):
             )
         ).order_by(Message.data.asc()).all()
 
-        # IDs das mensagens que o utilizador user1 ocultou.
         ocultadas = {
             row.message_id
             for row in MessageHidden.query.filter_by(
@@ -3171,16 +3244,17 @@ def conversa(user1, user2):
             ).all()
         }
 
-        # Mensagens apagadas para todos.
         apagadas_todos = {
             row.message_id
             for row in MessageDeletedForEveryone.query.all()
         }
 
+        # Só precisamos das mensagens visíveis para este utilizador.
         ids_mensagens = [
-            m.id for m in msgs
-            if m.id not in ocultadas
+            m.id for m in msgs if m.id not in ocultadas
         ]
+
+        # ---------------- REAÇÕES ----------------
 
         reacoes_por_mensagem = {}
 
@@ -3190,29 +3264,59 @@ def conversa(user1, user2):
             ).all()
 
             for reacao in reacoes:
-                # Não expor reações de mensagens apagadas para todos.
                 if reacao.message_id in apagadas_todos:
                     continue
 
                 agrupamento = reacoes_por_mensagem.setdefault(
-                    reacao.message_id,
-                    {}
+                    reacao.message_id, {}
                 )
 
                 agrupamento[reacao.emoji] = (
                     agrupamento.get(reacao.emoji, 0) + 1
                 )
 
+        # ---------------- RESPOSTAS ----------------
+
+        respostas = {}
+
+        if ids_mensagens:
+            registos_resposta = MessageReply.query.filter(
+                MessageReply.message_id.in_(ids_mensagens)
+            ).all()
+
+            respostas = {
+                r.message_id: r.reply_to_message_id
+                for r in registos_resposta
+            }
+
+        mensagens_por_id = {m.id: m for m in msgs}
+
         res = []
 
         for m in msgs:
 
-            # Apagar para mim: a mensagem nem sequer aparece
-            # no histórico devolvido a este utilizador.
             if m.id in ocultadas:
                 continue
 
             apagada = m.id in apagadas_todos
+
+            # Mensagem original citada, caso exista.
+            original_id = respostas.get(m.id)
+            original = mensagens_por_id.get(original_id)
+            reply_to = None
+
+            if original is not None:
+                original_apagada = original.id in apagadas_todos
+
+                reply_to = {
+                    "id": original.id,
+                    "from": original.from_user_id,
+                    "texto": (
+                        "ⓘ Esta mensagem foi apagada!"
+                        if original_apagada
+                        else original.texto
+                    )
+                }
 
             res.append({
                 "id": m.id,
@@ -3237,7 +3341,8 @@ def conversa(user1, user2):
                     }
                     for emoji, quantidade
                     in reacoes_por_mensagem.get(m.id, {}).items()
-                ]
+                ],
+                "reply_to": reply_to
             })
 
         return jsonify(res), 200
@@ -3249,6 +3354,7 @@ def conversa(user1, user2):
         return jsonify(
             error="Não foi possível carregar a conversa."
         ), 500
+
 #================= MENSAGENS NÃO LIDAS =================
 @app.route("/messages/unread/<int:user_id>", methods=["GET"])
 def mensagens_nao_lidas(user_id):
