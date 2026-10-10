@@ -10102,6 +10102,83 @@ def reagir_a_mensagem(message_id):
         return jsonify(
             error="Não foi possível guardar a reação."
         ), 500
+
+
+# ================= LISTAR SEGUIDORES =================
+
+@app.route("/users/<int:user_id>/followers", methods=["GET"])
+def listar_seguidores(user_id):
+    try:
+        utilizador = db.session.get(User, user_id)
+
+        if not utilizador:
+            return jsonify(error="Utilizador não encontrado"), 404
+
+        resultados = (
+            db.session.query(User)
+            .join(Follow, Follow.follower_id == User.id)
+            .filter(Follow.followed_id == user_id)
+            .order_by(User.username.asc())
+            .all()
+        )
+
+        users = [
+            {
+                "id": u.id,
+                "username": u.username,
+                "apelido": u.apelido or "",
+                "avatar": u.avatar or "default"
+            }
+            for u in resultados
+        ]
+
+        return jsonify(users=users), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception(
+            "Erro ao listar seguidores do utilizador %s", user_id
+        )
+        return jsonify(error="Não foi possível carregar os seguidores"), 500
+
+
+# ================= LISTAR A SEGUIR =================
+
+@app.route("/users/<int:user_id>/following", methods=["GET"])
+def listar_seguindo(user_id):
+    try:
+        utilizador = db.session.get(User, user_id)
+
+        if not utilizador:
+            return jsonify(error="Utilizador não encontrado"), 404
+
+        resultados = (
+            db.session.query(User)
+            .join(Follow, Follow.followed_id == User.id)
+            .filter(Follow.follower_id == user_id)
+            .order_by(User.username.asc())
+            .all()
+        )
+
+        users = [
+            {
+                "id": u.id,
+                "username": u.username,
+                "apelido": u.apelido or "",
+                "avatar": u.avatar or "default"
+            }
+            for u in resultados
+        ]
+
+        return jsonify(users=users), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception(
+            "Erro ao listar pessoas seguidas pelo utilizador %s", user_id
+        )
+        return jsonify(error="Não foi possível carregar a lista"), 500
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
