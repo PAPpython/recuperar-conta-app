@@ -4564,10 +4564,10 @@ def auto_login():
     data = request.get_json(force=True)
 
     token = data.get("session_token")
-
+    
     sessao = UserSession.query.filter_by(
         session_token=token,
-        active=True
+        active=True,
         remember_me=True
     ).first()
 
