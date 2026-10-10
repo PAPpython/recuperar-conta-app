@@ -9506,6 +9506,7 @@ def friend_zone_listar_bloqueados(user_id):
             for user in pessoas
         ]
     ), 200
+    
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
