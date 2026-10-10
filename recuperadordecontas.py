@@ -5,6 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime, timedelta
 from flask import send_from_directory
+from urllib.parse import urlparse
 from flask import request
 from authlib.integrations.flask_client import OAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -445,6 +446,76 @@ class PostImage(db.Model):
         db.String(500),
         nullable=False
     )
+
+
+
+# ==========================================
+# HASHTAGS DAS PUBLICAÇÕES
+# ==========================================
+class PostHashtag(db.Model):
+    __tablename__ = "post_hashtags"
+
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(
+        db.String,
+        db.ForeignKey("posts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    hashtag = db.Column(db.String(100), nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "post_id", "hashtag",
+            name="uq_post_hashtag"
+        ),
+    )
+
+
+# ==========================================
+# LINKS DAS PUBLICAÇÕES
+# ==========================================
+class PostLink(db.Model):
+    __tablename__ = "post_links"
+
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(
+        db.String,
+        db.ForeignKey("posts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    url = db.Column(db.String(2048), nullable=False)
+
+
+# ==========================================
+# MENÇÕES NAS PUBLICAÇÕES
+# ==========================================
+class PostMention(db.Model):
+    __tablename__ = "post_mentions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(
+        db.String,
+        db.ForeignKey("posts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    mentioned_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+    username = db.Column(db.String(80), nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "post_id", "mentioned_user_id",
+            name="uq_post_mention"
+        ),
+    )
+
 
 # ============================================================
 # MENSAGENS OCULTADAS PARA UM UTILIZADOR
@@ -2020,14 +2091,17 @@ def check_recovery_email():
         email_principal=user.email
     )
 
-#================= POSTS LIST =================
+
+# ================= POSTS LIST =================
 @app.route("/posts", methods=["GET"])
 def listar_posts():
 
     # ID do utilizador que está a consultar o feed
     meu_id = request.args.get("user_id", type=int)
 
-    # Identificar utilizadores bloqueados em qualquer direção
+    # ==========================================
+    # IDENTIFICAR UTILIZADORES BLOQUEADOS
+    # ==========================================
     ids_bloqueados = set()
 
     if meu_id is not None:
@@ -2044,7 +2118,9 @@ def listar_posts():
             else:
                 ids_bloqueados.add(bloqueio.blocker_id)
 
-    # Carregar publicações mais recentes primeiro
+    # ==========================================
+    # CARREGAR PUBLICAÇÕES
+    # ==========================================
     query = Post.query
 
     if ids_bloqueados:
@@ -2063,13 +2139,15 @@ def listar_posts():
         if not autor:
             continue
 
-        # Proteção adicional
+        # Proteção adicional contra bloqueios
         if autor.id in ids_bloqueados:
             continue
 
         real_id = p.original_post_id or p.id
 
-        # ================= IMAGENS =================
+        # ======================================
+        # IMAGENS
+        # ======================================
         imagens = []
 
         for img in PostImage.query.filter_by(
@@ -2080,7 +2158,9 @@ def listar_posts():
                 request.host_url.rstrip("/") + img.caminho
             )
 
-        # ================= FICHEIROS =================
+        # ======================================
+        # FICHEIROS
+        # ======================================
         ficheiros = []
 
         for f in PostFile.query.filter_by(
@@ -2093,13 +2173,72 @@ def listar_posts():
                 "url": request.host_url.rstrip("/") + f.caminho
             })
 
+        # ======================================
+        # HASHTAGS
+        # Requer o modelo PostHashtag
+        # ======================================
+        hashtags = []
+
+        for h in PostHashtag.query.filter_by(
+            post_id=p.id
+        ).all():
+
+            hashtags.append(h.hashtag)
+
+        # ======================================
+        # LINKS
+        # Requer o modelo PostLink
+        # ======================================
+        links = []
+
+        for link in PostLink.query.filter_by(
+            post_id=p.id
+        ).all():
+
+            links.append(link.url)
+
+        # ======================================
+        # MENÇÕES
+        # Requer o modelo PostMention
+        # ======================================
+        mencoes = []
+
+        for mencao in PostMention.query.filter_by(
+            post_id=p.id
+        ).all():
+
+            utilizador_mencionado = db.session.get(
+                User,
+                mencao.mentioned_user_id
+            )
+
+            if not utilizador_mencionado:
+                continue
+
+            mencoes.append({
+                "id": utilizador_mencionado.id,
+                "username": utilizador_mencionado.username
+            })
+
+        # ======================================
+        # PUBLICAÇÃO COMPLETA
+        # ======================================
         res.append({
             "id": p.id,
             "texto": p.texto,
             "formatacao": p.formatacao,
+
+            "hashtags": hashtags,
+            "links": links,
+            "mencoes": mencoes,
+
             "imagens": imagens,
             "ficheiros": ficheiros,
-            "data": p.data.strftime("%d/%m/%Y %H:%M"),
+
+            "data": (
+                p.data.strftime("%d/%m/%Y %H:%M")
+                if p.data else None
+            ),
 
             "likes": Like.query.filter_by(
                 post_id=real_id
@@ -2117,173 +2256,327 @@ def listar_posts():
         })
 
     return jsonify(res)
-#================= CREATE POST =================
+
+
+# ==========================================
+# CRIAR PUBLICAÇÃO
+# ==========================================
 @app.route("/posts", methods=["POST"])
 def criar_post():
 
-    print("FILES:", request.files)
-    print("IMAGENS:", request.files.getlist("imagem"))
-
     data = request.form
 
-    autor_id = data.get("autor_id")
+    autor_id = data.get("autor_id", type=int)
 
     if not autor_id:
         return jsonify(error="Autor inválido"), 400
 
-    user = User.query.get(autor_id)
+    user = db.session.get(User, autor_id)
 
     if not user:
-        return jsonify(error="User não encontrado"), 404
+        return jsonify(error="Utilizador não encontrado"), 404
 
-    # ==========================================
-    # BLOQUEIO
-    # ==========================================
+    if (
+        user.bloqueado
+        or user.banido
+        or not user.ativo
+        or user.apagado
+        or user.desativado_em is not None
+    ):
+        return jsonify(error="Esta conta não pode publicar"), 403
 
-    if user.bloqueado:
-        return jsonify(error="Conta bloqueada"), 403
+    texto = (data.get("texto") or "").strip()
+    formatacao = data.get("formatacao", "[]")
 
-    # ==========================================
-    # TEXTO
-    # ==========================================
+    if not texto:
+        return jsonify(error="A publicação não pode estar vazia"), 400
 
-    texto = data.get("texto", "")
-    formatacao = data.get("formatacao", "")
+    if len(texto) > 500:
+        return jsonify(error="A publicação ultrapassa os 500 caracteres"), 400
 
-    # ==========================================
-    # CRIAR POST
-    # ==========================================
+    # ------------------------------------------
+    # VALIDAR JSON RECEBIDO
+    # ------------------------------------------
+    try:
+        formatacao_dados = json.loads(formatacao or "[]")
+        hashtags = json.loads(data.get("hashtags", "[]"))
+        links = json.loads(data.get("links", "[]"))
+        mencoes = json.loads(data.get("mencoes", "[]"))
+    except (ValueError, TypeError):
+        return jsonify(error="Os dados da publicação são inválidos"), 400
 
+    if not isinstance(formatacao_dados, list):
+        return jsonify(error="Formatação inválida"), 400
+
+    if not isinstance(hashtags, list):
+        return jsonify(error="Hashtags inválidas"), 400
+
+    if not isinstance(links, list):
+        return jsonify(error="Links inválidos"), 400
+
+    if not isinstance(mencoes, list):
+        return jsonify(error="Menções inválidas"), 400
+
+    if len(hashtags) > 50 or len(links) > 50 or len(mencoes) > 50:
+        return jsonify(error="Demasiados elementos na publicação"), 400
+
+    # Verificar intervalos de formatação
+    tags_permitidas = {"bold", "italic", "underline"}
+
+    for item in formatacao_dados:
+        if not isinstance(item, dict):
+            return jsonify(error="Formato de formatação inválido"), 400
+
+        if item.get("tag") not in tags_permitidas:
+            return jsonify(error="Tipo de formatação inválido"), 400
+
+        inicio = item.get("inicio")
+        fim = item.get("fim")
+
+        if (
+            not isinstance(inicio, int)
+            or isinstance(inicio, bool)
+            or not isinstance(fim, int)
+            or isinstance(fim, bool)
+            or inicio < 0
+            or fim <= inicio
+            or fim > len(texto)
+        ):
+            return jsonify(error="Intervalo de formatação inválido"), 400
+
+    # ------------------------------------------
+    # VALIDAR HASHTAGS
+    # ------------------------------------------
+    hashtags_validas = set()
+
+    for hashtag in hashtags:
+        if not isinstance(hashtag, str):
+            continue
+
+        hashtag = hashtag.strip().lstrip("#").lower()
+
+        if (
+            hashtag
+            and len(hashtag) <= 100
+            and re.fullmatch(r"[\wÀ-ÿ]+", hashtag, flags=re.UNICODE)
+        ):
+            hashtags_validas.add(hashtag)
+
+    # ------------------------------------------
+    # VALIDAR LINKS
+    # ------------------------------------------
+    links_validos = set()
+
+    for url in links:
+        if not isinstance(url, str):
+            continue
+
+        url = url.strip()
+
+        try:
+            parsed = urlparse(url)
+
+            if (
+                parsed.scheme in ("http", "https")
+                and parsed.hostname
+                and len(url) <= 2048
+            ):
+                links_validos.add(url)
+        except (ValueError, AttributeError):
+            continue
+
+    # ------------------------------------------
+    # VALIDAR MENÇÕES
+    # ------------------------------------------
+    ids_mencionados = set()
+
+    for mencao in mencoes:
+        if not isinstance(mencao, dict):
+            continue
+
+        mencionado_id = mencao.get("id")
+
+        if not isinstance(mencionado_id, int):
+            continue
+
+        if mencionado_id == user.id:
+            continue
+
+        seguido = Follow.query.filter_by(
+            follower_id=user.id,
+            followed_id=mencionado_id
+        ).first()
+
+        if not seguido:
+            continue
+
+        mencionado = db.session.get(User, mencionado_id)
+
+        if (
+            mencionado
+            and mencionado.ativo
+            and not mencionado.apagado
+            and not mencionado.banido
+        ):
+            ids_mencionados.add(mencionado.id)
+
+    # ------------------------------------------
+    # VALIDAR FICHEIROS ANTES DE GUARDAR
+    # ------------------------------------------
+    imagens = [
+        f for f in request.files.getlist("imagem")
+        if f and f.filename
+    ]
+
+    ficheiros = [
+        f for f in request.files.getlist("ficheiros")
+        if f and f.filename
+    ]
+
+    if len(imagens) > 10:
+        return jsonify(error="Máximo de 10 imagens"), 400
+
+    if len(ficheiros) > 10:
+        return jsonify(error="Máximo de 10 ficheiros"), 400
+
+    extensoes_imagem = {".png", ".jpg", ".jpeg", ".webp"}
+
+    for ficheiro in imagens:
+        ext = os.path.splitext(ficheiro.filename)[1].lower()
+
+        if ext not in extensoes_imagem:
+            return jsonify(error="Formato de imagem não permitido"), 400
+
+    # ------------------------------------------
+    # CRIAR PUBLICAÇÃO
+    # ------------------------------------------
     post = Post(
         id=str(uuid.uuid4()),
         autor_id=user.id,
         texto=texto,
-        formatacao=formatacao
+        formatacao=json.dumps(
+            formatacao_dados,
+            ensure_ascii=False
+        )
     )
 
     db.session.add(post)
-
-    # cria o ID antes de adicionar imagens/ficheiros
     db.session.flush()
 
-    # ==========================================
-    # UPLOAD IMAGENS
-    # ==========================================
-
-    pasta_posts = os.path.join("static", "posts")
-    os.makedirs(pasta_posts, exist_ok=True)
-
-    imagens = request.files.getlist("imagem")
-
-    print("Recebi", len(imagens), "imagem(ns)")
-
-    for file in imagens[:10]:
-
-        if file.filename == "":
-            continue
-
-        extensao = os.path.splitext(file.filename)[1].lower()
-
-        if extensao not in [
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".webp"
-        ]:
-            extensao = ".png"
-
-        nome = str(uuid.uuid4()) + extensao
-
-        caminho = os.path.join(
-            pasta_posts,
-            nome
-        )
-
-        file.save(caminho)
-
-        print("Imagem guardada:", caminho)
-
-        db.session.add(
-            PostImage(
-                post_id=post.id,
-                caminho="/static/posts/" + nome
+    try:
+        # --------------------------------------
+        # GUARDAR HASHTAGS
+        # --------------------------------------
+        for hashtag in hashtags_validas:
+            db.session.add(
+                PostHashtag(
+                    post_id=post.id,
+                    hashtag=hashtag
+                )
             )
-        )
 
-    # ==========================================
-    # UPLOAD FICHEIROS
-    # ==========================================
-
-    pasta_ficheiros = os.path.join("static", "files")
-    os.makedirs(pasta_ficheiros, exist_ok=True)
-
-    ficheiros = request.files.getlist("ficheiros")
-
-    for file in ficheiros[:10]:
-
-        if file.filename == "":
-            continue
-
-        extensao = os.path.splitext(file.filename)[1]
-
-        novo_nome = str(uuid.uuid4()) + extensao
-
-        caminho = os.path.join(
-            pasta_ficheiros,
-            novo_nome
-        )
-
-        file.save(caminho)
-
-        db.session.add(
-            PostFile(
-                post_id=post.id,
-                nome=file.filename,
-                caminho="/static/files/" + novo_nome
+        # --------------------------------------
+        # GUARDAR LINKS
+        # --------------------------------------
+        for url in links_validos:
+            db.session.add(
+                PostLink(
+                    post_id=post.id,
+                    url=url
+                )
             )
+
+        # --------------------------------------
+        # GUARDAR MENÇÕES
+        # --------------------------------------
+        for mencionado_id in ids_mencionados:
+            mencionado = db.session.get(User, mencionado_id)
+
+            db.session.add(
+                PostMention(
+                    post_id=post.id,
+                    mentioned_user_id=mencionado.id,
+                    username=mencionado.username
+                )
+            )
+
+        # --------------------------------------
+        # GUARDAR IMAGENS
+        # --------------------------------------
+        pasta_posts = os.path.join("static", "posts")
+        os.makedirs(pasta_posts, exist_ok=True)
+
+        for file in imagens:
+            extensao = os.path.splitext(file.filename)[1].lower()
+            nome = str(uuid.uuid4()) + extensao
+            caminho = os.path.join(pasta_posts, nome)
+
+            file.save(caminho)
+
+            db.session.add(
+                PostImage(
+                    post_id=post.id,
+                    caminho="/static/posts/" + nome
+                )
+            )
+
+        # --------------------------------------
+        # GUARDAR OUTROS FICHEIROS
+        # --------------------------------------
+        pasta_ficheiros = os.path.join("static", "files")
+        os.makedirs(pasta_ficheiros, exist_ok=True)
+
+        for file in ficheiros:
+            nome_original = os.path.basename(file.filename)
+            extensao = os.path.splitext(nome_original)[1]
+            novo_nome = str(uuid.uuid4()) + extensao
+            caminho = os.path.join(pasta_ficheiros, novo_nome)
+
+            file.save(caminho)
+
+            db.session.add(
+                PostFile(
+                    post_id=post.id,
+                    nome=nome_original,
+                    caminho="/static/files/" + novo_nome
+                )
+            )
+
+        # --------------------------------------
+        # RECOMPENSA DIÁRIA
+        # --------------------------------------
+        hoje = datetime.utcnow().date()
+
+        ultimo = (
+            user.ultima_recompensa_post.date()
+            if user.ultima_recompensa_post
+            else None
         )
 
-    # ==========================================
-    # RECOMPENSA
-    # ==========================================
+        if ultimo != hoje:
+            user.moedas = (user.moedas or 0) + 500
+            user.ultima_recompensa_post = datetime.utcnow()
 
-    hoje = datetime.utcnow().date()
+        db.session.commit()
 
-    ultimo = (
-        user.ultima_recompensa_post.date()
-        if user.ultima_recompensa_post
-        else None
-    )
-
-    if ultimo != hoje:
-
-        user.moedas += 500
-
-        user.ultima_recompensa_post = datetime.utcnow()
-
-    db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao criar publicação")
+        return jsonify(error="Não foi possível guardar a publicação"), 500
 
     return jsonify({
-
         "status": "ok",
-
         "id": post.id,
-
         "texto": post.texto,
-
+        "formatacao": post.formatacao,
         "moedas": user.moedas,
-
         "autor": {
-
             "id": user.id,
-
             "username": user.username,
-
             "avatar": user.avatar
-
         }
+    }), 201
 
-    })
 #================= DELETE POST =================
 @app.route("/posts/<post_id>", methods=["DELETE"])
 def apagar_post(post_id):
@@ -10318,6 +10611,112 @@ def listar_seguindo(user_id):
         return jsonify(
             error="Não foi possível carregar a lista"
         ), 500
+
+
+
+# ==========================================
+# UTILIZADORES QUE SIGO
+# ==========================================
+@app.route("/users/<int:user_id>/following", methods=["GET"])
+def listar_seguidos_para_mencoes(user_id):
+
+    user = db.session.get(User, user_id)
+
+    if not user:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    follows = Follow.query.filter_by(
+        follower_id=user_id
+    ).all()
+
+    resultado = []
+
+    for follow in follows:
+        seguido = db.session.get(User, follow.followed_id)
+
+        if not seguido:
+            continue
+
+        if seguido.id == user_id:
+            continue
+
+        if (
+            not seguido.ativo
+            or seguido.apagado
+            or seguido.desativado_em is not None
+            or seguido.banido
+        ):
+            continue
+
+        resultado.append({
+            "id": seguido.id,
+            "username": seguido.username
+        })
+
+    resultado.sort(
+        key=lambda pessoa: pessoa["username"].lower()
+    )
+
+    return jsonify(resultado)
+
+
+# ==========================================
+# TRADUZIR TEXTO DE UMA PUBLICAÇÃO
+# ==========================================
+@app.route("/posts/traduzir", methods=["POST"])
+def traduzir_post():
+
+    from deep_translator import GoogleTranslator
+
+    dados = request.get_json(silent=True) or {}
+
+    texto = dados.get("texto", "")
+    idioma = dados.get("idioma_destino", "")
+    user_id = dados.get("user_id")
+
+    if not isinstance(texto, str) or not texto.strip():
+        return jsonify(error="Texto vazio"), 400
+
+    if len(texto) > 5000:
+        return jsonify(error="Texto demasiado longo"), 400
+
+    idiomas_permitidos = {
+        "pt", "en", "es", "fr", "de", "it",
+        "nl", "pl", "ru", "ja", "ko", "zh-CN",
+        "ar", "tr", "uk", "ro", "sv", "da"
+    }
+
+    if idioma not in idiomas_permitidos:
+        return jsonify(error="Idioma de destino inválido"), 400
+
+    if user_id is not None:
+        user = db.session.get(User, user_id)
+
+        if not user:
+            return jsonify(error="Utilizador não encontrado"), 404
+
+    try:
+        traducao = GoogleTranslator(
+            source="auto",
+            target=idioma
+        ).translate(texto.strip())
+
+        if not traducao:
+            return jsonify(error="Não foi possível traduzir o texto"), 502
+
+        return jsonify({
+            "status": "ok",
+            "texto_original": texto,
+            "texto_traduzido": traducao,
+            "idioma_destino": idioma
+        })
+
+    except Exception:
+        app.logger.exception("Erro ao traduzir publicação")
+        return jsonify(
+            error="O serviço de tradução está temporariamente indisponível"
+        ), 502
+
 
 #================= START =================
 if __name__ == "__main__":
