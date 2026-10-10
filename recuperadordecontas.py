@@ -446,6 +446,116 @@ class PostImage(db.Model):
         nullable=False
     )
 
+# ============================================================
+# MENSAGENS OCULTADAS PARA UM UTILIZADOR
+# ============================================================
+
+class MessageHidden(db.Model):
+    __tablename__ = "message_hidden"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    message_id = db.Column(
+        db.String,
+        db.ForeignKey("messages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "message_id",
+            "user_id",
+            name="uq_message_hidden_user"
+        ),
+    )
+
+
+# ============================================================
+# MENSAGENS APAGADAS PARA TODOS
+# ============================================================
+
+class MessageDeletedForEveryone(db.Model):
+    __tablename__ = "message_deleted_for_everyone"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    message_id = db.Column(
+        db.String,
+        db.ForeignKey("messages.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True
+    )
+
+    deleted_by_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    deleted_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+
+
+# ============================================================
+# REAÇÕES ÀS MENSAGENS
+# ============================================================
+
+class MessageReaction(db.Model):
+    __tablename__ = "message_reactions"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    message_id = db.Column(
+        db.String,
+        db.ForeignKey("messages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    emoji = db.Column(
+        db.String(16),
+        nullable=False
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "message_id",
+            "user_id",
+            name="uq_message_reaction_user"
+        ),
+    )
+    
 class AdminAction(db.Model):
 
     __tablename__ = "admin_actions"
@@ -3026,28 +3136,119 @@ def enviar_mensagem():
         ), 500
 
 #================= CONVERSA =================
+# ============================================================
+# CONVERSA — HISTÓRICO, ELIMINAÇÕES E REAÇÕES
+# ============================================================
+
 @app.route("/messages/<int:user1>/<int:user2>", methods=["GET"])
 def conversa(user1, user2):
-    msgs = Message.query.filter(
-        db.or_(
-            db.and_(Message.from_user_id == user1, Message.to_user_id == user2),
-            db.and_(Message.from_user_id == user2, Message.to_user_id == user1)
-        )
-    ).order_by(Message.data).all()
 
-    res = []
-    for m in msgs:
-        res.append({
-            "id": m.id,
-            "from": m.from_user_id,
-            "to": m.to_user_id,
-            "texto": m.texto,
-            "data": m.data.strftime("%d/%m/%Y %H:%M"),
-            "lida": m.lida
-        })
+    if user1 == user2:
+        return jsonify(error="Conversa inválida"), 400
 
-    return jsonify(res)
+    if not db.session.get(User, user1) or not db.session.get(User, user2):
+        return jsonify(error="Utilizador não encontrado"), 404
 
+    try:
+        msgs = Message.query.filter(
+            db.or_(
+                db.and_(
+                    Message.from_user_id == user1,
+                    Message.to_user_id == user2
+                ),
+                db.and_(
+                    Message.from_user_id == user2,
+                    Message.to_user_id == user1
+                )
+            )
+        ).order_by(Message.data.asc()).all()
+
+        # IDs das mensagens que o utilizador user1 ocultou.
+        ocultadas = {
+            row.message_id
+            for row in MessageHidden.query.filter_by(
+                user_id=user1
+            ).all()
+        }
+
+        # Mensagens apagadas para todos.
+        apagadas_todos = {
+            row.message_id
+            for row in MessageDeletedForEveryone.query.all()
+        }
+
+        ids_mensagens = [
+            m.id for m in msgs
+            if m.id not in ocultadas
+        ]
+
+        reacoes_por_mensagem = {}
+
+        if ids_mensagens:
+            reacoes = MessageReaction.query.filter(
+                MessageReaction.message_id.in_(ids_mensagens)
+            ).all()
+
+            for reacao in reacoes:
+                # Não expor reações de mensagens apagadas para todos.
+                if reacao.message_id in apagadas_todos:
+                    continue
+
+                agrupamento = reacoes_por_mensagem.setdefault(
+                    reacao.message_id,
+                    {}
+                )
+
+                agrupamento[reacao.emoji] = (
+                    agrupamento.get(reacao.emoji, 0) + 1
+                )
+
+        res = []
+
+        for m in msgs:
+
+            # Apagar para mim: a mensagem nem sequer aparece
+            # no histórico devolvido a este utilizador.
+            if m.id in ocultadas:
+                continue
+
+            apagada = m.id in apagadas_todos
+
+            res.append({
+                "id": m.id,
+                "from": m.from_user_id,
+                "to": m.to_user_id,
+                "texto": (
+                    "ⓘ Esta mensagem foi apagada!"
+                    if apagada
+                    else m.texto
+                ),
+                "data": (
+                    m.data.strftime("%d/%m/%Y %H:%M")
+                    if m.data
+                    else ""
+                ),
+                "lida": bool(m.lida),
+                "deleted_for_everyone": apagada,
+                "reactions": [
+                    {
+                        "emoji": emoji,
+                        "count": quantidade
+                    }
+                    for emoji, quantidade
+                    in reacoes_por_mensagem.get(m.id, {}).items()
+                ]
+            })
+
+        return jsonify(res), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao carregar histórico de mensagens")
+
+        return jsonify(
+            error="Não foi possível carregar a conversa."
+        ), 500
 #================= MENSAGENS NÃO LIDAS =================
 @app.route("/messages/unread/<int:user_id>", methods=["GET"])
 def mensagens_nao_lidas(user_id):
@@ -9597,6 +9798,204 @@ def obter_stats_user(user_id):
             error="Não foi possível carregar as estatísticas"
         ), 500
 
+# ============================================================
+# APAGAR UMA MENSAGEM APENAS PARA MIM
+# ============================================================
+
+@app.route(
+    "/messages/<string:message_id>/delete-for-me",
+    methods=["POST"]
+)
+def apagar_mensagem_para_mim(message_id):
+
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        user_id = int(dados.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="ID de utilizador inválido"), 400
+
+    mensagem = db.session.get(Message, message_id)
+
+    if mensagem is None:
+        return jsonify(error="Mensagem não encontrada"), 404
+
+    if user_id not in (
+        mensagem.from_user_id,
+        mensagem.to_user_id
+    ):
+        return jsonify(error="Sem permissão para ocultar esta mensagem"), 403
+
+    try:
+        existente = MessageHidden.query.filter_by(
+            message_id=message_id,
+            user_id=user_id
+        ).first()
+
+        if existente is None:
+            db.session.add(
+                MessageHidden(
+                    message_id=message_id,
+                    user_id=user_id
+                )
+            )
+
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            message="Mensagem ocultada para este utilizador."
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao ocultar mensagem")
+
+        return jsonify(
+            error="Não foi possível ocultar a mensagem."
+        ), 500
+
+
+# ============================================================
+# APAGAR UMA MENSAGEM PARA TODOS
+# Apenas o remetente pode executar esta operação.
+# ============================================================
+
+@app.route(
+    "/messages/<string:message_id>/delete-for-everyone",
+    methods=["POST"]
+)
+def apagar_mensagem_para_todos(message_id):
+
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        user_id = int(dados.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="ID de utilizador inválido"), 400
+
+    mensagem = db.session.get(Message, message_id)
+
+    if mensagem is None:
+        return jsonify(error="Mensagem não encontrada"), 404
+
+    if mensagem.from_user_id != user_id:
+        return jsonify(
+            error="Só o autor da mensagem a pode apagar para todos."
+        ), 403
+
+    try:
+        existente = MessageDeletedForEveryone.query.filter_by(
+            message_id=message_id
+        ).first()
+
+        if existente is None:
+            db.session.add(
+                MessageDeletedForEveryone(
+                    message_id=message_id,
+                    deleted_by_id=user_id
+                )
+            )
+
+        # As reações deixam de ser úteis quando a mensagem é apagada.
+        MessageReaction.query.filter_by(
+            message_id=message_id
+        ).delete(synchronize_session=False)
+
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            message="Mensagem apagada para todos."
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao apagar mensagem para todos")
+
+        return jsonify(
+            error="Não foi possível apagar a mensagem para todos."
+        ), 500
+
+
+# ============================================================
+# ADICIONAR OU ALTERAR UMA REAÇÃO
+# ============================================================
+
+@app.route(
+    "/messages/<string:message_id>/reaction",
+    methods=["POST"]
+)
+def reagir_a_mensagem(message_id):
+
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        user_id = int(dados.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="ID de utilizador inválido"), 400
+
+    emoji = str(dados.get("emoji", "")).strip()
+
+    emojis_permitidos = {
+        "👍", "❤️", "😂", "😮", "😢", "🙏"
+    }
+
+    if emoji not in emojis_permitidos:
+        return jsonify(error="Reação não permitida"), 400
+
+    mensagem = db.session.get(Message, message_id)
+
+    if mensagem is None:
+        return jsonify(error="Mensagem não encontrada"), 404
+
+    if user_id not in (
+        mensagem.from_user_id,
+        mensagem.to_user_id
+    ):
+        return jsonify(
+            error="Não podes reagir a uma mensagem desta conversa."
+        ), 403
+
+    if MessageDeletedForEveryone.query.filter_by(
+        message_id=message_id
+    ).first():
+        return jsonify(
+            error="Não podes reagir a uma mensagem apagada."
+        ), 400
+
+    try:
+        reacao = MessageReaction.query.filter_by(
+            message_id=message_id,
+            user_id=user_id
+        ).first()
+
+        if reacao is None:
+            reacao = MessageReaction(
+                message_id=message_id,
+                user_id=user_id,
+                emoji=emoji
+            )
+            db.session.add(reacao)
+        else:
+            reacao.emoji = emoji
+            reacao.created_at = datetime.utcnow()
+
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            message_id=message_id,
+            emoji=emoji
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao guardar reação")
+
+        return jsonify(
+            error="Não foi possível guardar a reação."
+        ), 500
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
