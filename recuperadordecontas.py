@@ -1695,8 +1695,7 @@ def register():
         token=token_inicial,
         username=user.username
     )
-# ================= LOGIN =================
-
+    
 # ================= LOGIN =================
 @app.route("/login", methods=["POST"])
 def login():
@@ -1711,7 +1710,8 @@ def login():
 
     remember_me = (
         valor_remember is True
-        or str(valor_remember).strip().lower() in ("true", "1", "yes", "on")
+        or str(valor_remember).strip().lower()
+        in ("true", "1", "yes", "on")
     )
 
     if not identificador or not password:
@@ -1720,40 +1720,52 @@ def login():
             msg="Dados inválidos"
         ), 400
 
+
     user = (
         User.query.filter_by(username=identificador).first()
         or User.query.filter_by(email=identificador).first()
         or User.query.filter_by(email_recuperacao=identificador).first()
     )
 
+
     if not user:
         return jsonify(
             status="error",
             msg="Utilizador não encontrado"
         ), 404
-        
-        
-    if user.password != hash_password(password):
 
-    # Verificar se a palavra-passe introduzida já foi utilizada
+
+    # ================= VERIFICAR PASSWORD =================
+
     password_hash = hash_password(password)
 
-    password_antiga = PasswordHistory.query.filter_by(
-        user_id=user.id,
-        password_hash=password_hash
-    ).first()
+    if user.password != password_hash:
 
-    if password_antiga:
+        # Verificar se esta password já foi usada no passado
+        password_antiga = PasswordHistory.query.filter_by(
+            user_id=user.id,
+            password_hash=password_hash
+        ).first()
+
+
+        if password_antiga:
+            return jsonify(
+                status="error",
+                msg=(
+                    "Esta é uma palavra-passe antiga. "
+                    "A tua palavra-passe atual é diferente."
+                )
+            ), 401
+
+
         return jsonify(
             status="error",
-            msg="Esta é uma palavra-passe antiga. A tua palavra-passe foi alterada. Utiliza a palavra-passe atual."
+            msg="Palavra-passe incorreta."
         ), 401
 
-    return jsonify(
-        status="error",
-        msg="Palavra-passe incorreta."
-    ), 401
 
+
+    # ================= ESTADO DA CONTA =================
 
     if user.apagado:
         return jsonify(
@@ -1761,11 +1773,14 @@ def login():
             msg="Essa conta foi apagada. Não é possível fazer login."
         ), 403
 
+
     if user.banido:
         return jsonify(
             status="error",
             msg="Conta banida"
         ), 403
+
+
 
     # ================= ATIVIDADE =================
 
@@ -1780,9 +1795,11 @@ def login():
         "user"
     )
 
+
     # ================= CRIAR SESSÃO =================
 
     session_token = secrets.token_hex(32)
+
 
     nova_sessao = UserSession(
         user_id=user.id,
@@ -1794,15 +1811,22 @@ def login():
         active=True
     )
 
+
     db.session.add(nova_sessao)
 
     db.session.commit()
 
+
+
     # ================= SESSÃO FLASK =================
 
     session.clear()
+
     session["user_id"] = user.id
+
     session.permanent = True
+
+
 
     # ================= RESPOSTA =================
 
@@ -1817,14 +1841,15 @@ def login():
         role=user.role,
         session_token=session_token,
         remember_me=remember_me,
+
         avatares_comprados=json.loads(
             user.avatares_comprados or "[]"
         ),
+
         banners_comprados=json.loads(
             user.banners_comprados or "[]"
         )
     )
-
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
 def delete_account():
