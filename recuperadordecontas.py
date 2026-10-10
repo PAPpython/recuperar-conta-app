@@ -1733,34 +1733,68 @@ def check_recovery_email():
 @app.route("/posts", methods=["GET"])
 def listar_posts():
 
-    posts = Post.query.order_by(Post.data.desc()).all()
+    # ID do utilizador que está a consultar o feed
+    meu_id = request.args.get("user_id", type=int)
+
+    # Identificar utilizadores bloqueados em qualquer direção
+    ids_bloqueados = set()
+
+    if meu_id is not None:
+        bloqueios = Block.query.filter(
+            db.or_(
+                Block.blocker_id == meu_id,
+                Block.blocked_id == meu_id
+            )
+        ).all()
+
+        for bloqueio in bloqueios:
+            if bloqueio.blocker_id == meu_id:
+                ids_bloqueados.add(bloqueio.blocked_id)
+            else:
+                ids_bloqueados.add(bloqueio.blocker_id)
+
+    # Carregar publicações mais recentes primeiro
+    query = Post.query
+
+    if ids_bloqueados:
+        query = query.filter(
+            ~Post.autor_id.in_(ids_bloqueados)
+        )
+
+    posts = query.order_by(Post.data.desc()).all()
 
     res = []
 
     for p in posts:
 
-        autor = User.query.get(p.autor_id)
+        autor = db.session.get(User, p.autor_id)
 
         if not autor:
+            continue
+
+        # Proteção adicional
+        if autor.id in ids_bloqueados:
             continue
 
         real_id = p.original_post_id or p.id
 
         # ================= IMAGENS =================
-
         imagens = []
 
-        for img in PostImage.query.filter_by(post_id=p.id).all():
+        for img in PostImage.query.filter_by(
+            post_id=p.id
+        ).all():
 
             imagens.append(
                 request.host_url.rstrip("/") + img.caminho
             )
 
         # ================= FICHEIROS =================
-
         ficheiros = []
 
-        for f in PostFile.query.filter_by(post_id=p.id).all():
+        for f in PostFile.query.filter_by(
+            post_id=p.id
+        ).all():
 
             ficheiros.append({
                 "id": f.id,
@@ -1769,18 +1803,11 @@ def listar_posts():
             })
 
         res.append({
-
             "id": p.id,
-
             "texto": p.texto,
-
             "formatacao": p.formatacao,
-
-            # <-- lista de imagens
             "imagens": imagens,
-
             "ficheiros": ficheiros,
-
             "data": p.data.strftime("%d/%m/%Y %H:%M"),
 
             "likes": Like.query.filter_by(
@@ -1792,15 +1819,10 @@ def listar_posts():
             ).count(),
 
             "autor": {
-
                 "id": autor.id,
-
                 "username": autor.username,
-
                 "avatar": autor.avatar
-
             }
-
         })
 
     return jsonify(res)
