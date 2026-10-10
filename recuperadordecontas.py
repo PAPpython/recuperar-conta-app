@@ -495,6 +495,81 @@ class AdminAction(db.Model):
         foreign_keys=[admin_id]
     )
 
+
+class MessageBlock(db.Model):
+    __tablename__ = "message_blocks"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    blocker_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+
+    blocked_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "blocker_id",
+            "blocked_id",
+            name="uq_message_block_pair"
+        ),
+        db.CheckConstraint(
+            "blocker_id != blocked_id",
+            name="ck_message_block_not_self"
+        ),
+    )
+
+class MessageReport(db.Model):
+    __tablename__ = "message_reports"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    reporter_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+
+    reported_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+
+    reason = db.Column(db.Text, nullable=False)
+
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="pending"
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+
+
 class Report(db.Model):
 
     __tablename__ = "reports"
@@ -9059,6 +9134,140 @@ def aceitar_pedido_mensagem(user_a, user_b):
 
         return jsonify(
             error="Não foi possível aceitar o pedido."
+        ), 500
+
+
+# ============================================================
+# DENUNCIAR UTILIZADOR NUMA CONVERSA
+# ============================================================
+
+@app.route(
+    "/messages/report/<int:user_a>/<int:user_b>",
+    methods=["POST"]
+)
+def denunciar_mensagem(user_a, user_b):
+
+    data = request.get_json(silent=True) or {}
+
+    try:
+        user_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="ID do utilizador inválido."), 400
+
+    if user_a == user_b:
+        return jsonify(error="Não podes denunciar-te a ti próprio."), 400
+
+    if user_id not in (user_a, user_b):
+        return jsonify(error="Sem permissão para denunciar esta conversa."), 403
+
+    outro_id = user_b if user_id == user_a else user_a
+
+    reporter = db.session.get(User, user_id)
+    denunciado = db.session.get(User, outro_id)
+
+    if not reporter or not denunciado:
+        return jsonify(error="Utilizador não encontrado."), 404
+
+    motivo = (
+        data.get("reason")
+        or "Denúncia de pedido de mensagem"
+    ).strip()
+
+    if not motivo:
+        motivo = "Denúncia de pedido de mensagem"
+
+    try:
+        denuncia = MessageReport(
+            reporter_id=user_id,
+            reported_user_id=outro_id,
+            reason=motivo,
+            status="pending"
+        )
+
+        db.session.add(denuncia)
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            message="Denúncia registada com sucesso.",
+            report_id=denuncia.id
+        ), 201
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao registar denúncia de mensagem")
+
+        return jsonify(
+            error="Não foi possível registar a denúncia."
+        ), 500
+
+
+# ============================================================
+# BLOQUEAR UTILIZADOR NUMA CONVERSA
+# ============================================================
+
+@app.route(
+    "/messages/block/<int:user_a>/<int:user_b>",
+    methods=["POST"]
+)
+def bloquear_conversa_mensagens(user_a, user_b):
+
+    data = request.get_json(silent=True) or {}
+
+    try:
+        user_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="ID do utilizador inválido."), 400
+
+    if user_a == user_b:
+        return jsonify(error="Não podes bloquear-te a ti próprio."), 400
+
+    if user_id not in (user_a, user_b):
+        return jsonify(error="Sem permissão para bloquear esta conversa."), 403
+
+    outro_id = user_b if user_id == user_a else user_a
+
+    if not db.session.get(User, user_id):
+        return jsonify(error="O teu utilizador não foi encontrado."), 404
+
+    if not db.session.get(User, outro_id):
+        return jsonify(error="O outro utilizador não foi encontrado."), 404
+
+    menor, maior = sorted((user_a, user_b))
+
+    try:
+        conversa = MessageConversation.query.filter_by(
+            user1_id=menor,
+            user2_id=maior
+        ).with_for_update().first()
+
+        if conversa is None:
+            # Permite bloquear mesmo antes de existir uma conversa.
+            conversa = MessageConversation(
+                user1_id=menor,
+                user2_id=maior,
+                requested_by_id=user_id,
+                status="blocked"
+            )
+
+            db.session.add(conversa)
+
+        else:
+            conversa.status = "blocked"
+
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            message="Conversa bloqueada com sucesso."
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao bloquear conversa")
+
+        return jsonify(
+            error="Não foi possível bloquear esta conversa."
         ), 500
 
 #================= START =================
