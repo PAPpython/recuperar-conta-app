@@ -141,6 +141,13 @@ class User(db.Model):
         default=False
     )
 
+    remember_me = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False
+    )
+
+
 
     # ================= PERFIL =================
 
@@ -1315,6 +1322,7 @@ def register():
         username=user.username
     )
 # ================= LOGIN =================
+
 # ================= LOGIN =================
 @app.route("/login", methods=["POST"])
 def login():
@@ -1324,8 +1332,19 @@ def login():
     identificador = (data.get("username") or "").strip().lower()
     password = data.get("password")
 
+    # Aceitar a preferência enviada pelo Python
+    valor_remember = data.get("remember_me", False)
+
+    remember_me = (
+        valor_remember is True
+        or str(valor_remember).strip().lower() in ("true", "1", "yes", "on")
+    )
+
     if not identificador or not password:
-        return jsonify(status="error", msg="Dados inválidos"), 400
+        return jsonify(
+            status="error",
+            msg="Dados inválidos"
+        ), 400
 
     user = (
         User.query.filter_by(username=identificador).first()
@@ -1334,10 +1353,16 @@ def login():
     )
 
     if not user:
-        return jsonify(status="error", msg="Utilizador não encontrado"), 404
+        return jsonify(
+            status="error",
+            msg="Utilizador não encontrado"
+        ), 404
 
     if user.password != hash_password(password):
-        return jsonify(status="error", msg="Password inválida"), 401
+        return jsonify(
+            status="error",
+            msg="Password inválida"
+        ), 401
 
     if user.apagado:
         return jsonify(
@@ -1374,13 +1399,12 @@ def login():
         platform=data.get("platform", "Tkinter"),
         ip_address=request.remote_addr,
         location=data.get("location", "Desconhecida"),
-        remember_me=data.get("remember_me", False),
+        remember_me=remember_me,
         active=True
     )
 
     db.session.add(nova_sessao)
 
-    # Guarda o last_login e a nova sessão
     db.session.commit()
 
     # ================= SESSÃO FLASK =================
@@ -1401,9 +1425,15 @@ def login():
         moedas=user.moedas,
         role=user.role,
         session_token=session_token,
-        avatares_comprados=json.loads(user.avatares_comprados or "[]"),
-        banners_comprados=json.loads(user.banners_comprados or "[]")
+        remember_me=remember_me,
+        avatares_comprados=json.loads(
+            user.avatares_comprados or "[]"
+        ),
+        banners_comprados=json.loads(
+            user.banners_comprados or "[]"
+        )
     )
+
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
 def delete_account():
@@ -4538,6 +4568,7 @@ def auto_login():
     sessao = UserSession.query.filter_by(
         session_token=token,
         active=True
+        remember_me=True
     ).first()
 
     if not sessao:
@@ -4560,6 +4591,56 @@ def auto_login():
         role=user.role,
         session_token=token
     )
+
+
+
+# ==========================================
+# ATUALIZAR PREFERÊNCIA DE MANTER SESSÃO
+# ==========================================
+
+@app.route("/session/remember", methods=["POST"])
+def atualizar_preferencia_sessao():
+
+    data = request.get_json(silent=True) or {}
+
+    token = data.get("session_token")
+    remember_me = data.get("remember_me")
+
+    if not token or not isinstance(remember_me, bool):
+        return jsonify(
+            status="error",
+            msg="Token ou preferência inválidos"
+        ), 400
+
+    sessao = UserSession.query.filter_by(
+        session_token=token,
+        active=True
+    ).first()
+
+    if not sessao:
+        return jsonify(
+            status="error",
+            msg="Sessão inválida ou terminada"
+        ), 401
+
+    sessao.remember_me = remember_me
+
+    try:
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        return jsonify(
+            status="error",
+            msg="Não foi possível guardar a preferência"
+        ), 500
+
+    return jsonify(
+        status="ok",
+        remember_me=sessao.remember_me
+    ), 200
+
     
 @app.route("/security-login", methods=["GET", "POST"])
 def security_login():
