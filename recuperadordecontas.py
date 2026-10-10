@@ -2714,57 +2714,154 @@ def posts_perfil(user_id):
     return jsonify(res)
 
 #================= ENVIAR MENSAGEM =================
+
 @app.route("/messages/send", methods=["POST"])
 def enviar_mensagem():
 
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True) or {}
 
-    from_user = data["from_user_id"]
-    to_user = data["to_user_id"]
+    try:
+        from_user = int(data.get("from_user_id"))
+        to_user = int(data.get("to_user_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="IDs de utilizadores inválidos"), 400
+
     texto = (data.get("texto") or "").strip()
 
     if not texto:
         return jsonify(error="Mensagem vazia"), 400
 
-    # 🔒 VER UTILIZADOR
-    user = User.query.get(from_user)
-
-    if not user:
-        return jsonify(error="User não encontrado"), 404
-
-    # 🚫 UTILIZADOR BLOQUEADO/SUSPENSO
-    if user.bloqueado:
+    if from_user == to_user:
         return jsonify(
-            error="Estás bloqueado e não podes enviar mensagens"
+            error="Não podes enviar mensagens a ti próprio."
+        ), 400
+
+    remetente = db.session.get(User, from_user)
+    destinatario = db.session.get(User, to_user)
+
+    if not remetente or not destinatario:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    if remetente.bloqueado:
+        return jsonify(
+            error="A tua conta está bloqueada e não podes enviar mensagens."
         ), 403
 
-    # 🔒 BLOQUEIO TOTAL ENTRE USERS
+    if getattr(destinatario, "bloqueado", False):
+        return jsonify(
+            error="Este utilizador não pode receber mensagens."
+        ), 403
+
     if existe_bloqueio(from_user, to_user):
         return jsonify(
-            error="Não é possível enviar mensagem a este utilizador"
+            error="Não é possível enviar mensagens a este utilizador."
         ), 403
 
-    msg = Message(
-        id=str(uuid.uuid4()),
-        from_user_id=from_user,
-        to_user_id=to_user,
-        texto=texto
-    )
+    menor, maior = sorted((from_user, to_user))
 
-    db.session.add(msg)
+    try:
+        conversa = MessageConversation.query.filter_by(
+            user1_id=menor,
+            user2_id=maior
+        ).with_for_update().first()
 
-    # 🔔 NOTIFICAÇÃO
-    db.session.add(Notification(
-        id=str(uuid.uuid4()),
-        user_id=to_user,
-        tipo="message",
-        origem_id=from_user
-    ))
+        if conversa is None:
+            # Compatibilidade: se já existem mensagens antigas,
+            # não criar um pedido pendente para uma conversa antiga.
+            mensagem_antiga = Message.query.filter(
+                db.or_(
+                    db.and_(
+                        Message.from_user_id == from_user,
+                        Message.to_user_id == to_user
+                    ),
+                    db.and_(
+                        Message.from_user_id == to_user,
+                        Message.to_user_id == from_user
+                    )
+                )
+            ).first()
 
-    db.session.commit()
+            if mensagem_antiga:
+                conversa = MessageConversation(
+                    user1_id=menor,
+                    user2_id=maior,
+                    requested_by_id=mensagem_antiga.from_user_id,
+                    status="accepted",
+                    accepted_at=datetime.utcnow()
+                )
+            else:
+                # O primeiro remetente fica registado como
+                # autor do pedido de conversa.
+                conversa = MessageConversation(
+                    user1_id=menor,
+                    user2_id=maior,
+                    requested_by_id=from_user,
+                    status="pending"
+                )
 
-    return jsonify(status="ok")
-    
+            db.session.add(conversa)
+            db.session.flush()
+
+        if conversa.status == "blocked":
+            db.session.rollback()
+            return jsonify(
+                error="Esta conversa está bloqueada."
+            ), 403
+
+        if conversa.status == "pending":
+            if conversa.requested_by_id != from_user:
+                db.session.rollback()
+                return jsonify(
+                    error="Tens de aceitar o pedido antes de responder."
+                ), 403
+
+            # Só pode existir a primeira mensagem durante o pedido.
+            ja_enviou = Message.query.filter_by(
+                from_user_id=from_user,
+                to_user_id=to_user
+            ).first()
+
+            if ja_enviou:
+                db.session.rollback()
+                return jsonify(
+                    error=(
+                        "O teu pedido já foi enviado. "
+                        "Aguarda que o destinatário o aceite."
+                    )
+                ), 403
+
+        mensagem = Message(
+            id=str(uuid.uuid4()),
+            from_user_id=from_user,
+            to_user_id=to_user,
+            texto=texto,
+            lida=False
+        )
+
+        db.session.add(mensagem)
+
+        db.session.add(Notification(
+            id=str(uuid.uuid4()),
+            user_id=to_user,
+            tipo="message",
+            origem_id=from_user
+        ))
+
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            conversation_status=conversa.status,
+            requested_by_id=conversa.requested_by_id
+        ), 201
+
+    except Exception as erro:
+        db.session.rollback()
+        app.logger.exception("Erro ao enviar mensagem")
+        return jsonify(
+            error="Não foi possível enviar a mensagem."
+        ), 500
+
 #================= CONVERSA =================
 @app.route("/messages/<int:user1>/<int:user2>", methods=["GET"])
 def conversa(user1, user2):
@@ -8740,6 +8837,7 @@ def admin_admin_stats():
 
     return jsonify(resultado)
 
+
 @app.route("/messages/inbox/<int:user_id>", methods=["GET"])
 def listar_conversas(user_id):
 
@@ -8780,27 +8878,74 @@ def listar_conversas(user_id):
         if existe_bloqueio(user_id, outro_id):
             continue
 
-        conversas[outro_id] = {
-            "user": {
-                "id": outro.id,
-                "username": outro.username,
-                "nome": outro.nome,
-                "avatar": outro.avatar,
-                "google_picture": outro.google_picture
-            },
-            "ultima_mensagem": {
-                "texto": msg.texto,
-                "data": (
-                    msg.data.strftime("%d/%m/%Y %H:%M:%S")
-                    if msg.data else ""
-                ),
-                "minha": msg.from_user_id == user_id,
-                "lida": bool(msg.lida)
-            }
+        menor, maior = sorted((user_id, outro_id))
+
+        conversa = MessageConversation.query.filter_by(
+            user1_id=menor,
+            user2_id=maior
+        ).first()
+
+        # Conversas antigas, anteriores ao sistema de pedidos,
+        # continuam disponíveis como conversas aceites.
+        if conversa:
+            estado = conversa.status
+            pedido_por = conversa.requested_by_id
+        else:
+            estado = "accepted"
+            pedido_por = None
+
+        if estado == "blocked":
+            continue
+
+        nao_lidas = Message.query.filter_by(
+            from_user_id=outro_id,
+            to_user_id=user_id,
+            lida=False
+        ).count()
+
+        ultima = {
+            "texto": msg.texto or "",
+            "data": (
+                msg.data.strftime("%d/%m/%Y %H:%M:%S")
+                if msg.data else ""
+            ),
+            "minha": msg.from_user_id == user_id,
+            "lida": bool(msg.lida)
         }
 
-    return jsonify(list(conversas.values()))
+        dados_user = {
+            "id": outro.id,
+            "username": outro.username,
+            "nome": outro.nome,
+            "avatar": outro.avatar,
+            "google_picture": outro.google_picture
+        }
 
+        conversas[outro_id] = {
+            # Formato utilizado pela interface
+            "user": dados_user,
+            "ultima_mensagem": ultima,
+
+            # Estado necessário para separar os pedidos
+            "status": estado,
+            "requested_by_id": pedido_por,
+            "unread_count": nao_lidas,
+
+            # Campos adicionais para compatibilidade
+            **dados_user,
+            "ultima_mensagem_texto": ultima["texto"],
+            "ultima_mensagem_data": ultima["data"]
+        }
+
+    resultado = list(conversas.values())
+
+    # Mais recentes primeiro
+    resultado.sort(
+        key=lambda item: item["ultima_mensagem_data"],
+        reverse=True
+    )
+
+    return jsonify(resultado), 200
 
 @app.route("/messages/state/<int:user_a>/<int:user_b>", methods=["GET"])
 def estado_conversa_mensagens(user_a, user_b):
@@ -8845,6 +8990,76 @@ def estado_conversa_mensagens(user_a, user_b):
         "status": conversa.status,
         "requested_by_id": conversa.requested_by_id
     }), 200
+
+
+@app.route(
+    "/messages/accept/<int:user_a>/<int:user_b>",
+    methods=["POST"]
+)
+def aceitar_pedido_mensagem(user_a, user_b):
+
+    data = request.get_json(silent=True) or {}
+
+    try:
+        user_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="ID de utilizador inválido"), 400
+
+    if user_id not in (user_a, user_b):
+        return jsonify(error="Sem permissão."), 403
+
+    if user_a == user_b:
+        return jsonify(error="Conversa inválida."), 400
+
+    menor, maior = sorted((user_a, user_b))
+
+    try:
+        conversa = MessageConversation.query.filter_by(
+            user1_id=menor,
+            user2_id=maior
+        ).with_for_update().first()
+
+        if conversa is None:
+            return jsonify(
+                error="O pedido de conversa não existe."
+            ), 404
+
+        if conversa.status == "blocked":
+            return jsonify(
+                error="Esta conversa está bloqueada."
+            ), 403
+
+        if conversa.status == "accepted":
+            return jsonify(status="accepted"), 200
+
+        # Só o destinatário do pedido pode aceitar.
+        if conversa.requested_by_id == user_id:
+            return jsonify(
+                error="Não podes aceitar o teu próprio pedido."
+            ), 403
+
+        if conversa.status != "pending":
+            return jsonify(
+                error="Estado do pedido inválido."
+            ), 409
+
+        conversa.status = "accepted"
+        conversa.accepted_at = datetime.utcnow()
+
+        db.session.commit()
+
+        return jsonify(
+            status="accepted",
+            requested_by_id=conversa.requested_by_id
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao aceitar pedido de mensagem")
+
+        return jsonify(
+            error="Não foi possível aceitar o pedido."
+        ), 500
 
 #================= START =================
 if __name__ == "__main__":
