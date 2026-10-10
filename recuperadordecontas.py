@@ -2581,40 +2581,60 @@ def marcar_notificacao_lida(notif_id):
     db.session.commit()
     return jsonify(status="ok")
 
-#================= PERFIL COMPLETO =================
+# ================= PERFIL COMPLETO =================
+
 @app.route("/users/<int:user_id>/profile", methods=["GET"])
 def perfil_completo(user_id):
+
     viewer_id = request.args.get("viewer_id", type=int)
 
     user = User.query.get(user_id)
+
     if not user or user.apagado:
-        return jsonify(error="Utilizador não encontrado"), 404
+        return jsonify(
+            error="Utilizador não encontrado"
+        ), 404
 
-    # 🔒 BLOQUEIO TOTAL (não vê perfil)
+    # ================= VERIFICAR BLOQUEIO =================
+
     if viewer_id and existe_bloqueio(viewer_id, user_id):
-        return jsonify(error="Perfil indisponível"), 403
+        return jsonify(
+            error="Perfil indisponível"
+        ), 403
 
-    seguidores = Follow.query.filter_by(followed_id=user_id).count()
-    seguindo = Follow.query.filter_by(follower_id=user_id).count()
+    # ================= ESTATÍSTICAS =================
+
+    seguidores = Follow.query.filter_by(
+        followed_id=user_id
+    ).count()
+
+    seguindo = Follow.query.filter_by(
+        follower_id=user_id
+    ).count()
+
+    # ================= VERIFICAR SE SEGUE =================
 
     segue = False
+
     if viewer_id:
         segue = Follow.query.filter_by(
             follower_id=viewer_id,
             followed_id=user_id
         ).first() is not None
-        
-        return jsonify({
-            "id": user.id,
-            "nome": user.nome,
-            "username": user.username,
-            "avatar": user.avatar,
-            "banner": user.banner,
-            "bio": user.bio,
-            "seguidores": seguidores,
-            "seguindo": seguindo,
-            "seguindo_este_user": segue
-        })
+
+    # ================= DEVOLVER PERFIL =================
+
+    return jsonify({
+        "id": user.id,
+        "nome": user.nome,
+        "username": user.username,
+        "avatar": user.avatar,
+        "banner": user.banner,
+        "bio": user.bio or "",
+        "seguidores": seguidores,
+        "seguindo": seguindo,
+        "seguindo_este_user": segue
+    }), 200
 #================= POSTS DO PERFIL =================
 @app.route("/users/<int:user_id>/posts", methods=["GET"])
 def posts_perfil(user_id):
