@@ -18,7 +18,7 @@ import base64
 import json
 import uuid
 from flask import session
-import secretsfrom collections import OrderedDict
+from collections import OrderedDict
 
 # ================= APP =================
 app = Flask(__name__)
