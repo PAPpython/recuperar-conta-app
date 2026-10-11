@@ -10849,6 +10849,253 @@ def denunciar_mensagem(user_a, user_b):
         ), 500
 
 
+
+
+# ============================================================
+# VER DETALHES DE UMA DENÚNCIA DE MENSAGEM
+# ============================================================
+
+@app.route("/admin/message-report/<int:report_id>")
+def ver_denuncia_mensagem(report_id):
+
+    admin_id = session.get("admin_ticket_id")
+
+    if admin_id is None:
+        return redirect("/admin/tickets/login")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    denuncia = db.session.get(MessageReport, report_id)
+
+    if not denuncia:
+        return "Denúncia não encontrada.", 404
+
+    denunciante = db.session.get(User, denuncia.reporter_id)
+    denunciado = db.session.get(User, denuncia.reported_user_id)
+
+    nome_denunciante = (
+        getattr(denunciante, "username", "?")
+        if denunciante else "Utilizador eliminado"
+    )
+
+    nome_denunciado = (
+        getattr(denunciado, "username", "?")
+        if denunciado else "Utilizador eliminado"
+    )
+
+    apelido = (
+        getattr(denunciado, "apelido", "") or ""
+        if denunciado else ""
+    )
+
+    avatar = (
+        getattr(denunciado, "avatar", None)
+        if denunciado else None
+    )
+
+    avatar_html = (
+        f'<img class="avatar" src="{escape(avatar)}" alt="Avatar">'
+        if avatar else
+        '<div class="avatar">👤</div>'
+    )
+
+    estado = denuncia.status or "pending"
+
+    data_denuncia = (
+        denuncia.created_at.strftime("%d/%m/%Y às %H:%M")
+        if denuncia.created_at else "Data não disponível"
+    )
+
+    if estado.lower() in ("resolved", "closed", "resolvido", "resolvida"):
+        acao_html = """
+        <p class="resolved">Esta denúncia já foi marcada como resolvida.</p>
+        """
+    else:
+        acao_html = f"""
+        <form method="POST"
+              action="/admin/message-report/{denuncia.id}/resolve"
+              onsubmit="return confirm('Confirmas que analisaste esta denúncia e queres marcá-la como resolvida?');">
+            <button class="resolve" type="submit">
+                Marcar denúncia como resolvida
+            </button>
+        </form>
+        """
+
+    return f"""
+    <!DOCTYPE html>
+    <html lang="pt">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Denúncia #{denuncia.id} | AeronAI</title>
+
+        <style>
+            * {{ box-sizing: border-box; }}
+
+            body {{
+                margin: 0;
+                padding: 20px;
+                background: #0f172a;
+                color: #f8fafc;
+                font-family: Arial, sans-serif;
+            }}
+
+            .container {{
+                max-width: 700px;
+                margin: 30px auto;
+            }}
+
+            .card {{
+                background: #0b1220;
+                border: 1px solid #334155;
+                border-radius: 14px;
+                padding: 22px;
+                overflow-wrap: anywhere;
+            }}
+
+            .person {{
+                display: flex;
+                align-items: center;
+                gap: 15px;
+                margin: 18px 0;
+            }}
+
+            .avatar {{
+                width: 70px;
+                height: 70px;
+                border-radius: 50%;
+                object-fit: cover;
+                background: #334155;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+            }}
+
+            .info {{
+                padding: 12px;
+                background: #172033;
+                border-radius: 9px;
+                margin: 12px 0;
+                line-height: 1.6;
+            }}
+
+            .notice {{
+                margin-top: 22px;
+                padding: 15px;
+                border: 1px solid #ca8a04;
+                background: #292313;
+                border-radius: 10px;
+                line-height: 1.6;
+            }}
+
+            .resolve, .back {{
+                display: inline-block;
+                padding: 12px 16px;
+                border: 0;
+                border-radius: 8px;
+                color: white;
+                text-decoration: none;
+                cursor: pointer;
+                margin-top: 12px;
+                font-size: 14px;
+            }}
+
+            .resolve {{ background: #16a34a; }}
+            .back {{ background: #2563eb; }}
+
+            .resolved {{ color: #86efac; }}
+
+            @media(max-width: 500px) {{
+                body {{ padding: 12px; }}
+                .card {{ padding: 15px; }}
+            }}
+        </style>
+    </head>
+
+    <body>
+        <main class="container">
+            <div class="card">
+                <h1>🛡️ Analisar denúncia #{denuncia.id}</h1>
+
+                <h2>Utilizador denunciado</h2>
+                <div class="person">
+                    {avatar_html}
+                    <div>
+                        <h3>@{escape(nome_denunciado)}</h3>
+                        <p>{escape(apelido)}</p>
+                    </div>
+                </div>
+
+                <div class="info">
+                    <p><b>Denunciante:</b> @{escape(nome_denunciante)}</p>
+                    <p><b>ID da denúncia:</b> #{denuncia.id}</p>
+                    <p><b>Motivo:</b> {escape(denuncia.reason or "")}</p>
+                    <p><b>Data:</b> {escape(data_denuncia)}</p>
+                    <p><b>Estado:</b> {escape(estado)}</p>
+                </div>
+
+                <div class="notice">
+                    <b>Decisão da administração</b>
+                    <p>
+                        Analisa as informações desta denúncia e decide
+                        manualmente quais as medidas adequadas, caso sejam
+                        necessárias, de acordo com as regras do AeronAI.
+                        Marcar a denúncia como resolvida não aplica
+                        automaticamente qualquer castigo ao utilizador.
+                    </p>
+                </div>
+
+                {acao_html}
+
+                <br>
+                <a class="back" href="/admin/tickets?section=reports">
+                    Voltar às denúncias
+                </a>
+            </div>
+        </main>
+    </body>
+    </html>
+    """
+
+
+# ============================================================
+# MARCAR DENÚNCIA DE MENSAGEM COMO RESOLVIDA
+# ============================================================
+
+@app.route(
+    "/admin/message-report/<int:report_id>/resolve",
+    methods=["POST"]
+)
+def resolver_denuncia_mensagem(report_id):
+
+    admin_id = session.get("admin_ticket_id")
+
+    if admin_id is None:
+        return redirect("/admin/tickets/login")
+
+    if not is_admin(admin_id):
+        return jsonify(error="Sem permissão"), 403
+
+    denuncia = db.session.get(MessageReport, report_id)
+
+    if not denuncia:
+        return "Denúncia não encontrada.", 404
+
+    try:
+        denuncia.status = "resolved"
+        db.session.commit()
+
+        return redirect("/admin/tickets?section=reports")
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao resolver denúncia de mensagem")
+        return "Não foi possível atualizar a denúncia.", 500
+
+
+
 # ============================================================
 # BLOQUEAR UTILIZADOR NUMA CONVERSA
 # ============================================================
