@@ -6981,6 +6981,7 @@ def edit_user(user_id):
 """
 
 
+
 @app.route("/admin/tickets")
 def admin_tickets():
 
@@ -7019,15 +7020,18 @@ def admin_tickets():
     for t in tickets:
         user = db.session.get(User, t.user_id)
 
+        estado_ticket = str(t.status or "open")
+
         html_cards += f"""
         <div class="card">
             <p><b>Ticket:</b> #{t.id}</p>
-            <p><b>Assunto:</b> {escape(t.title or "")}</p>
+            <p><b>Assunto:</b> {escape(str(t.title or ""))}</p>
             <p><b>Utilizador:</b>
-                {escape(getattr(user, "username", "?") or "?")}
+                {escape(str(getattr(user, "username", "?") or "?"))}
             </p>
-            <p><b>Prioridade:</b> {escape(t.priority or "")}</p>
-            <p><b>Estado:</b> {escape(t.status.upper())}</p>
+            <p><b>Prioridade:</b> {escape(str(t.priority or ""))}</p>
+            <p><b>Estado:</b> {escape(estado_ticket.upper())}</p>
+
             <a class="button yellow"
                href="/admin/ticket/{t.id}">Abrir ticket</a>
         </div>
@@ -7076,13 +7080,13 @@ def admin_tickets():
         )
 
         avatar_html = (
-            f'<img class="avatar" src="{escape(avatar)}" '
+            f'<img class="avatar" src="{escape(str(avatar))}" '
             f'alt="Avatar" onerror="this.style.display=\'none\'">'
             if avatar else
             '<div class="avatar-placeholder">👤</div>'
         )
 
-        estado = r.estado or "pendente"
+        estado = str(r.estado or "pendente")
 
         resolver_html = ""
 
@@ -7091,7 +7095,8 @@ def admin_tickets():
         ):
             resolver_html = f"""
             <form method="POST"
-                  action="/admin/report/{r.id}/resolve">
+                  action="/admin/report/{r.id}/resolve"
+                  onsubmit="return confirm('Confirmas que analisaste esta denúncia?');">
                 <button class="button green" type="submit">
                     Marcar como resolvida
                 </button>
@@ -7103,21 +7108,21 @@ def admin_tickets():
             <div class="person">
                 {avatar_html}
                 <div>
-                    <h3>@{escape(username_denunciado)}</h3>
-                    <p>{escape(apelido)}</p>
+                    <h3>@{escape(str(username_denunciado))}</h3>
+                    <p>{escape(str(apelido))}</p>
                 </div>
             </div>
 
             <p><b>Denúncia:</b> #{r.id}</p>
             <p><b>Denunciado por:</b>
-                @{escape(username_denunciante)}
+                @{escape(str(username_denunciante))}
             </p>
-            <p><b>Motivo:</b> {escape(r.motivo or "")}</p>
+            <p><b>Motivo:</b> {escape(str(r.motivo or ""))}</p>
             <p><b>Descrição:</b>
-                {escape(r.descricao or "Sem descrição adicional")}
+                {escape(str(r.descricao or "Sem descrição adicional"))}
             </p>
             <p><b>Publicação:</b>
-                {escape(r.post_id or "Não indicada")}
+                {escape(str(r.post_id or "Não indicada"))}
             </p>
             <p><b>Comentário:</b>
                 {escape(str(r.comment_id or "Não indicado"))}
@@ -7162,20 +7167,23 @@ def admin_tickets():
         )
 
         avatar_html = (
-            f'<img class="avatar" src="{escape(avatar)}" '
+            f'<img class="avatar" src="{escape(str(avatar))}" '
             f'alt="Avatar" onerror="this.style.display=\'none\'">'
             if avatar else
             '<div class="avatar-placeholder">👤</div>'
         )
 
-        estado = r.status or "pending"
+        estado = str(r.status or "pending")
 
         resolver_html = ""
 
-        if estado.lower() not in ("resolved", "closed", "resolvido"):
+        if estado.lower() not in (
+            "resolved", "closed", "resolvido", "resolvida"
+        ):
             resolver_html = f"""
             <form method="POST"
-                  action="/admin/message-report/{r.id}/resolve">
+                  action="/admin/message-report/{r.id}/resolve"
+                  onsubmit="return confirm('Confirmas que analisaste esta denúncia?');">
                 <button class="button green" type="submit">
                     Marcar como resolvida
                 </button>
@@ -7187,17 +7195,32 @@ def admin_tickets():
             <div class="person">
                 {avatar_html}
                 <div>
-                    <h3>@{escape(username_denunciado)}</h3>
-                    <p>{escape(apelido)}</p>
+                    <h3>@{escape(str(username_denunciado))}</h3>
+                    <p>{escape(str(apelido))}</p>
                 </div>
             </div>
 
             <p><b>Denúncia de mensagem:</b> #{r.id}</p>
+
             <p><b>Denunciado por:</b>
-                @{escape(username_denunciante)}
+                @{escape(str(username_denunciante))}
             </p>
-            <p><b>Motivo:</b> {escape(r.reason or "")}</p>
+
+            <p><b>Motivo:</b> {escape(str(r.reason or ""))}</p>
+
+            <p><b>Data:</b>
+                {escape(
+                    r.created_at.strftime("%d/%m/%Y %H:%M")
+                    if r.created_at else "Não disponível"
+                )}
+            </p>
+
             <p><b>Estado:</b> {escape(estado)}</p>
+
+            <a class="button blue"
+               href="/admin/message-report/{r.id}">
+                Analisar denúncia
+            </a>
 
             {resolver_html}
         </div>
@@ -7215,39 +7238,62 @@ def admin_tickets():
     tickets_ativo = "active" if section != "reports" else ""
     denuncias_ativo = "active" if section == "reports" else ""
 
-    conteudo = (
-        f"""
-        <h2>Denúncias de utilizadores</h2>
+    if section == "reports":
+
+        conteudo = f"""
+        <h2>🛡️ Denúncias de utilizadores</h2>
+
+        <div class="notice">
+            <b>Área de moderação</b>
+            <p>
+                Analisa cada denúncia e decide manualmente se é
+                necessária alguma medida de acordo com as regras
+                do AeronAI. O simples registo ou resolução de uma
+                denúncia não aplica automaticamente castigos.
+            </p>
+        </div>
+
         {denuncias_html}
         """
-        if section == "reports"
-        else
-        f"""
-        <h2>Tickets de suporte</h2>
+
+    else:
+
+        conteudo = f"""
+        <h2>🎫 Tickets de suporte</h2>
 
         <nav class="filters">
-            <a class="button blue" href="/admin/tickets">Todos</a>
+            <a class="button blue"
+               href="/admin/tickets">Todos</a>
+
             <a class="button yellow"
                href="/admin/tickets?filter=open">Abertos</a>
+
             <a class="button green"
                href="/admin/tickets?filter=closed">Fechados</a>
         </nav>
 
         {html_cards}
         """
-    )
+
+    # ==========================================
+    # HTML FINAL
+    # ==========================================
 
     return f"""
     <!DOCTYPE html>
     <html lang="pt">
     <head>
         <meta charset="UTF-8">
+
         <meta name="viewport"
               content="width=device-width, initial-scale=1">
+
         <title>Administração AeronAI</title>
 
         <style>
-            * {{ box-sizing: border-box; }}
+            * {{
+                box-sizing: border-box;
+            }}
 
             body {{
                 margin: 0;
@@ -7262,9 +7308,12 @@ def admin_tickets():
                 margin: auto;
             }}
 
-            h1 {{ text-align: center; }}
+            h1 {{
+                text-align: center;
+            }}
 
-            .tabs, .filters {{
+            .tabs,
+            .filters {{
                 display: flex;
                 flex-wrap: wrap;
                 gap: 10px;
@@ -7282,7 +7331,9 @@ def admin_tickets():
                 border-radius: 10px;
             }}
 
-            .tabs a.active {{ background: #2563eb; }}
+            .tabs a.active {{
+                background: #2563eb;
+            }}
 
             .card {{
                 background: #0b1220;
@@ -7293,18 +7344,28 @@ def admin_tickets():
                 overflow-wrap: anywhere;
             }}
 
-            .card p {{ line-height: 1.5; }}
+            .card p {{
+                line-height: 1.5;
+            }}
 
             .person {{
                 display: flex;
                 align-items: center;
                 gap: 14px;
+                margin-bottom: 12px;
             }}
 
-            .person h3 {{ margin: 0 0 5px; }}
-            .person p {{ margin: 0; color: #cbd5e1; }}
+            .person h3 {{
+                margin: 0 0 5px;
+            }}
 
-            .avatar, .avatar-placeholder {{
+            .person p {{
+                margin: 0;
+                color: #cbd5e1;
+            }}
+
+            .avatar,
+            .avatar-placeholder {{
                 width: 58px;
                 height: 58px;
                 flex-shrink: 0;
@@ -7332,38 +7393,73 @@ def admin_tickets():
                 margin-top: 8px;
             }}
 
-            .blue {{ background: #2563eb; }}
-            .yellow {{ background: #ca8a04; color: #111827; }}
-            .green {{ background: #16a34a; }}
+            .blue {{
+                background: #2563eb;
+            }}
 
-            .empty {{ color: #cbd5e1; padding: 16px 0; }}
+            .yellow {{
+                background: #ca8a04;
+                color: #111827;
+            }}
+
+            .green {{
+                background: #16a34a;
+            }}
+
+            .empty {{
+                color: #cbd5e1;
+                padding: 16px 0;
+            }}
+
+            .notice {{
+                padding: 15px;
+                background: #292313;
+                border: 1px solid #ca8a04;
+                border-radius: 10px;
+                margin: 16px 0;
+                line-height: 1.6;
+            }}
 
             @media (max-width: 500px) {{
-                body {{ padding: 12px; }}
-                .card {{ padding: 12px; }}
+                body {{
+                    padding: 12px;
+                }}
+
+                .card {{
+                    padding: 12px;
+                }}
+
+                .tabs a {{
+                    min-width: 100%;
+                }}
             }}
         </style>
     </head>
 
     <body>
         <div class="container">
+
             <h1>🛡️ Administração AeronAI</h1>
 
             <nav class="tabs">
                 <a class="{tickets_ativo}"
-                   href="/admin/tickets">🎫 Tickets de suporte</a>
+                   href="/admin/tickets">
+                    🎫 Tickets de suporte
+                </a>
 
                 <a class="{denuncias_ativo}"
                    href="/admin/tickets?section=reports">
-                   🛡️ Denúncias
+                    🛡️ Denúncias
                 </a>
             </nav>
 
             {conteudo}
+
         </div>
     </body>
     </html>
     """
+
     
 @app.route("/admin/ticket/<int:ticket_id>")
 def open_ticket(ticket_id):
