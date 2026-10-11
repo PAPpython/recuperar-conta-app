@@ -2882,38 +2882,42 @@ def criar_post():
                 )
             )
 
+        
         # --------------------------------------
-        # RECOMPENSA DA PRIMEIRA PUBLICAÇÃO DO DIA
+        # RECOMPENSA E MISSÃO DA PUBLICAÇÃO
         # --------------------------------------
         agora = datetime.utcnow()
         hoje = agora.date()
 
         ultima_recompensa = user.ultima_recompensa_post
 
-        if ultima_recompensa is not None:
-
-            # Compatível com datetime e date
-            if isinstance(ultima_recompensa, datetime):
-                ultimo_dia = ultima_recompensa.date()
-            else:
-                ultimo_dia = ultima_recompensa
-
+        if isinstance(ultima_recompensa, datetime):
+            ultimo_dia = ultima_recompensa.date()
+        elif ultima_recompensa is not None:
+            ultimo_dia = ultima_recompensa
         else:
             ultimo_dia = None
 
         recompensa_atribuida = False
 
+        # Obter a missão do dia
+        missao = obter_missoes_diarias(user.id)
+
+        if missao is None:
+            raise RuntimeError(
+                "Não foi possível obter a missão diária."
+            )
+
+        # Marcar a missão de publicação como concluída
+        missao.primeiro_post = True
+
+        # Atribuir 500 moedas apenas uma vez por dia
         if ultimo_dia != hoje:
-
             user.moedas = (user.moedas or 0) + 500
-
             user.ultima_recompensa_post = agora
-
             recompensa_atribuida = True
 
-        # --------------------------------------
-        # CONFIRMAR TODAS AS ALTERAÇÕES
-        # --------------------------------------
+        # Guardar a publicação, a missão e as moedas
         db.session.commit()
 
     except Exception:
