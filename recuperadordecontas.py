@@ -1312,6 +1312,57 @@ class Message(db.Model):
     data = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class DailyMission(db.Model):
+    __tablename__ = "daily_missions"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+
+    data = db.Column(
+        db.Date,
+        nullable=False
+    )
+
+    primeiro_post = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
+    compartilhar_5 = db.Column(
+        db.Integer,
+        nullable=False,
+        default=0
+    )
+
+    seguiu_alguem = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
+    ganhou_seguidor = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "user_id",
+            "data",
+            name="uq_daily_mission_user_date"
+        ),
+    )
+
+
+
 # ==========================================
 # PUBLICAÇÕES CONTADAS NA MISSÃO DE PARTILHAS
 # ==========================================
