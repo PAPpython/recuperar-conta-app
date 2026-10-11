@@ -25,6 +25,7 @@ import hashlib
 import hmac
 import base64
 from collections import OrderedDict
+from markupsafe import escape
 
 
 # ================= APP =================
