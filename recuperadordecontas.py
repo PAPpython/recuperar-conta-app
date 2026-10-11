@@ -18,7 +18,8 @@ import base64
 import json
 import uuid
 from flask import session
-import secrets
+import secretsfrom collections import OrderedDict
+
 # ================= APP =================
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -68,6 +69,19 @@ ADMIN_ACTIONS = {
 
 }
 
+# ==========================================
+# CACHE E CONTROLO DO SERVIÇO DE TRADUÇÃO
+# ==========================================
+
+TRADUCOES_CACHE = OrderedDict()
+TRADUCOES_CACHE_MAX = 1000
+
+# Evita pedidos simultâneos ao Google Translate
+TRADUCAO_LOCK = threading.Lock()
+
+# Intervalo mínimo entre pedidos ao serviço
+ULTIMO_PEDIDO_TRADUCAO = 0.0
+INTERVALO_MINIMO_TRADUCAO = 0.35
 # ================= SERVIR AVATARES =================
 @app.route('/avatar/<filename>')
 def servir_avatar(filename):
@@ -1449,7 +1463,13 @@ def generate_code(tipo):
 # ==========================================
 # AUXILIARES DAS MISSÕES DIÁRIAS
 # ==========================================
+
+from datetime import datetime
+
+
 def obter_missoes_diarias(user_id, criar=True):
+    """Obtém ou cria as missões do utilizador para hoje."""
+
     hoje = datetime.utcnow().date()
 
     missao = DailyMission.query.filter_by(
@@ -1460,8 +1480,13 @@ def obter_missoes_diarias(user_id, criar=True):
     if missao is None and criar:
         missao = DailyMission(
             user_id=user_id,
-            data=hoje
+            data=hoje,
+            primeiro_post=False,
+            compartilhar_5=0,
+            seguiu_alguem=False,
+            ganhou_seguidor=False
         )
+
         db.session.add(missao)
         db.session.flush()
 
@@ -1469,61 +1494,95 @@ def obter_missoes_diarias(user_id, criar=True):
 
 
 def concluir_primeiro_post(user_id):
+    """Marca a missão do primeiro post como concluída."""
+
+    user = db.session.get(User, user_id)
+
+    if user is None:
+        return False
+
     missao = obter_missoes_diarias(user_id)
 
     if missao is None:
-        return
+        return False
 
-    # A recompensa de 500 moedas já é atribuída
-    # pela rota de publicação existente.
     missao.primeiro_post = True
+
+    # A recompensa de 500 moedas é atribuída
+    # pela rota de publicação existente.
+    return True
 
 
 def registar_partilha(user_id):
+    """Regista uma partilha válida e recompensa ao chegar a 5."""
+
+    user = db.session.get(User, user_id)
+
+    if user is None:
+        return False
+
     missao = obter_missoes_diarias(user_id)
 
     if missao is None:
-        return
+        return False
 
-    # Não contar acima de 5.
-    if missao.compartilhar_5 < 5:
-        missao.compartilhar_5 += 1
+    atual = int(missao.compartilhar_5 or 0)
 
-    # Atribuir recompensa apenas ao atingir 5.
+    # Não contar mais partilhas depois de concluir a missão.
+    if atual >= 5:
+        return False
+
+    missao.compartilhar_5 = atual + 1
+
+    # Atribuir 250 moedas apenas na quinta partilha.
     if missao.compartilhar_5 == 5:
-        user = db.session.get(User, user_id)
+        user.moedas = int(user.moedas or 0) + 250
 
-        if user:
-            user.moedas = (user.moedas or 0) + 250
+    return True
 
 
 def registar_seguimento(user_id):
-    missao = obter_missoes_diarias(user_id)
-
-    if missao is None or missao.seguiu_alguem:
-        return
-
-    missao.seguiu_alguem = True
+    """Recompensa o utilizador por seguir alguém pela primeira vez no dia."""
 
     user = db.session.get(User, user_id)
 
-    if user:
-        user.moedas = (user.moedas or 0) + 250
+    if user is None:
+        return False
+
+    missao = obter_missoes_diarias(user_id)
+
+    if missao is None:
+        return False
+
+    if missao.seguiu_alguem:
+        return False
+
+    missao.seguiu_alguem = True
+    user.moedas = int(user.moedas or 0) + 250
+
+    return True
 
 
 def registar_novo_seguidor(user_id):
-    missao = obter_missoes_diarias(user_id)
-
-    if missao is None or missao.ganhou_seguidor:
-        return
-
-    missao.ganhou_seguidor = True
+    """Recompensa o utilizador por ganhar um seguidor no dia."""
 
     user = db.session.get(User, user_id)
 
-    if user:
-        user.moedas = (user.moedas or 0) + 1000
+    if user is None:
+        return False
 
+    missao = obter_missoes_diarias(user_id)
+
+    if missao is None:
+        return False
+
+    if missao.ganhou_seguidor:
+        return False
+
+    missao.ganhou_seguidor = True
+    user.moedas = int(user.moedas or 0) + 1000
+
+    return True
 
 def validate_code(token, tipo_esperado):
     if (
@@ -11155,6 +11214,7 @@ def listar_seguidos_para_mencoes(user_id):
     return jsonify(resultado)
 
 
+
 # ==========================================
 # TRADUZIR TEXTO DE UMA PUBLICAÇÃO
 # ==========================================
@@ -11162,6 +11222,9 @@ def listar_seguidos_para_mencoes(user_id):
 def traduzir_post():
 
     from deep_translator import GoogleTranslator
+    from deep_translator.exceptions import TooManyRequests
+
+    global ULTIMO_PEDIDO_TRADUCAO
 
     dados = request.get_json(silent=True) or {}
 
@@ -11169,71 +11232,201 @@ def traduzir_post():
     idioma = dados.get("idioma_destino", "")
     user_id = dados.get("user_id")
 
+    # ------------------------------------------
+    # VALIDAR TEXTO
+    # ------------------------------------------
     if not isinstance(texto, str) or not texto.strip():
-        return jsonify(error="Texto vazio"), 400
+        return jsonify(
+            error="Texto vazio"
+        ), 400
+
+    texto_original = texto
+    texto = texto.strip()
 
     if len(texto) > 5000:
-        return jsonify(error="Texto demasiado longo"), 400
+        return jsonify(
+            error="Texto demasiado longo"
+        ), 400
 
+    # ------------------------------------------
+    # VALIDAR IDIOMA
+    # ------------------------------------------
     idiomas_permitidos = {
         "pt", "en", "es", "fr", "de", "it",
         "nl", "pl", "ru", "ja", "ko", "zh-CN",
         "ar", "tr", "uk", "ro", "sv", "da"
     }
 
-    if idioma not in idiomas_permitidos:
-        return jsonify(error="Idioma de destino inválido"), 400
+    if not isinstance(idioma, str) or idioma not in idiomas_permitidos:
+        return jsonify(
+            error="Idioma de destino inválido"
+        ), 400
 
+    # ------------------------------------------
+    # VALIDAR UTILIZADOR, SE FOR INDICADO
+    # ------------------------------------------
     if user_id is not None:
+
+        try:
+            user_id = int(user_id)
+        except (ValueError, TypeError, OverflowError):
+            return jsonify(
+                error="Identificador de utilizador inválido"
+            ), 400
+
         user = db.session.get(User, user_id)
 
         if not user:
-            return jsonify(error="Utilizador não encontrado"), 404
+            return jsonify(
+                error="Utilizador não encontrado"
+            ), 404
 
-    try:
-        traducao = GoogleTranslator(
-            source="auto",
-            target=idioma
-        ).translate(texto.strip())
+    # ------------------------------------------
+    # VERIFICAR CACHE
+    # ------------------------------------------
+    chave_cache = (texto, idioma)
 
-        if not traducao:
-            return jsonify(error="Não foi possível traduzir o texto"), 502
+    with TRADUCAO_LOCK:
 
+        traducao_guardada = TRADUCOES_CACHE.get(
+            chave_cache
+        )
+
+        if traducao_guardada is not None:
+
+            # Atualizar a posição da entrada na cache
+            TRADUCOES_CACHE.move_to_end(chave_cache)
+
+            return jsonify({
+                "status": "ok",
+                "texto_original": texto_original,
+                "texto_traduzido": traducao_guardada,
+                "idioma_destino": idioma,
+                "cache": True
+            }), 200
+
+        # --------------------------------------
+        # LIMITAR FREQUÊNCIA DOS PEDIDOS
+        # --------------------------------------
+        agora = time.monotonic()
+
+        espera = (
+            INTERVALO_MINIMO_TRADUCAO
+            - (agora - ULTIMO_PEDIDO_TRADUCAO)
+        )
+
+        if espera > 0:
+            time.sleep(espera)
+
+        # --------------------------------------
+        # TRADUZIR COM NOVAS TENTATIVAS
+        # --------------------------------------
+        traducao = None
+        ultimo_erro = None
+
+        for tentativa in range(3):
+
+            try:
+                traducao = GoogleTranslator(
+                    source="auto",
+                    target=idioma
+                ).translate(texto)
+
+                ULTIMO_PEDIDO_TRADUCAO = time.monotonic()
+
+                if not traducao or not isinstance(traducao, str):
+                    return jsonify(
+                        error="Não foi possível traduzir o texto"
+                    ), 502
+
+                break
+
+            except TooManyRequests as erro:
+
+                ultimo_erro = erro
+                ULTIMO_PEDIDO_TRADUCAO = time.monotonic()
+
+                # Esperar 1 segundo e depois 2 segundos
+                if tentativa < 2:
+                    time.sleep(2 ** tentativa)
+
+            except Exception:
+                app.logger.exception(
+                    "Erro ao traduzir publicação"
+                )
+
+                return jsonify(
+                    error=(
+                        "O serviço de tradução está "
+                        "temporariamente indisponível"
+                    )
+                ), 502
+
+        # --------------------------------------
+        # LIMITE DO SERVIÇO ATINGIDO
+        # --------------------------------------
+        if traducao is None:
+
+            app.logger.warning(
+                "Limite de pedidos de tradução atingido: %s",
+                type(ultimo_erro).__name__
+                if ultimo_erro else "erro desconhecido"
+            )
+
+            return jsonify(
+                error=(
+                    "O serviço de tradução está temporariamente "
+                    "ocupado. Tenta novamente dentro de alguns segundos."
+                ),
+                retry=True
+            ), 429
+
+        # --------------------------------------
+        # GUARDAR TRADUÇÃO NA CACHE
+        # --------------------------------------
+        TRADUCOES_CACHE[chave_cache] = traducao
+        TRADUCOES_CACHE.move_to_end(chave_cache)
+
+        while len(TRADUCOES_CACHE) > TRADUCOES_CACHE_MAX:
+            TRADUCOES_CACHE.popitem(last=False)
+
+        # --------------------------------------
+        # RESPOSTA
+        # --------------------------------------
         return jsonify({
             "status": "ok",
-            "texto_original": texto,
+            "texto_original": texto_original,
             "texto_traduzido": traducao,
-            "idioma_destino": idioma
-        })
-
-    except Exception:
-        app.logger.exception("Erro ao traduzir publicação")
-        return jsonify(
-            error="O serviço de tradução está temporariamente indisponível"
-        ), 502
-
+            "idioma_destino": idioma,
+            "cache": False
+        }), 200
 
 
 # ==========================================
 # CONSULTAR MISSÕES DIÁRIAS
 # ==========================================
+
 @app.route("/users/<int:user_id>/missoes-diarias", methods=["GET"])
 def consultar_missoes_diarias(user_id):
     try:
         user = db.session.get(User, user_id)
 
-        if not user:
+        if user is None:
             return jsonify(error="Utilizador não encontrado"), 404
 
         missao = obter_missoes_diarias(user_id)
 
         if missao is None:
             db.session.rollback()
-            return jsonify(error="Não foi possível carregar as missões"), 500
+            return jsonify(
+                error="Não foi possível carregar as missões"
+            ), 500
+
+        partilhas = int(missao.compartilhar_5 or 0)
 
         concluidas = sum([
             bool(missao.primeiro_post),
-            int(missao.compartilhar_5 or 0) >= 5,
+            partilhas >= 5,
             bool(missao.seguiu_alguem),
             bool(missao.ganhou_seguidor)
         ])
@@ -11241,7 +11434,7 @@ def consultar_missoes_diarias(user_id):
         resposta = {
             "data": missao.data.isoformat(),
             "primeiro_post": bool(missao.primeiro_post),
-            "compartilhar_5": int(missao.compartilhar_5 or 0),
+            "compartilhar_5": partilhas,
             "seguiu_alguem": bool(missao.seguiu_alguem),
             "ganhou_seguidor": bool(missao.ganhou_seguidor),
             "concluidas": concluidas,
@@ -11251,13 +11444,19 @@ def consultar_missoes_diarias(user_id):
         }
 
         db.session.commit()
+
         return jsonify(resposta), 200
 
     except Exception:
         db.session.rollback()
-        app.logger.exception("Erro ao consultar missões diárias")
-        return jsonify(error="Erro ao consultar missões diárias"), 500
 
+        app.logger.exception(
+            "Erro ao consultar missões diárias"
+        )
+
+        return jsonify(
+            error="Erro ao consultar missões diárias"
+        ), 500
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
