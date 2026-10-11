@@ -6986,6 +6986,8 @@ def edit_user(user_id):
 @app.route("/admin/tickets")
 def admin_tickets():
 
+    from markupsafe import escape
+
     admin_id = session.get("admin_ticket_id")
 
     if admin_id is None:
@@ -6996,10 +6998,47 @@ def admin_tickets():
 
     filter_type = request.args.get("filter", "all")
     section = request.args.get("section", "tickets")
+    pesquisa = request.args.get("q", "").strip()
+    estado_filtro = request.args.get("status", "all").strip().lower()
 
-    # ==========================================
+    def safe(value, fallback="Não disponível"):
+        if value is None or str(value).strip() == "":
+            return escape(fallback)
+        return escape(str(value))
+
+    def formatar_data(data):
+        if not data:
+            return "Não disponível"
+        try:
+            return escape(data.strftime("%d/%m/%Y às %H:%M"))
+        except Exception:
+            return escape(str(data))
+
+    def badge_estado(estado):
+        estado = str(estado or "pendente")
+        normalizado = estado.lower()
+
+        if normalizado in (
+            "resolved", "resolvido", "resolvida",
+            "closed", "fechado", "fechada"
+        ):
+            classe = "resolved"
+            texto = "RESOLVIDA"
+        elif normalizado in ("pending", "pendente", "open", "aberta"):
+            classe = "pending"
+            texto = "PENDENTE"
+        else:
+            classe = "review"
+            texto = estado.upper()
+
+        return (
+            f'<span class="badge {classe}">'
+            f'{escape(texto)}</span>'
+        )
+
+    # ==================================================
     # TICKETS DE SUPORTE
-    # ==========================================
+    # ==================================================
 
     if filter_type == "open":
         tickets = Ticket.query.filter_by(
@@ -7021,29 +7060,48 @@ def admin_tickets():
     for t in tickets:
         user = db.session.get(User, t.user_id)
 
-        estado_ticket = str(t.status or "open")
+        username = (
+            getattr(user, "username", None)
+            if user else "Utilizador eliminado"
+        )
 
         html_cards += f"""
-        <div class="card">
-            <p><b>Ticket:</b> #{t.id}</p>
-            <p><b>Assunto:</b> {escape(str(t.title or ""))}</p>
-            <p><b>Utilizador:</b>
-                {escape(str(getattr(user, "username", "?") or "?"))}
-            </p>
-            <p><b>Prioridade:</b> {escape(str(t.priority or ""))}</p>
-            <p><b>Estado:</b> {escape(estado_ticket.upper())}</p>
+        <article class="card">
+            <div class="card-top">
+                <span class="eyebrow">SUPORTE · #{t.id}</span>
+                {badge_estado(t.status)}
+            </div>
 
-            <a class="button yellow"
-               href="/admin/ticket/{t.id}">Abrir ticket</a>
-        </div>
+            <h3>{safe(t.title, "Sem assunto")}</h3>
+
+            <div class="details">
+                <p><span>Utilizador</span>
+                   <strong>@{safe(username)}</strong></p>
+                <p><span>ID do utilizador</span>
+                   <strong>{safe(t.user_id)}</strong></p>
+                <p><span>Prioridade</span>
+                   <strong>{safe(t.priority)}</strong></p>
+            </div>
+
+            <a class="button primary"
+               href="/admin/ticket/{t.id}">
+                Abrir ticket →
+            </a>
+        </article>
         """
 
     if not html_cards:
-        html_cards = '<p class="empty">Não existem tickets.</p>'
+        html_cards = """
+        <div class="empty">
+            <div class="empty-icon">🎫</div>
+            <h3>Sem tickets</h3>
+            <p>Não existem tickets para apresentar.</p>
+        </div>
+        """
 
-    # ==========================================
-    # DENÚNCIAS DE PERFIS, POSTS E COMENTÁRIOS
-    # ==========================================
+    # ==================================================
+    # DENÚNCIAS DE PERFIS, PUBLICAÇÕES E COMENTÁRIOS
+    # ==================================================
 
     reports = Report.query.order_by(
         Report.created_at.desc()
@@ -7054,20 +7112,19 @@ def admin_tickets():
     for r in reports:
 
         denunciante = db.session.get(User, r.reporter_id)
-
         denunciado = (
             db.session.get(User, r.reported_user_id)
             if r.reported_user_id else None
         )
 
         username_denunciante = (
-            getattr(denunciante, "username", "?")
+            getattr(denunciante, "username", None)
             if denunciante else "Utilizador eliminado"
         )
 
         username_denunciado = (
-            getattr(denunciado, "username", "?")
-            if denunciado else "Não disponível"
+            getattr(denunciado, "username", None)
+            if denunciado else "Utilizador eliminado ou não indicado"
         )
 
         apelido = (
@@ -7081,7 +7138,7 @@ def admin_tickets():
         )
 
         avatar_html = (
-            f'<img class="avatar" src="{escape(str(avatar))}" '
+            f'<img class="avatar" src="{safe(avatar)}" '
             f'alt="Avatar" onerror="this.style.display=\'none\'">'
             if avatar else
             '<div class="avatar-placeholder">👤</div>'
@@ -7089,54 +7146,109 @@ def admin_tickets():
 
         estado = str(r.estado or "pendente")
 
+        motivo = r.motivo or "Não indicado"
+        descricao = r.descricao or "Não foi acrescentada descrição."
+
+        pesquisa_texto = " ".join([
+            str(r.id),
+            str(r.reporter_id),
+            str(r.reported_user_id or ""),
+            str(username_denunciante),
+            str(username_denunciado),
+            str(motivo),
+            str(descricao),
+            str(r.post_id or ""),
+            str(r.comment_id or "")
+        ]).casefold()
+
+        if pesquisa and pesquisa.casefold() not in pesquisa_texto:
+            continue
+
+        estado_normalizado = estado.lower()
+
+        resolvida = estado_normalizado in (
+            "resolvido", "resolvida", "resolved",
+            "closed", "fechado", "fechada"
+        )
+
+        if estado_filtro == "pending" and resolvida:
+            continue
+
+        if estado_filtro == "resolved" and not resolvida:
+            continue
+
         resolver_html = ""
 
-        if estado.lower() not in (
-            "resolvido", "resolvida", "closed", "resolved"
-        ):
+        if not resolvida:
             resolver_html = f"""
             <form method="POST"
                   action="/admin/report/{r.id}/resolve"
                   onsubmit="return confirm('Confirmas que analisaste esta denúncia?');">
-                <button class="button green" type="submit">
-                    Marcar como resolvida
+                <button class="button success" type="submit">
+                    ✓ Marcar como resolvida
                 </button>
             </form>
             """
 
         denuncias_html += f"""
-        <div class="card">
+        <article class="card report-card">
+            <div class="card-top">
+                <span class="eyebrow">DENÚNCIA DE CONTEÚDO · #{r.id}</span>
+                {badge_estado(estado)}
+            </div>
+
             <div class="person">
                 {avatar_html}
                 <div>
-                    <h3>@{escape(str(username_denunciado))}</h3>
-                    <p>{escape(str(apelido))}</p>
+                    <span class="muted">Utilizador denunciado</span>
+                    <h3>@{safe(username_denunciado)}</h3>
+                    <p>{safe(apelido, "")}</p>
                 </div>
             </div>
 
-            <p><b>Denúncia:</b> #{r.id}</p>
-            <p><b>Denunciado por:</b>
-                @{escape(str(username_denunciante))}
-            </p>
-            <p><b>Motivo:</b> {escape(str(r.motivo or ""))}</p>
-            <p><b>Descrição:</b>
-                {escape(str(r.descricao or "Sem descrição adicional"))}
-            </p>
-            <p><b>Publicação:</b>
-                {escape(str(r.post_id or "Não indicada"))}
-            </p>
-            <p><b>Comentário:</b>
-                {escape(str(r.comment_id or "Não indicado"))}
-            </p>
-            <p><b>Estado:</b> {escape(estado)}</p>
+            <div class="details">
+                <p><span>ID da denúncia</span>
+                   <strong>#{r.id}</strong></p>
+                <p><span>ID do denunciante</span>
+                   <strong>{safe(r.reporter_id)}</strong></p>
+                <p><span>ID do denunciado</span>
+                   <strong>{safe(r.reported_user_id)}</strong></p>
+                <p><span>ID da publicação</span>
+                   <strong>{safe(r.post_id, "Não indicada")}</strong></p>
+                <p><span>ID do comentário</span>
+                   <strong>{safe(r.comment_id, "Não indicado")}</strong></p>
+                <p><span>Data de criação</span>
+                   <strong>{formatar_data(r.created_at)}</strong></p>
+            </div>
 
-            {resolver_html}
-        </div>
+            <div class="reason-box">
+                <span class="muted">Motivo da denúncia</span>
+                <p>{safe(motivo)}</p>
+            </div>
+
+            <div class="reason-box description-box">
+                <span class="muted">Descrição adicional</span>
+                <p>{safe(descricao)}</p>
+            </div>
+
+            <div class="person-summary">
+                <span class="muted">Denunciado por</span>
+                <strong>@{safe(username_denunciante)}</strong>
+            </div>
+
+            <div class="actions">
+                <a class="button primary"
+                   href="/admin/report/{r.id}">
+                    Analisar denúncia →
+                </a>
+                {resolver_html}
+            </div>
+        </article>
         """
 
-    # ==========================================
+    # ==================================================
     # DENÚNCIAS DE MENSAGENS
-    # ==========================================
+    # ==================================================
 
     message_reports = MessageReport.query.order_by(
         MessageReport.created_at.desc()
@@ -7148,12 +7260,12 @@ def admin_tickets():
         denunciado = db.session.get(User, r.reported_user_id)
 
         username_denunciante = (
-            getattr(denunciante, "username", "?")
+            getattr(denunciante, "username", None)
             if denunciante else "Utilizador eliminado"
         )
 
         username_denunciado = (
-            getattr(denunciado, "username", "?")
+            getattr(denunciado, "username", None)
             if denunciado else "Utilizador eliminado"
         )
 
@@ -7168,7 +7280,7 @@ def admin_tickets():
         )
 
         avatar_html = (
-            f'<img class="avatar" src="{escape(str(avatar))}" '
+            f'<img class="avatar" src="{safe(avatar)}" '
             f'alt="Avatar" onerror="this.style.display=\'none\'">'
             if avatar else
             '<div class="avatar-placeholder">👤</div>'
@@ -7176,65 +7288,103 @@ def admin_tickets():
 
         estado = str(r.status or "pending")
 
+        pesquisa_texto = " ".join([
+            str(r.id),
+            str(r.reporter_id),
+            str(r.reported_user_id),
+            str(username_denunciante),
+            str(username_denunciado),
+            str(r.reason or "")
+        ]).casefold()
+
+        if pesquisa and pesquisa.casefold() not in pesquisa_texto:
+            continue
+
+        estado_normalizado = estado.lower()
+
+        resolvida = estado_normalizado in (
+            "resolved", "closed", "resolvido", "resolvida",
+            "fechado", "fechada"
+        )
+
+        if estado_filtro == "pending" and resolvida:
+            continue
+
+        if estado_filtro == "resolved" and not resolvida:
+            continue
+
         resolver_html = ""
 
-        if estado.lower() not in (
-            "resolved", "closed", "resolvido", "resolvida"
-        ):
+        if not resolvida:
             resolver_html = f"""
             <form method="POST"
                   action="/admin/message-report/{r.id}/resolve"
                   onsubmit="return confirm('Confirmas que analisaste esta denúncia?');">
-                <button class="button green" type="submit">
-                    Marcar como resolvida
+                <button class="button success" type="submit">
+                    ✓ Marcar como resolvida
                 </button>
             </form>
             """
 
         denuncias_html += f"""
-        <div class="card">
+        <article class="card report-card">
+            <div class="card-top">
+                <span class="eyebrow">DENÚNCIA DE MENSAGEM · #{r.id}</span>
+                {badge_estado(estado)}
+            </div>
+
             <div class="person">
                 {avatar_html}
                 <div>
-                    <h3>@{escape(str(username_denunciado))}</h3>
-                    <p>{escape(str(apelido))}</p>
+                    <span class="muted">Utilizador denunciado</span>
+                    <h3>@{safe(username_denunciado)}</h3>
+                    <p>{safe(apelido, "")}</p>
                 </div>
             </div>
 
-            <p><b>Denúncia de mensagem:</b> #{r.id}</p>
+            <div class="details">
+                <p><span>ID da denúncia</span>
+                   <strong>#{r.id}</strong></p>
+                <p><span>ID do denunciante</span>
+                   <strong>{safe(r.reporter_id)}</strong></p>
+                <p><span>ID do denunciado</span>
+                   <strong>{safe(r.reported_user_id)}</strong></p>
+                <p><span>Data de criação</span>
+                   <strong>{formatar_data(r.created_at)}</strong></p>
+            </div>
 
-            <p><b>Denunciado por:</b>
-                @{escape(str(username_denunciante))}
-            </p>
+            <div class="reason-box">
+                <span class="muted">Motivo indicado pelo utilizador</span>
+                <p>{safe(r.reason, "Não foi indicado um motivo.")}</p>
+            </div>
 
-            <p><b>Motivo:</b> {escape(str(r.reason or ""))}</p>
+            <div class="person-summary">
+                <span class="muted">Denunciante</span>
+                <strong>@{safe(username_denunciante)}</strong>
+            </div>
 
-            <p><b>Data:</b>
-                {escape(
-                    r.created_at.strftime("%d/%m/%Y %H:%M")
-                    if r.created_at else "Não disponível"
-                )}
-            </p>
-
-            <p><b>Estado:</b> {escape(estado)}</p>
-
-            <a class="button blue"
-               href="/admin/message-report/{r.id}">
-                Analisar denúncia
-            </a>
-
-            {resolver_html}
-        </div>
+            <div class="actions">
+                <a class="button primary"
+                   href="/admin/message-report/{r.id}">
+                    Analisar denúncia →
+                </a>
+                {resolver_html}
+            </div>
+        </article>
         """
 
     if not denuncias_html:
-        denuncias_html = (
-            '<p class="empty">Não existem denúncias registadas.</p>'
-        )
+        denuncias_html = """
+        <div class="empty">
+            <div class="empty-icon">🛡️</div>
+            <h3>Não foram encontradas denúncias</h3>
+            <p>Experimenta alterar a pesquisa ou o filtro de estado.</p>
+        </div>
+        """
 
-    # ==========================================
-    # INTERFACE
-    # ==========================================
+    # ==================================================
+    # NAVEGAÇÃO E FILTROS
+    # ==================================================
 
     tickets_ativo = "active" if section != "reports" else ""
     denuncias_ativo = "active" if section == "reports" else ""
@@ -7242,16 +7392,40 @@ def admin_tickets():
     if section == "reports":
 
         conteudo = f"""
-        <h2>🛡️ Denúncias de utilizadores</h2>
+        <header class="page-heading">
+            <span class="eyebrow">CENTRO DE MODERAÇÃO</span>
+            <h2>🛡️ Gestão de denúncias</h2>
+            <p>Consulta os detalhes, verifica os IDs e decide
+               manualmente as medidas adequadas.</p>
+        </header>
 
         <div class="notice">
-            <b>Área de moderação</b>
-            <p>
-                Analisa cada denúncia e decide manualmente se é
-                necessária alguma medida de acordo com as regras
-                do AeronAI. O simples registo ou resolução de uma
-                denúncia não aplica automaticamente castigos.
-            </p>
+            <strong>Área de decisão administrativa</strong>
+            <p>Analisa as informações antes de tomar qualquer medida.
+               Marcar uma denúncia como resolvida não aplica
+               automaticamente castigos ao utilizador denunciado.</p>
+        </div>
+
+        <form class="search-form" method="GET" action="/admin/tickets">
+            <input type="hidden" name="section" value="reports">
+
+            <input type="search"
+                   name="q"
+                   value="{safe(pesquisa, '')}"
+                   placeholder="Pesquisar por ID, utilizador ou motivo...">
+
+            <select name="status">
+                <option value="all" {"selected" if estado_filtro == "all" else ""}>Todos os estados</option>
+                <option value="pending" {"selected" if estado_filtro == "pending" else ""}>Pendentes</option>
+                <option value="resolved" {"selected" if estado_filtro == "resolved" else ""}>Resolvidas</option>
+            </select>
+
+            <button class="button primary" type="submit">Pesquisar</button>
+        </form>
+
+        <div class="section-label">
+            <span>Registos de denúncias</span>
+            <span class="muted">Perfis, publicações, comentários e mensagens</span>
         </div>
 
         {denuncias_html}
@@ -7260,187 +7434,478 @@ def admin_tickets():
     else:
 
         conteudo = f"""
-        <h2>🎫 Tickets de suporte</h2>
+        <header class="page-heading">
+            <span class="eyebrow">CENTRO DE APOIO</span>
+            <h2>🎫 Tickets de suporte</h2>
+            <p>Consulta e acompanha os pedidos de assistência.</p>
+        </header>
 
         <nav class="filters">
-            <a class="button blue"
+            <a class="button primary"
                href="/admin/tickets">Todos</a>
-
-            <a class="button yellow"
+            <a class="button warning"
                href="/admin/tickets?filter=open">Abertos</a>
-
-            <a class="button green"
+            <a class="button success"
                href="/admin/tickets?filter=closed">Fechados</a>
         </nav>
 
         {html_cards}
         """
 
-    # ==========================================
-    # HTML FINAL
-    # ==========================================
+    # ==================================================
+    # INTERFACE PROFISSIONAL
+    # ==================================================
 
     return f"""
     <!DOCTYPE html>
     <html lang="pt">
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="color-scheme" content="dark">
 
-        <meta name="viewport"
-              content="width=device-width, initial-scale=1">
-
-        <title>Administração AeronAI</title>
+        <title>AeronAI | Administração</title>
 
         <style>
             * {{
                 box-sizing: border-box;
             }}
 
+            :root {{
+                color-scheme: dark;
+                --bg: #080d18;
+                --panel: #111a2b;
+                --panel-soft: #0c1423;
+                --border: #26354d;
+                --text: #edf3ff;
+                --muted: #96a8c2;
+                --blue: #4f8cff;
+                --green: #22c55e;
+            }}
+
             body {{
                 margin: 0;
-                padding: 20px;
-                font-family: Arial, sans-serif;
-                background: #0f172a;
-                color: #f8fafc;
+                padding: 28px 18px 50px;
+                background:
+                    radial-gradient(ellipse at top, #14233d 0%, var(--bg) 58%);
+                color: var(--text);
+                font-family: Inter, "Segoe UI", Arial, sans-serif;
+                line-height: 1.55;
             }}
 
             .container {{
-                max-width: 900px;
-                margin: auto;
+                width: 100%;
+                max-width: 1040px;
+                margin: 0 auto;
             }}
 
-            h1 {{
-                text-align: center;
-            }}
-
-            .tabs,
-            .filters {{
+            .brand {{
                 display: flex;
-                flex-wrap: wrap;
-                gap: 10px;
-                margin: 20px 0;
+                align-items: center;
+                gap: 12px;
+                padding-bottom: 22px;
+                border-bottom: 1px solid var(--border);
+            }}
+
+            .brand-icon {{
+                width: 46px;
+                height: 46px;
+                display: grid;
+                place-items: center;
+                border-radius: 14px;
+                background: #1e3a66;
+                font-size: 23px;
+            }}
+
+            .brand h1 {{
+                margin: 0;
+                font-size: 21px;
+                letter-spacing: -.4px;
+            }}
+
+            .brand p {{
+                margin: 3px 0 0;
+                color: var(--muted);
+                font-size: 13px;
+            }}
+
+            .tabs {{
+                display: flex;
+                gap: 8px;
+                margin: 22px 0 30px;
+                padding: 6px;
+                background: #0b1322;
+                border: 1px solid var(--border);
+                border-radius: 13px;
             }}
 
             .tabs a {{
                 flex: 1;
                 text-align: center;
-                min-width: 150px;
-                padding: 13px;
-                background: #1e293b;
-                color: white;
+                padding: 12px 10px;
+                border-radius: 9px;
+                color: #aebed5;
                 text-decoration: none;
-                border-radius: 10px;
+                font-weight: 650;
+                font-size: 14px;
+                transition: background .15s ease;
+            }}
+
+            .tabs a:hover {{
+                background: #19263c;
+                color: white;
             }}
 
             .tabs a.active {{
-                background: #2563eb;
+                color: white;
+                background: #2457a8;
+            }}
+
+            .page-heading {{
+                margin-bottom: 22px;
+            }}
+
+            .eyebrow {{
+                color: #7daeff;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 1.4px;
+            }}
+
+            h2 {{
+                margin: 6px 0;
+                font-size: clamp(23px, 4vw, 30px);
+                letter-spacing: -.6px;
+            }}
+
+            .page-heading p {{
+                color: var(--muted);
+                margin: 7px 0;
+            }}
+
+            .notice {{
+                padding: 17px 19px;
+                margin: 20px 0 24px;
+                background: #172238;
+                border: 1px solid #314a70;
+                border-left: 4px solid var(--blue);
+                border-radius: 12px;
+            }}
+
+            .notice strong {{
+                color: #d8e7ff;
+            }}
+
+            .notice p {{
+                color: #bdcbe0;
+                margin: 6px 0 0;
+                font-size: 14px;
+            }}
+
+            .search-form {{
+                display: flex;
+                gap: 9px;
+                margin: 22px 0;
+                flex-wrap: wrap;
+            }}
+
+            .search-form input,
+            .search-form select {{
+                min-width: 0;
+                flex: 1 1 220px;
+                padding: 12px 13px;
+                color: var(--text);
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-radius: 9px;
+                outline: none;
+                font-size: 14px;
+            }}
+
+            .search-form input:focus,
+            .search-form select:focus {{
+                border-color: var(--blue);
+            }}
+
+            .section-label {{
+                display: flex;
+                justify-content: space-between;
+                gap: 12px;
+                flex-wrap: wrap;
+                margin: 27px 0 14px;
+                font-size: 13px;
+                font-weight: 700;
+            }}
+
+            .muted {{
+                color: var(--muted);
+                font-size: 12px;
             }}
 
             .card {{
-                background: #0b1220;
-                padding: 16px;
-                border-radius: 12px;
-                margin-bottom: 14px;
-                border: 1px solid #334155;
+                padding: 21px;
+                margin: 0 0 15px;
+                background: linear-gradient(145deg, #121d30, #0d1626);
+                border: 1px solid var(--border);
+                border-radius: 15px;
+                box-shadow: 0 8px 24px #00000012;
                 overflow-wrap: anywhere;
             }}
 
-            .card p {{
-                line-height: 1.5;
+            .card-top {{
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-bottom: 17px;
+            }}
+
+            .badge {{
+                display: inline-flex;
+                align-items: center;
+                padding: 5px 9px;
+                border-radius: 7px;
+                font-size: 10px;
+                font-weight: 850;
+                letter-spacing: .7px;
+            }}
+
+            .badge.pending {{
+                color: #ffdf93;
+                background: #4a3514;
+                border: 1px solid #73531c;
+            }}
+
+            .badge.resolved {{
+                color: #9af2b6;
+                background: #123b2a;
+                border: 1px solid #216443;
+            }}
+
+            .badge.review {{
+                color: #c6d9ff;
+                background: #20385f;
+                border: 1px solid #36588d;
             }}
 
             .person {{
                 display: flex;
                 align-items: center;
                 gap: 14px;
-                margin-bottom: 12px;
-            }}
-
-            .person h3 {{
-                margin: 0 0 5px;
-            }}
-
-            .person p {{
-                margin: 0;
-                color: #cbd5e1;
+                padding: 0 0 18px;
+                border-bottom: 1px solid var(--border);
             }}
 
             .avatar,
             .avatar-placeholder {{
-                width: 58px;
-                height: 58px;
+                width: 60px;
+                height: 60px;
                 flex-shrink: 0;
-                border-radius: 50%;
+                border-radius: 15px;
                 object-fit: cover;
-                background: #334155;
+                background: #263750;
             }}
 
             .avatar-placeholder {{
+                display: grid;
+                place-items: center;
+                font-size: 25px;
+            }}
+
+            .person h3 {{
+                margin: 3px 0;
+                font-size: 17px;
+                overflow-wrap: anywhere;
+            }}
+
+            .person p {{
+                margin: 0;
+                color: var(--muted);
+                font-size: 13px;
+            }}
+
+            .details {{
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+                margin: 17px 0;
+            }}
+
+            .details p {{
                 display: flex;
+                flex-direction: column;
+                gap: 4px;
+                min-width: 0;
+                margin: 0;
+                padding: 11px 12px;
+                background: #0a1220;
+                border: 1px solid #202e44;
+                border-radius: 9px;
+            }}
+
+            .details p span {{
+                color: var(--muted);
+                font-size: 11px;
+            }}
+
+            .details p strong {{
+                font-size: 13px;
+                font-weight: 650;
+                overflow-wrap: anywhere;
+            }}
+
+            .reason-box {{
+                margin-top: 12px;
+                padding: 14px;
+                background: #0a1425;
+                border: 1px solid #263954;
+                border-radius: 10px;
+            }}
+
+            .reason-box p {{
+                margin: 7px 0 0;
+                white-space: pre-wrap;
+                overflow-wrap: anywhere;
+                font-size: 14px;
+            }}
+
+            .description-box {{
+                background: #101a2a;
+            }}
+
+            .person-summary {{
+                display: flex;
+                justify-content: space-between;
                 align-items: center;
-                justify-content: center;
-                font-size: 26px;
+                gap: 10px;
+                flex-wrap: wrap;
+                margin-top: 15px;
+                padding-top: 14px;
+                border-top: 1px solid var(--border);
+            }}
+
+            .person-summary strong {{
+                font-size: 13px;
+            }}
+
+            .actions,
+            .filters {{
+                display: flex;
+                gap: 9px;
+                flex-wrap: wrap;
+                align-items: center;
+                margin-top: 18px;
+            }}
+
+            .actions form {{
+                margin: 0;
             }}
 
             .button {{
-                display: inline-block;
-                border: none;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                min-height: 39px;
                 padding: 10px 14px;
-                border-radius: 8px;
-                color: white;
+                border: 1px solid transparent;
+                border-radius: 9px;
+                color: #fff;
                 text-decoration: none;
+                font-family: inherit;
+                font-size: 13px;
+                font-weight: 750;
                 cursor: pointer;
-                font-size: 14px;
-                margin-top: 8px;
+                transition: filter .15s ease, transform .15s ease;
             }}
 
-            .blue {{
-                background: #2563eb;
+            .button:hover {{
+                filter: brightness(1.13);
+                transform: translateY(-1px);
             }}
 
-            .yellow {{
-                background: #ca8a04;
-                color: #111827;
+            .primary {{
+                background: #245cc1;
             }}
 
-            .green {{
-                background: #16a34a;
+            .success {{
+                background: #147d4a;
+            }}
+
+            .warning {{
+                background: #b77912;
+                color: #fff;
             }}
 
             .empty {{
-                color: #cbd5e1;
-                padding: 16px 0;
+                padding: 42px 18px;
+                text-align: center;
+                background: var(--panel);
+                border: 1px dashed #34465f;
+                border-radius: 14px;
             }}
 
-            .notice {{
-                padding: 15px;
-                background: #292313;
-                border: 1px solid #ca8a04;
-                border-radius: 10px;
-                margin: 16px 0;
-                line-height: 1.6;
+            .empty-icon {{
+                font-size: 34px;
             }}
 
-            @media (max-width: 500px) {{
+            .empty h3 {{
+                margin: 10px 0 5px;
+            }}
+
+            .empty p {{
+                color: var(--muted);
+                margin: 0;
+                font-size: 13px;
+            }}
+
+            @media (max-width: 600px) {{
                 body {{
-                    padding: 12px;
+                    padding: 16px 11px 35px;
                 }}
 
-                .card {{
-                    padding: 12px;
+                .tabs {{
+                    gap: 4px;
                 }}
 
                 .tabs a {{
-                    min-width: 100%;
+                    padding: 11px 5px;
+                    font-size: 12px;
+                }}
+
+                .card {{
+                    padding: 15px;
+                    border-radius: 12px;
+                }}
+
+                .details {{
+                    grid-template-columns: minmax(0, 1fr);
+                }}
+
+                .actions,
+                .actions form,
+                .actions .button {{
+                    width: 100%;
+                }}
+
+                .search-form .button {{
+                    width: 100%;
                 }}
             }}
         </style>
     </head>
 
     <body>
-        <div class="container">
+        <main class="container">
 
-            <h1>🛡️ Administração AeronAI</h1>
+            <header class="brand">
+                <div class="brand-icon">🛡️</div>
+                <div>
+                    <h1>AeronAI</h1>
+                    <p>Painel de administração e moderação</p>
+                </div>
+            </header>
 
             <nav class="tabs">
                 <a class="{tickets_ativo}"
@@ -7456,12 +7921,11 @@ def admin_tickets():
 
             {conteudo}
 
-        </div>
+        </main>
     </body>
     </html>
     """
 
-    
 @app.route("/admin/ticket/<int:ticket_id>")
 def open_ticket(ticket_id):
 
