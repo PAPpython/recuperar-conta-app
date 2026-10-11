@@ -6980,121 +6980,388 @@ def edit_user(user_id):
 </html>
 """
 
+
 @app.route("/admin/tickets")
 def admin_tickets():
 
-    print("======================================")
-    print("ENTROU EM /admin/tickets")
-    print("SESSION:", dict(session))
-
     admin_id = session.get("admin_ticket_id")
 
-    print("ADMIN_ID:", admin_id)
-
     if admin_id is None:
-        print("ADMIN_ID É NONE")
         return redirect("/admin/tickets/login")
 
-    user = User.query.get(admin_id)
-
-    print("USER:", user)
-
-    if user:
-        print("ROLE:", user.role)
-    else:
-        print("UTILIZADOR NÃO ENCONTRADO")
-
     if not is_admin(admin_id):
-        print("SEM PERMISSÃO")
         return jsonify(error="Sem permissão"), 403
 
-    print("LOGIN ADMIN OK")
-
     filter_type = request.args.get("filter", "all")
+    section = request.args.get("section", "tickets")
+
+    # ==========================================
+    # TICKETS DE SUPORTE
+    # ==========================================
 
     if filter_type == "open":
         tickets = Ticket.query.filter_by(
             status="open"
-        ).order_by(
-            Ticket.id.desc()
-        ).all()
+        ).order_by(Ticket.id.desc()).all()
 
     elif filter_type == "closed":
         tickets = Ticket.query.filter_by(
             status="closed"
-        ).order_by(
-            Ticket.id.desc()
-        ).all()
+        ).order_by(Ticket.id.desc()).all()
 
     else:
         tickets = Ticket.query.order_by(
             Ticket.id.desc()
         ).all()
 
-    def card(t, color):
+    html_cards = ""
 
-        user = User.query.get(t.user_id)
+    for t in tickets:
+        user = db.session.get(User, t.user_id)
 
-        return f"""
-        <div style="background:#0b1220;padding:12px;border-radius:12px;margin-bottom:10px;border:1px solid #1f2937;">
-
+        html_cards += f"""
+        <div class="card">
             <p><b>Ticket:</b> #{t.id}</p>
-            <p><b>Assunto:</b> {t.title}</p>
-            <p><b>User:</b> {user.username if user else "?"}</p>
-            <p><b>Prioridade:</b> {t.priority}</p>
-            <p><b>Status:</b> {t.status.upper()}</p>
-
-            <a href="/admin/ticket/{t.id}"
-               style="display:inline-block;margin-top:10px;padding:8px 12px;background:{color};color:white;border-radius:8px;text-decoration:none;">
-               Abrir
-            </a>
-
+            <p><b>Assunto:</b> {escape(t.title or "")}</p>
+            <p><b>Utilizador:</b>
+                {escape(getattr(user, "username", "?") or "?")}
+            </p>
+            <p><b>Prioridade:</b> {escape(t.priority or "")}</p>
+            <p><b>Estado:</b> {escape(t.status.upper())}</p>
+            <a class="button yellow"
+               href="/admin/ticket/{t.id}">Abrir ticket</a>
         </div>
         """
 
-    html_cards = "".join(
-        card(t, "#facc15")
-        for t in tickets
+    if not html_cards:
+        html_cards = '<p class="empty">Não existem tickets.</p>'
+
+    # ==========================================
+    # DENÚNCIAS DE PERFIS, POSTS E COMENTÁRIOS
+    # ==========================================
+
+    reports = Report.query.order_by(
+        Report.created_at.desc()
+    ).all()
+
+    denuncias_html = ""
+
+    for r in reports:
+
+        denunciante = db.session.get(User, r.reporter_id)
+
+        denunciado = (
+            db.session.get(User, r.reported_user_id)
+            if r.reported_user_id else None
+        )
+
+        username_denunciante = (
+            getattr(denunciante, "username", "?")
+            if denunciante else "Utilizador eliminado"
+        )
+
+        username_denunciado = (
+            getattr(denunciado, "username", "?")
+            if denunciado else "Não disponível"
+        )
+
+        apelido = (
+            getattr(denunciado, "apelido", "") or ""
+            if denunciado else ""
+        )
+
+        avatar = (
+            getattr(denunciado, "avatar", None)
+            if denunciado else None
+        )
+
+        avatar_html = (
+            f'<img class="avatar" src="{escape(avatar)}" '
+            f'alt="Avatar" onerror="this.style.display=\'none\'">'
+            if avatar else
+            '<div class="avatar-placeholder">👤</div>'
+        )
+
+        estado = r.estado or "pendente"
+
+        resolver_html = ""
+
+        if estado.lower() not in (
+            "resolvido", "resolvida", "closed", "resolved"
+        ):
+            resolver_html = f"""
+            <form method="POST"
+                  action="/admin/report/{r.id}/resolve">
+                <button class="button green" type="submit">
+                    Marcar como resolvida
+                </button>
+            </form>
+            """
+
+        denuncias_html += f"""
+        <div class="card">
+            <div class="person">
+                {avatar_html}
+                <div>
+                    <h3>@{escape(username_denunciado)}</h3>
+                    <p>{escape(apelido)}</p>
+                </div>
+            </div>
+
+            <p><b>Denúncia:</b> #{r.id}</p>
+            <p><b>Denunciado por:</b>
+                @{escape(username_denunciante)}
+            </p>
+            <p><b>Motivo:</b> {escape(r.motivo or "")}</p>
+            <p><b>Descrição:</b>
+                {escape(r.descricao or "Sem descrição adicional")}
+            </p>
+            <p><b>Publicação:</b>
+                {escape(r.post_id or "Não indicada")}
+            </p>
+            <p><b>Comentário:</b>
+                {escape(str(r.comment_id or "Não indicado"))}
+            </p>
+            <p><b>Estado:</b> {escape(estado)}</p>
+
+            {resolver_html}
+        </div>
+        """
+
+    # ==========================================
+    # DENÚNCIAS DE MENSAGENS
+    # ==========================================
+
+    message_reports = MessageReport.query.order_by(
+        MessageReport.created_at.desc()
+    ).all()
+
+    for r in message_reports:
+
+        denunciante = db.session.get(User, r.reporter_id)
+        denunciado = db.session.get(User, r.reported_user_id)
+
+        username_denunciante = (
+            getattr(denunciante, "username", "?")
+            if denunciante else "Utilizador eliminado"
+        )
+
+        username_denunciado = (
+            getattr(denunciado, "username", "?")
+            if denunciado else "Utilizador eliminado"
+        )
+
+        apelido = (
+            getattr(denunciado, "apelido", "") or ""
+            if denunciado else ""
+        )
+
+        avatar = (
+            getattr(denunciado, "avatar", None)
+            if denunciado else None
+        )
+
+        avatar_html = (
+            f'<img class="avatar" src="{escape(avatar)}" '
+            f'alt="Avatar" onerror="this.style.display=\'none\'">'
+            if avatar else
+            '<div class="avatar-placeholder">👤</div>'
+        )
+
+        estado = r.status or "pending"
+
+        resolver_html = ""
+
+        if estado.lower() not in ("resolved", "closed", "resolvido"):
+            resolver_html = f"""
+            <form method="POST"
+                  action="/admin/message-report/{r.id}/resolve">
+                <button class="button green" type="submit">
+                    Marcar como resolvida
+                </button>
+            </form>
+            """
+
+        denuncias_html += f"""
+        <div class="card">
+            <div class="person">
+                {avatar_html}
+                <div>
+                    <h3>@{escape(username_denunciado)}</h3>
+                    <p>{escape(apelido)}</p>
+                </div>
+            </div>
+
+            <p><b>Denúncia de mensagem:</b> #{r.id}</p>
+            <p><b>Denunciado por:</b>
+                @{escape(username_denunciante)}
+            </p>
+            <p><b>Motivo:</b> {escape(r.reason or "")}</p>
+            <p><b>Estado:</b> {escape(estado)}</p>
+
+            {resolver_html}
+        </div>
+        """
+
+    if not denuncias_html:
+        denuncias_html = (
+            '<p class="empty">Não existem denúncias registadas.</p>'
+        )
+
+    # ==========================================
+    # INTERFACE
+    # ==========================================
+
+    tickets_ativo = "active" if section != "reports" else ""
+    denuncias_ativo = "active" if section == "reports" else ""
+
+    conteudo = (
+        f"""
+        <h2>Denúncias de utilizadores</h2>
+        {denuncias_html}
+        """
+        if section == "reports"
+        else
+        f"""
+        <h2>Tickets de suporte</h2>
+
+        <nav class="filters">
+            <a class="button blue" href="/admin/tickets">Todos</a>
+            <a class="button yellow"
+               href="/admin/tickets?filter=open">Abertos</a>
+            <a class="button green"
+               href="/admin/tickets?filter=closed">Fechados</a>
+        </nav>
+
+        {html_cards}
+        """
     )
 
     return f"""
-    <html>
+    <!DOCTYPE html>
+    <html lang="pt">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport"
+              content="width=device-width, initial-scale=1">
+        <title>Administração AeronAI</title>
 
-    <body style="margin:0;font-family:Arial;background:#0f172a;color:white;">
+        <style>
+            * {{ box-sizing: border-box; }}
 
-        <div style="text-align:center;padding:20px;">
+            body {{
+                margin: 0;
+                padding: 20px;
+                font-family: Arial, sans-serif;
+                background: #0f172a;
+                color: #f8fafc;
+            }}
 
-            <h1>🎫 Sistema de Tickets</h1>
+            .container {{
+                max-width: 900px;
+                margin: auto;
+            }}
 
-            <div>
+            h1 {{ text-align: center; }}
 
-                <a href="/admin/tickets"
-                   style="margin:5px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;">
-                   Todos
+            .tabs, .filters {{
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin: 20px 0;
+            }}
+
+            .tabs a {{
+                flex: 1;
+                text-align: center;
+                min-width: 150px;
+                padding: 13px;
+                background: #1e293b;
+                color: white;
+                text-decoration: none;
+                border-radius: 10px;
+            }}
+
+            .tabs a.active {{ background: #2563eb; }}
+
+            .card {{
+                background: #0b1220;
+                padding: 16px;
+                border-radius: 12px;
+                margin-bottom: 14px;
+                border: 1px solid #334155;
+                overflow-wrap: anywhere;
+            }}
+
+            .card p {{ line-height: 1.5; }}
+
+            .person {{
+                display: flex;
+                align-items: center;
+                gap: 14px;
+            }}
+
+            .person h3 {{ margin: 0 0 5px; }}
+            .person p {{ margin: 0; color: #cbd5e1; }}
+
+            .avatar, .avatar-placeholder {{
+                width: 58px;
+                height: 58px;
+                flex-shrink: 0;
+                border-radius: 50%;
+                object-fit: cover;
+                background: #334155;
+            }}
+
+            .avatar-placeholder {{
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 26px;
+            }}
+
+            .button {{
+                display: inline-block;
+                border: none;
+                padding: 10px 14px;
+                border-radius: 8px;
+                color: white;
+                text-decoration: none;
+                cursor: pointer;
+                font-size: 14px;
+                margin-top: 8px;
+            }}
+
+            .blue {{ background: #2563eb; }}
+            .yellow {{ background: #ca8a04; color: #111827; }}
+            .green {{ background: #16a34a; }}
+
+            .empty {{ color: #cbd5e1; padding: 16px 0; }}
+
+            @media (max-width: 500px) {{
+                body {{ padding: 12px; }}
+                .card {{ padding: 12px; }}
+            }}
+        </style>
+    </head>
+
+    <body>
+        <div class="container">
+            <h1>🛡️ Administração AeronAI</h1>
+
+            <nav class="tabs">
+                <a class="{tickets_ativo}"
+                   href="/admin/tickets">🎫 Tickets de suporte</a>
+
+                <a class="{denuncias_ativo}"
+                   href="/admin/tickets?section=reports">
+                   🛡️ Denúncias
                 </a>
+            </nav>
 
-                <a href="/admin/tickets?filter=open"
-                   style="margin:5px;padding:8px 12px;background:#facc15;color:black;border-radius:8px;">
-                   Abertos
-                </a>
-
-                <a href="/admin/tickets?filter=closed"
-                   style="margin:5px;padding:8px 12px;background:#22c55e;color:black;border-radius:8px;">
-                   Fechados
-                </a>
-
-            </div>
-
+            {conteudo}
         </div>
-
-        <div style="max-width:900px;margin:auto;">
-
-            {html_cards if html_cards else "<p>Sem tickets</p>"}
-
-        </div>
-
     </body>
-
     </html>
     """
     
