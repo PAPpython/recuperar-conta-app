@@ -1,25 +1,31 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory, session, url_for,redirect
+from flask import (
+    Flask,
+    render_template,
+    request,
+    jsonify,
+    send_from_directory,
+    session,
+    url_for,
+    redirect,
+)
 from sqlalchemy import func
-import os
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime, timedelta
-from flask import send_from_directory
 from urllib.parse import urlparse
-from flask import request
 from authlib.integrations.flask_client import OAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
-import uuid
 import os
 import time
+import uuid
+import json
+import secrets
+import threading
 import hashlib
 import hmac
 import base64
-import json
-import uuid
-from flask import session
-import threading
 from collections import OrderedDict
+
 
 # ================= APP =================
 app = Flask(__name__)
