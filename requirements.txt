@@ -9,3 +9,4 @@ Werkzeug==3.0.1
 psycopg2-binary==2.9.9
 Authlib
 Flask-Mail
+deep-translator
