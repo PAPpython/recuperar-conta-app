@@ -3926,50 +3926,87 @@ def listar_comentarios(post_id):
         })
 
     return jsonify(res)
-#================= LISTAR NOTIFICAÇÕES =================
 @app.route("/notifications/<int:user_id>", methods=["GET"])
 def listar_notificacoes(user_id):
-    notifs = Notification.query.filter_by(
-        user_id=user_id
-    ).order_by(Notification.data.desc()).all()
+    notifs = (
+        Notification.query
+        .filter_by(user_id=user_id)
+        .order_by(Notification.data.desc())
+        .limit(100)
+        .all()
+    )
 
-    res = []
+    resultado = []
+
     for n in notifs:
-        origem = User.query.get(n.origem_id)
+        origem = db.session.get(User, n.origem_id) if n.origem_id else None
 
-        # 🔒 IGNORAR NOTIFICAÇÕES DE UTILIZADORES BLOQUEADOS
+        # Não mostrar notificações de utilizadores bloqueados
         if origem and existe_bloqueio(user_id, origem.id):
             continue
 
-        res.append({
+        resultado.append({
             "id": n.id,
             "tipo": n.tipo,
+            "origem_id": n.origem_id,
             "origem": origem.username if origem else None,
+            "nome": origem.nome if origem else None,
+            "avatar": origem.avatar if origem else None,
+            "mensagem": n.mensagem,
             "post_id": n.post_id,
             "comment_id": n.comment_id,
-            "lida": n.lida,
-            "data": n.data.strftime("%d/%m/%Y %H:%M")
+            "lida": bool(n.lida),
+            "data": n.data.strftime("%d/%m/%Y %H:%M") if n.data else None
         })
 
-    return jsonify(res)
+    return jsonify(resultado)
 
-#================= MARCAR NOTIFICAÇÃO COMO LIDA =================
+
+# ================= MARCAR NOTIFICAÇÃO COMO LIDA =================
 @app.route("/notifications/<notif_id>/read", methods=["POST"])
 def marcar_notificacao_lida(notif_id):
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
+
+    if not isinstance(data, dict):
+        return jsonify(error="Pedido inválido"), 400
+
     user_id = data.get("user_id")
 
-    notif = Notification.query.get(notif_id)
+    if user_id is None:
+        return jsonify(error="ID do utilizador em falta"), 400
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify(error="ID do utilizador inválido"), 400
+
+    notif = db.session.get(Notification, notif_id)
+
     if not notif:
         return jsonify(error="Notificação não encontrada"), 404
 
-    # 🔒 Garantir que a notificação pertence ao utilizador
+    # Garantir que a notificação pertence ao utilizador
     if notif.user_id != user_id:
         return jsonify(error="Sem permissão"), 403
 
-    notif.lida = True
-    db.session.commit()
-    return jsonify(status="ok")
+    if not notif.lida:
+        notif.lida = True
+
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception(
+                "Erro ao marcar notificação como lida"
+            )
+            return jsonify(error="Não foi possível atualizar a notificação"), 500
+
+    return jsonify(
+        status="ok",
+        id=notif.id,
+        lida=True
+    ), 200
+
 
 # ================= PERFIL COMPLETO =================
 
