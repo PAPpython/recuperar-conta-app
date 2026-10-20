@@ -9235,29 +9235,62 @@ def pending_follow_count(user_id):
 
     return jsonify(count=count)
 
-@app.route("/follow/pending/<int:user_id>")
+@app.route("/follow/pending/<int:user_id>", methods=["GET"])
 def pending_follow_list(user_id):
+    try:
+        # Confirmar que o utilizador destinatário existe.
+        destinatario = db.session.get(User, user_id)
 
-    requests_list = FollowRequest.query.filter_by(
-        to_user=user_id,
-        status="pending"
-    ).all()
+        if destinatario is None:
+            return jsonify(error="Utilizador não encontrado"), 404
 
-    resultado = []
+        # Obter apenas pedidos recebidos que ainda estão pendentes.
+        pedidos = (
+            FollowRequest.query
+            .filter_by(
+                receiver_id=user_id,
+                status="pending"
+            )
+            .order_by(FollowRequest.created_at.desc())
+            .all()
+        )
 
-    for r in requests_list:
+        resultado = []
 
-        user = User.query.get(r.from_user)
+        for pedido in pedidos:
+            remetente = db.session.get(User, pedido.sender_id)
 
-        resultado.append({
-            "id": r.id,
-            "from_user": r.from_user,
-            "username": user.username if user else "Desconhecido",
-            "avatar": user.avatar if user else None,
-            "bio": user.bio if user else ""
-        })
+            if remetente is None:
+                continue
 
-    return jsonify(resultado)
+            # Não apresentar pedidos de contas bloqueadas.
+            if existe_bloqueio(user_id, remetente.id):
+                continue
+
+            resultado.append({
+                "id": pedido.id,
+                "from_user": remetente.id,
+                "sender_id": remetente.id,
+                "receiver_id": pedido.receiver_id,
+                "username": remetente.username,
+                "nome": getattr(remetente, "nome", None),
+                "avatar": getattr(remetente, "avatar", None),
+                "created_at": (
+                    pedido.created_at.strftime("%d/%m/%Y %H:%M")
+                    if pedido.created_at else None
+                ),
+                "status": pedido.status
+            })
+
+        return jsonify(resultado), 200
+
+    except Exception:
+        app.logger.exception(
+            "Erro ao carregar pedidos de seguimento do utilizador %s",
+            user_id
+        )
+        return jsonify(error="Não foi possível carregar os pedidos"), 500
+
 
 @app.route("/notifications/unread/<int:user_id>")
 def unread_notifications(user_id):
