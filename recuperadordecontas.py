@@ -3147,6 +3147,7 @@ def apagar_post(post_id):
 
     return jsonify(status="ok")
 
+
 # ================= LIKE / DESCURTIR =================
 
 @app.route("/posts/<post_id>/like", methods=["POST"])
@@ -3157,12 +3158,17 @@ def like(post_id):
     if user_id is None:
         return jsonify(error="user_id obrigatório"), 400
 
-    post = Post.query.get(post_id)
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify(error="user_id inválido"), 400
+
+    post = db.session.get(Post, post_id)
 
     if not post:
         return jsonify(error="Post não encontrado"), 404
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
 
     if not user:
         return jsonify(error="Utilizador não encontrado"), 404
@@ -3170,8 +3176,7 @@ def like(post_id):
     if existe_bloqueio(user_id, post.autor_id):
         return jsonify(error="Utilizador bloqueado"), 403
 
-    # Os gostos ficam associados à publicação original,
-    # caso o post apresentado seja uma cópia/republicação.
+    # Os gostos pertencem à publicação original
     real_id = post.original_post_id or post.id
 
     existente = Like.query.filter_by(
@@ -3181,9 +3186,12 @@ def like(post_id):
 
     try:
         if existente:
-            # Retirar gosto
+            # ======================================
+            # RETIRAR GOSTO
+            # ======================================
             db.session.delete(existente)
 
+            # Remover a notificação correspondente
             Notification.query.filter_by(
                 tipo="like",
                 origem_id=user_id,
@@ -3193,23 +3201,28 @@ def like(post_id):
             liked = False
 
         else:
-            # Adicionar gosto
+            # ======================================
+            # ADICIONAR GOSTO
+            # ======================================
             novo_like = Like(
                 id=str(uuid.uuid4()),
                 post_id=real_id,
                 user_id=user_id
             )
+
             db.session.add(novo_like)
 
-            # Notificação apenas quando não é o próprio autor
-            if str(post.autor_id) != str(user_id):
-                db.session.add(Notification(
-                    id=str(uuid.uuid4()),
+            # ======================================
+            # NOTIFICAR O AUTOR
+            # ======================================
+            if int(post.autor_id) != user_id:
+                criar_notificacao(
                     user_id=post.autor_id,
                     tipo="like",
                     origem_id=user_id,
+                    mensagem=f"{user.username} gostou da tua publicação.",
                     post_id=real_id
-                ))
+                )
 
             liked = True
 
@@ -3230,9 +3243,15 @@ def like(post_id):
 
     except Exception:
         db.session.rollback()
-        app.logger.exception("Erro ao processar gosto do post %s", post_id)
 
-        return jsonify(error="Não foi possível atualizar o gosto"), 500
+        app.logger.exception(
+            "Erro ao processar gosto do post %s",
+            post_id
+        )
+
+        return jsonify(
+            error="Não foi possível atualizar o gosto"
+        ), 500
 
 # ================= COMPARTILHAR =================
 @app.route("/posts/<post_id>/share", methods=["POST"])
@@ -3406,192 +3425,33 @@ def inbox(user_id):
 
     return jsonify(res)
     
-# ================= comentário =================
-@app.route("/posts/<post_id>/comment", methods=["POST"])
-def comentar(post_id):
 
-    # ==========================================
-    # JSON OU FORM-DATA
-    # ==========================================
+# ================= CURTIR / DESCURTIR COMENTÁRIO =================
 
-    if request.form:
-        data = request.form
-    else:
-        data = request.get_json(force=True)
-
-    user_id = data.get("user_id")
-
-    texto = (
-        data.get("texto") or ""
-    ).strip()
-
-    parent_id = data.get("parent_id")
-
-    # ==========================================
-    # USER
-    # ==========================================
-
-    autor = User.query.get(user_id)
-
-    if not autor:
-        return jsonify(
-            error="User não encontrado"
-        ), 404
-
-    # ==========================================
-    # 🔒 BLOQUEADO
-    # ==========================================
-
-    if autor.bloqueado:
-        return jsonify(
-            error="Conta bloqueada"
-        ), 403
-
-    # ==========================================
-    # POST
-    # ==========================================
-
-    post = Post.query.get(post_id)
-
-    if not post:
-        return jsonify(
-            error="Post não encontrado"
-        ), 404
-
-    # 🚫 BLOQUEIO COM AUTOR DO POST
-    if existe_bloqueio(
-        user_id,
-        post.autor_id
-    ):
-        return jsonify(
-            error="Não podes comentar neste post"
-        ), 403
-
-    # ==========================================
-    # IMAGEM
-    # ==========================================
-
-    imagem = data.get("imagem")
-
-    if "imagem" in request.files:
-
-        file = request.files["imagem"]
-
-        if file.filename != "":
-
-            nome = f"{uuid.uuid4()}.png"
-
-            pasta = os.path.join(
-                "static",
-                "comments"
-            )
-
-            os.makedirs(
-                pasta,
-                exist_ok=True
-            )
-
-            caminho = os.path.join(
-                pasta,
-                nome
-            )
-
-            file.save(caminho)
-
-            imagem = f"/static/comments/{nome}"
-
-    # ==========================================
-    # RESPOSTA A COMENTÁRIO
-    # ==========================================
-
-    parent_comment = None
-
-    if parent_id:
-
-        parent_comment = Comment.query.get(
-            parent_id
-        )
-
-        if not parent_comment:
-            return jsonify(
-                error="Comentário pai não existe"
-            ), 404
-
-        if parent_comment.post_id != post_id:
-            return jsonify(
-                error="Comentário inválido"
-            ), 400
-
-        # 🚫 BLOQUEIO
-        if existe_bloqueio(
-            user_id,
-            parent_comment.autor_id
-        ):
-            return jsonify(
-                error="Não podes responder"
-            ), 403
-
-    # ==========================================
-    # CRIAR COMENTÁRIO
-    # ==========================================
-
-    comment = Comment(
-        id=str(uuid.uuid4()),
-        post_id=post_id,
-        autor_id=user_id,
-        texto=texto,
-        imagem=imagem,
-        parent_id=parent_id
-    )
-
-    db.session.add(comment)
-
-    db.session.commit()
-
-    # ==========================================
-    # RETORNO COMPLETO
-    # ==========================================
-
-    return jsonify({
-
-        "status": "ok",
-
-        "comment": {
-
-            "id": comment.id,  # ✅ ID COMENTÁRIO
-
-            "post_id": comment.post_id,
-
-            "texto": comment.texto,
-
-            "imagem": comment.imagem,
-
-            "parent_id": comment.parent_id,
-
-            "autor": {
-
-                "id": autor.id,
-
-                "username": autor.username,
-
-                "avatar": autor.avatar
-
-            }
-
-        }
-
-    })
-#================= CURTIR COMENTÁRIO =================
 @app.route("/comments/<comment_id>/like", methods=["POST"])
 def like_comment(comment_id):
-    data = request.get_json(force=True)
-    user_id = data["user_id"]
 
-    comment = Comment.query.get(comment_id)
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id")
+
+    if user_id is None:
+        return jsonify(error="user_id obrigatório"), 400
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify(error="user_id inválido"), 400
+
+    user = db.session.get(User, user_id)
+
+    if not user:
+        return jsonify(error="Utilizador não encontrado"), 404
+
+    comment = db.session.get(Comment, comment_id)
+
     if not comment:
         return jsonify(error="Comentário não encontrado"), 404
 
-    # 🚫 BLOQUEIO
     if existe_bloqueio(user_id, comment.autor_id):
         return jsonify(error="Não podes curtir este comentário"), 403
 
@@ -3600,104 +3460,234 @@ def like_comment(comment_id):
         user_id=user_id
     ).first()
 
-    if existente:
-        db.session.delete(existente)
+    try:
+        if existente:
+            # RETIRAR GOSTO
+            db.session.delete(existente)
+
+            # Remover a notificação correspondente
+            Notification.query.filter_by(
+                tipo="like_comment",
+                origem_id=user_id,
+                comment_id=comment_id
+            ).delete(synchronize_session=False)
+
+            liked = False
+
+        else:
+            # ADICIONAR GOSTO
+            novo_like = CommentLike(
+                id=str(uuid.uuid4()),
+                comment_id=comment_id,
+                user_id=user_id
+            )
+
+            db.session.add(novo_like)
+
+            # NOTIFICAR O AUTOR DO COMENTÁRIO
+            if int(comment.autor_id) != user_id:
+                criar_notificacao(
+                    user_id=comment.autor_id,
+                    tipo="like_comment",
+                    origem_id=user_id,
+                    mensagem=f"{user.username} gostou do teu comentário.",
+                    post_id=comment.post_id,
+                    comment_id=comment_id
+                )
+
+            liked = True
+
         db.session.commit()
-        return jsonify(liked=False)
 
-    like = CommentLike(
-        id=str(uuid.uuid4()),
-        comment_id=comment_id,
-        user_id=user_id
-    )
-    db.session.add(like)
-
-    # 🔔 NOTIFICAÇÃO (apenas se não houver bloqueio)
-    if comment.autor_id != user_id:
-        db.session.add(Notification(
-            id=str(uuid.uuid4()),
-            user_id=comment.autor_id,
-            tipo="like_comment",
-            origem_id=user_id,
+        total_likes = CommentLike.query.filter_by(
             comment_id=comment_id
-        ))
+        ).count()
 
-    db.session.commit()
-    return jsonify(liked=True)
+        return jsonify({
+            "liked": liked,
+            "likes": total_likes
+        }), 200
 
-#================= DENUNCIAR POST =================
+    except Exception:
+        db.session.rollback()
+        app.logger.exception(
+            "Erro ao curtir comentário %s",
+            comment_id
+        )
+
+        return jsonify(error="Não foi possível atualizar o gosto"), 500
+
+
+# ================= DENUNCIAR PUBLICAÇÃO =================
 @app.route("/posts/<post_id>/report", methods=["POST"])
 def report_post(post_id):
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True) or {}
+
     user_id = data.get("user_id")
     motivo = (data.get("motivo") or "").strip()
 
-    if not user_id:
+    if user_id is None:
         return jsonify(error="Utilizador inválido"), 400
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify(error="ID do utilizador inválido"), 400
 
     if not motivo:
         return jsonify(error="Motivo obrigatório"), 400
 
-    post = Post.query.get(post_id)
+    reporter = db.session.get(User, user_id)
+    post = db.session.get(Post, post_id)
+
+    if not reporter:
+        return jsonify(error="Utilizador não encontrado"), 404
+
     if not post:
-        return jsonify(error="Post não encontrado"), 404
+        return jsonify(error="Publicação não encontrada"), 404
 
-    # ❌ Não pode denunciar o próprio post
-    if post.autor_id == user_id:
-        return jsonify(error="Não podes denunciar o teu próprio post"), 403
+    if int(post.autor_id) == user_id:
+        return jsonify(
+            error="Não podes denunciar a tua própria publicação"
+        ), 403
 
-    # 🚫 BLOQUEIO (em qualquer sentido)
     if existe_bloqueio(user_id, post.autor_id):
-        return jsonify(error="Não podes denunciar este post"), 403
+        return jsonify(
+            error="Não podes denunciar esta publicação"
+        ), 403
 
-    # 🔁 Evitar denúncia duplicada
     existente = ReportPost.query.filter_by(
         post_id=post_id,
         user_id=user_id
     ).first()
 
     if existente:
-        return jsonify(error="Post já denunciado por ti"), 409
+        return jsonify(error="Já denunciaste esta publicação"), 409
 
-    report = ReportPost(
-        id=str(uuid.uuid4()),
-        post_id=post_id,
-        user_id=user_id,
-        motivo=motivo
-    )
+    try:
+        denuncia = ReportPost(
+            id=str(uuid.uuid4()),
+            post_id=post_id,
+            user_id=user_id,
+            motivo=motivo
+        )
 
-    db.session.add(report)
-    db.session.commit()
+        db.session.add(denuncia)
+        db.session.flush()
 
-    return jsonify(status="ok")
+        # Avisar todos os administradores
+        admins = User.query.filter_by(role="admin").all()
 
-#================= DENUNCIAR UTILIZADOR =================
+        for admin in admins:
+            criar_notificacao(
+                user_id=admin.id,
+                tipo="report_post",
+                origem_id=reporter.id,
+                post_id=post_id,
+                mensagem=(
+                    f"{reporter.username} denunciou uma publicação. "
+                    f"Motivo: {motivo}"
+                )
+            )
+
+        db.session.commit()
+
+        return jsonify(status="ok"), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao denunciar publicação")
+
+        return jsonify(
+            error="Não foi possível registar a denúncia"
+        ), 500
+
+
+# ================= DENUNCIAR UTILIZADOR =================
 @app.route("/users/<user_id>/report", methods=["POST"])
 def report_user(user_id):
-    data = request.get_json(force=True)
-    reporter_id = data["user_id"]
+    data = request.get_json(silent=True) or {}
 
-    # Verificar se utilizador existe
-    user = User.query.get(user_id)
-    if not user:
+    reporter_id = data.get("user_id")
+    motivo = (data.get("motivo") or "").strip()
+
+    if reporter_id is None:
+        return jsonify(error="Utilizador denunciante inválido"), 400
+
+    try:
+        reporter_id = int(reporter_id)
+        reported_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify(error="ID de utilizador inválido"), 400
+
+    if not motivo:
+        return jsonify(error="Motivo obrigatório"), 400
+
+    reporter = db.session.get(User, reporter_id)
+    reported = db.session.get(User, reported_id)
+
+    if not reporter or not reported:
         return jsonify(error="Utilizador não encontrado"), 404
 
-    # 🚫 BLOQUEIO (em qualquer sentido)
-    if existe_bloqueio(reporter_id, user_id):
-        return jsonify(error="Não podes denunciar este utilizador"), 403
+    if reporter_id == reported_id:
+        return jsonify(
+            error="Não podes denunciar a tua própria conta"
+        ), 403
 
-    report = ReportUser(
-        id=str(uuid.uuid4()),
-        reported_user_id=user_id,
-        reporter_id=reporter_id,
-        motivo=data.get("motivo")
-    )
+    if existe_bloqueio(reporter_id, reported_id):
+        return jsonify(
+            error="Não podes denunciar este utilizador"
+        ), 403
 
-    db.session.add(report)
-    db.session.commit()
+    # Evitar denúncias duplicadas do mesmo denunciante
+    existente = ReportUser.query.filter_by(
+        reported_user_id=reported_id,
+        reporter_id=reporter_id
+    ).first()
 
-    return jsonify(status="ok")
+    if existente:
+        return jsonify(
+            error="Já denunciaste este utilizador"
+        ), 409
 
+    try:
+        denuncia = ReportUser(
+            id=str(uuid.uuid4()),
+            reported_user_id=reported_id,
+            reporter_id=reporter_id,
+            motivo=motivo
+        )
+
+        db.session.add(denuncia)
+        db.session.flush()
+
+        # Avisar todos os administradores
+        admins = User.query.filter_by(role="admin").all()
+
+        for admin in admins:
+            criar_notificacao(
+                user_id=admin.id,
+                tipo="report_user",
+                origem_id=reporter.id,
+                mensagem=(
+                    f"{reporter.username} denunciou o utilizador "
+                    f"{reported.username}. Motivo: {motivo}"
+                )
+            )
+
+        db.session.commit()
+
+        return jsonify(status="ok"), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao denunciar utilizador")
+
+        return jsonify(
+            error="Não foi possível registar a denúncia"
+        ), 500
+
+# ================= SEGUIR / DEIXAR DE SEGUIR =================
 
 # ================= SEGUIR / DEIXAR DE SEGUIR =================
 @app.route("/users/<user_id>/follow", methods=["POST"])
@@ -3766,16 +3756,25 @@ def follow_user(user_id):
     # DEIXAR DE SEGUIR
     # ==========================================
     if existente:
-        db.session.delete(existente)
-        db.session.commit()
+        try:
+            db.session.delete(existente)
+            db.session.commit()
 
-        return jsonify({
-            "following": False,
-            "moedas": follower.moedas or 0
-        })
+            return jsonify({
+                "following": False,
+                "moedas": follower.moedas or 0
+            }), 200
+
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Erro ao deixar de seguir utilizador")
+
+            return jsonify(
+                error="Não foi possível deixar de seguir este utilizador"
+            ), 500
 
     # ==========================================
-    # COMEÇAR A SEGUIR
+    # COMEÇAR A SEGUIR + NOTIFICAR
     # ==========================================
     try:
         nova_relacao = Follow(
@@ -3786,19 +3785,16 @@ def follow_user(user_id):
 
         db.session.add(nova_relacao)
 
-        # ======================================
-        # NOTIFICAÇÃO
-        # ======================================
-        db.session.add(Notification(
-            id=str(uuid.uuid4()),
+        # Notificar o utilizador seguido
+        criar_notificacao(
             user_id=followed_id,
             tipo="follow",
-            origem_id=follower_id
-        ))
+            origem_id=follower_id,
+            mensagem=f"{follower.username} começou a seguir-te."
+        )
 
         # ======================================
         # MISSÕES DIÁRIAS
-        # Requer as funções auxiliares anteriores
         # ======================================
         registar_seguimento(follower_id)
         registar_novo_seguidor(followed_id)
@@ -3808,7 +3804,7 @@ def follow_user(user_id):
         return jsonify({
             "following": True,
             "moedas": follower.moedas or 0
-        })
+        }), 200
 
     except Exception:
         db.session.rollback()
@@ -3985,6 +3981,7 @@ def listar_comentarios(post_id):
         })
 
     return jsonify(res)
+    
 @app.route("/notifications/<int:user_id>", methods=["GET"])
 def listar_notificacoes(user_id):
     notifs = (
