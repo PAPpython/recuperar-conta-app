@@ -1493,6 +1493,32 @@ class GoogleLogin(db.Model):
 # ================= CRIAR TABELAS =================
 with app.app_context():
     db.create_all()
+
+
+# ============================================================
+# ATUALIZAR TABELA DE NOTIFICAÇÕES
+# ============================================================
+
+from sqlalchemy import inspect, text
+
+with app.app_context():
+    inspector = inspect(db.engine)
+
+    if "notifications" in inspector.get_table_names():
+        colunas = [
+            coluna["name"]
+            for coluna in inspector.get_columns("notifications")
+        ]
+
+        if "mensagem" not in colunas:
+            with db.engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE notifications "
+                        "ADD COLUMN mensagem VARCHAR(500)"
+                    )
+                )
+
 # ================= CONFIG CÓDIGOS =================
 SIGN_SECRET = b"recuperacao-super-secreta"
 CODE_EXPIRATION = 300  # 5 minutos
