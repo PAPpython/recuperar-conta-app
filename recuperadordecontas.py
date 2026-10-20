@@ -1335,6 +1335,65 @@ class Notification(db.Model):
         index=True
     )
 
+
+# ============================================================
+# SISTEMA CENTRAL DE NOTIFICAÇÕES AERON
+# ============================================================
+
+def criar_notificacao(
+    user_id,
+    tipo,
+    origem_id=None,
+    mensagem=None,
+    post_id=None,
+    comment_id=None
+):
+    """
+    Cria uma notificação para um utilizador.
+    A gravação é feita pela transação da base de dados
+    que chamou esta função.
+    """
+
+    try:
+        # Validar destinatário
+        if user_id is None:
+            return None
+
+        destinatario_id = int(user_id)
+
+        # Não notificar o próprio utilizador sobre a sua ação
+        if origem_id is not None and int(origem_id) == destinatario_id:
+            return None
+
+        # Confirmar que o destinatário existe
+        destinatario = db.session.get(User, destinatario_id)
+
+        if destinatario is None:
+            return None
+
+        notificacao = Notification(
+            id=uuid.uuid4().hex,
+            user_id=destinatario_id,
+            tipo=str(tipo)[:50],
+            origem_id=int(origem_id) if origem_id is not None else None,
+            mensagem=str(mensagem)[:500] if mensagem else None,
+            post_id=str(post_id) if post_id is not None else None,
+            comment_id=str(comment_id) if comment_id is not None else None,
+            lida=False,
+            data=datetime.utcnow()
+        )
+
+        db.session.add(notificacao)
+
+        return notificacao
+
+    except (TypeError, ValueError):
+        app.logger.warning(
+            "Dados inválidos ao criar uma notificação AERON."
+        )
+        return None
+
+
 class MessageReply(db.Model):
     __tablename__ = "message_replies"
 
