@@ -1272,17 +1272,68 @@ class Block(db.Model):
     blocker_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     blocked_id = db.Column(db.Integer, db.ForeignKey("users.id"))
 
+
 class Notification(db.Model):
     __tablename__ = "notifications"
 
-    id = db.Column(db.String, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
-    tipo = db.Column(db.String)
-    origem_id = db.Column(db.Integer, db.ForeignKey("users.id"))
-    post_id = db.Column(db.String, db.ForeignKey("posts.id"))
-    comment_id = db.Column(db.String, db.ForeignKey("comments.id"))
-    lida = db.Column(db.Boolean, default=False)
-    data = db.Column(db.DateTime, default=datetime.utcnow)
+    id = db.Column(
+        db.String,
+        primary_key=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+
+    tipo = db.Column(
+        db.String(50),
+        nullable=False,
+        index=True
+    )
+
+    origem_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=True,
+        index=True
+    )
+
+    post_id = db.Column(
+        db.String,
+        db.ForeignKey("posts.id"),
+        nullable=True
+    )
+
+    comment_id = db.Column(
+        db.String,
+        db.ForeignKey("comments.id"),
+        nullable=True
+    )
+
+    # Mensagem personalizada opcional
+    mensagem = db.Column(
+        db.String(500),
+        nullable=True
+    )
+
+    # Estado de leitura
+    lida = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False,
+        index=True
+    )
+
+    # Data de criação
+    data = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        index=True
+    )
 
 class MessageReply(db.Model):
     __tablename__ = "message_replies"
