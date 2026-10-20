@@ -12511,6 +12511,64 @@ def consultar_missoes_diarias(user_id):
         return jsonify(
             error="Erro ao consultar missões diárias"
         ), 500
+
+
+@app.route("/follow/pending/<int:user_id>", methods=["GET"])
+def pending_follow_list(user_id):
+    try:
+        # Confirmar que o utilizador destinatário existe.
+        destinatario = db.session.get(User, user_id)
+
+        if destinatario is None:
+            return jsonify(error="Utilizador não encontrado"), 404
+
+        # Obter apenas pedidos recebidos que ainda estão pendentes.
+        pedidos = (
+            FollowRequest.query
+            .filter_by(
+                receiver_id=user_id,
+                status="pending"
+            )
+            .order_by(FollowRequest.created_at.desc())
+            .all()
+        )
+
+        resultado = []
+
+        for pedido in pedidos:
+            remetente = db.session.get(User, pedido.sender_id)
+
+            if remetente is None:
+                continue
+
+            # Não apresentar pedidos de contas bloqueadas.
+            if existe_bloqueio(user_id, remetente.id):
+                continue
+
+            resultado.append({
+                "id": pedido.id,
+                "from_user": remetente.id,
+                "sender_id": remetente.id,
+                "receiver_id": pedido.receiver_id,
+                "username": remetente.username,
+                "nome": getattr(remetente, "nome", None),
+                "avatar": getattr(remetente, "avatar", None),
+                "created_at": (
+                    pedido.created_at.strftime("%d/%m/%Y %H:%M")
+                    if pedido.created_at else None
+                ),
+                "status": pedido.status
+            })
+
+        return jsonify(resultado), 200
+
+    except Exception:
+        app.logger.exception(
+            "Erro ao carregar pedidos de seguimento do utilizador %s",
+            user_id
+        )
+        return jsonify(error="Não foi possível carregar os pedidos"), 500
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
