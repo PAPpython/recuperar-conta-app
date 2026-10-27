@@ -12857,6 +12857,152 @@ def atualizar_privacidade_perfil(user_id):
         db.session.rollback()
         app.logger.exception("Erro ao atualizar a privacidade do perfil.")
         return jsonify(error="Erro ao guardar a privacidade."), 500
+
+
+@app.route("/follow/accept", methods=["POST"])
+def aceitar_pedido_seguimento():
+    data = request.get_json(silent=True) or {}
+
+    pedido_id = data.get("id", type=int) if False else data.get("id")
+    user_id = data.get("user_id")
+
+    if not pedido_id or not user_id:
+        return jsonify(
+            status="error",
+            error="Falta o ID do pedido ou do utilizador."
+        ), 400
+
+    pedido = db.session.get(FollowRequest, pedido_id)
+
+    if not pedido or pedido.status != "pending":
+        return jsonify(
+            status="error",
+            error="Pedido inexistente ou já processado."
+        ), 404
+
+    # Só quem recebeu o pedido o pode aceitar.
+    if pedido.receiver_id != user_id:
+        return jsonify(
+            status="error",
+            error="Não tens permissão para aceitar este pedido."
+        ), 403
+
+    try:
+        # Criar a relação de seguimento, caso ainda não exista.
+        seguimento = Follow.query.filter_by(
+            follower_id=pedido.sender_id,
+            followed_id=pedido.receiver_id
+        ).first()
+
+        if not seguimento:
+            seguimento = Follow(
+                follower_id=pedido.sender_id,
+                followed_id=pedido.receiver_id
+            )
+            db.session.add(seguimento)
+
+        # O pedido deixa de estar pendente.
+        db.session.delete(pedido)
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            message="Pedido aceite com sucesso."
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao aceitar pedido de seguimento")
+        return jsonify(
+            status="error",
+            error="Não foi possível aceitar o pedido."
+        ), 500
+
+
+@app.route("/follow/reject", methods=["POST"])
+def recusar_pedido_seguimento():
+    data = request.get_json(silent=True) or {}
+
+    pedido_id = data.get("id")
+    user_id = data.get("user_id")
+
+    if not pedido_id or not user_id:
+        return jsonify(
+            status="error",
+            error="Falta o ID do pedido ou do utilizador."
+        ), 400
+
+    pedido = db.session.get(FollowRequest, pedido_id)
+
+    if not pedido or pedido.status != "pending":
+        return jsonify(
+            status="error",
+            error="Pedido inexistente ou já processado."
+        ), 404
+
+    if pedido.receiver_id != user_id:
+        return jsonify(
+            status="error",
+            error="Não tens permissão para recusar este pedido."
+        ), 403
+
+    try:
+        db.session.delete(pedido)
+        db.session.commit()
+
+        return jsonify(status="ok", message="Pedido recusado."), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao recusar pedido de seguimento")
+        return jsonify(
+            status="error",
+            error="Não foi possível recusar o pedido."
+        ), 500
+
+
+@app.route("/follow/cancel", methods=["POST"])
+def cancelar_pedido_seguimento():
+    data = request.get_json(silent=True) or {}
+
+    sender_id = data.get("from_user_id")
+    receiver_id = data.get("to_user_id")
+
+    if not sender_id or not receiver_id:
+        return jsonify(
+            status="error",
+            error="Falta identificar os utilizadores."
+        ), 400
+
+    pedido = FollowRequest.query.filter_by(
+        sender_id=sender_id,
+        receiver_id=receiver_id,
+        status="pending"
+    ).first()
+
+    if not pedido:
+        return jsonify(
+            status="error",
+            error="Não existe um pedido pendente para cancelar."
+        ), 404
+
+    try:
+        db.session.delete(pedido)
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            message="Pedido cancelado com sucesso."
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao cancelar pedido de seguimento")
+        return jsonify(
+            status="error",
+            error="Não foi possível cancelar o pedido."
+        ), 500
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
