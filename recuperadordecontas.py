@@ -26,6 +26,7 @@ import hmac
 import base64
 from collections import OrderedDict
 from markupsafe import escape
+from sqlalchemy import inspect, text
 
 
 # ================= APP =================
@@ -156,7 +157,13 @@ class User(db.Model):
         default=False,
         nullable=False
     )
-
+    
+    mostrar_jpublicamente = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True,
+        server_default=db.true()
+    )
 
 
     # ================= PERFIL =================
