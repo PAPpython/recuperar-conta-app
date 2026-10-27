@@ -4096,17 +4096,30 @@ def perfil_completo(user_id):
                 error="Perfil indisponível"
             ), 403
 
+    
     # ================= PRIVACIDADE =================
 
-    # Se o campo ainda estiver a None, mantém a conta pública
-    # para não tornar privados os perfis antigos inesperadamente.
+    # Considera a conta privada se qualquer um dos campos
+    # indicar que o utilizador ativou a privacidade.
+    perfil_privado_ativo = bool(
+        getattr(user, "perfil_privado", False)
+    )
+
+    mostrar_publicamente_valor = getattr(
+        user, "mostrar_jpublicamente", None
+    )
+
+    # Mantém os perfis antigos públicos quando o campo
+    # mostrar_jpublicamente ainda não tem valor.
     conta_publica = (
-        user.mostrar_jpublicamente
-        if user.mostrar_jpublicamente is not None
+        mostrar_publicamente_valor
+        if mostrar_publicamente_valor is not None
         else True
     )
 
-    conta_privada = not conta_publica
+    conta_privada = perfil_privado_ativo or not conta_publica
+    conta_publica = not conta_privada
+
 
     # ================= ESTATÍSTICAS =================
 
@@ -12209,14 +12222,24 @@ def friend_zone_sugestoes(user_id):
         )
     ).all()
 
-    ids_pendentes = set()
+    # Pedidos enviados por este utilizador.
+    pedidos_enviados = {
+        p.receiver_id for p in pedidos
+        if p.sender_id == user_id
+    }
 
-    for pedido in pedidos:
-        ids_pendentes.add(pedido.sender_id)
-        ids_pendentes.add(pedido.receiver_id)
+    # Pedidos recebidos: devem ser tratados na área de pedidos.
+    pedidos_recebidos = {
+        p.sender_id for p in pedidos
+        if p.receiver_id == user_id
+    }
 
-    excluidos = bloqueados | seguidos | ids_pendentes
-    excluidos.add(user_id)
+    excluidos = (
+        bloqueados
+        | seguidos
+        | pedidos_recebidos
+        | {user_id}
+    )
 
     candidatos = (
         User.query
@@ -12226,9 +12249,28 @@ def friend_zone_sugestoes(user_id):
         .all()
     )
 
-    return jsonify(
-        users=[friend_zone_user_json(u) for u in candidatos]
-    ), 200
+    resultado = []
+
+    for u in candidatos:
+        pessoa = friend_zone_user_json(u)
+
+        # Preserva os dados devolvidos pela função existente.
+        pessoa["is_private"] = bool(
+            getattr(u, "perfil_privado", False)
+        ) or not bool(
+            u.mostrar_jpublicamente
+            if u.mostrar_jpublicamente is not None
+            else True
+        )
+
+        pessoa["seguindo_este_user"] = u.id in seguidos
+        pessoa["pending_request"] = u.id in pedidos_enviados
+        pessoa["pedido_enviado"] = u.id in pedidos_enviados
+
+        resultado.append(pessoa)
+
+    return jsonify(users=resultado), 200
+
 
 # ============================================================
 # FRIEND ZONE — LISTAR PESSOAS BLOQUEADAS POR MIM
