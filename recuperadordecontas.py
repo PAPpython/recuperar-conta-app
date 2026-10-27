@@ -12702,6 +12702,55 @@ def consultar_missoes_diarias(user_id):
         return jsonify(
             error="Erro ao consultar missões diárias"
         ), 500
+
+
+@app.route("/users/<int:user_id>/privacy", methods=["POST"])
+def alterar_privacidade_conta(user_id):
+    dados = request.get_json(silent=True) or {}
+
+    if "mostrar_jpublicamente" not in dados:
+        return jsonify(
+            error="Falta indicar se a conta é pública."
+        ), 400
+
+    valor = dados["mostrar_jpublicamente"]
+
+    if not isinstance(valor, bool):
+        return jsonify(
+            error="O valor da privacidade tem de ser verdadeiro ou falso."
+        ), 400
+
+    user = User.query.get(user_id)
+
+    if not user or user.apagado:
+        return jsonify(
+            error="Utilizador não encontrado."
+        ), 404
+
+    user.mostrar_jpublicamente = valor
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception(
+            "Erro ao alterar a privacidade da conta."
+        )
+        return jsonify(
+            error="Não foi possível guardar a privacidade."
+        ), 500
+
+    return jsonify({
+        "success": True,
+        "mostrar_jpublicamente": user.mostrar_jpublicamente,
+        "is_private": not user.mostrar_jpublicamente,
+        "mensagem": (
+            "Conta pública."
+            if user.mostrar_jpublicamente
+            else "Conta privada."
+        )
+    }), 200
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
