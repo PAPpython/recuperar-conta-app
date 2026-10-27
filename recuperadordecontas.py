@@ -9332,28 +9332,65 @@ def follow_request():
         return jsonify(error="Não foi possível criar o pedido"), 500
 
 
+
 @app.route("/follow/accept", methods=["POST"])
 def accept_follow():
+    data = request.get_json(silent=True) or {}
 
-    data = request.get_json(force=True)
+    pedido_id = data.get("id")
+    user_id = data.get("user_id")
 
-    req = FollowRequest.query.get(data["id"])
+    if pedido_id is None or user_id is None:
+        return jsonify(
+            status="error",
+            error="Falta o ID do pedido ou do utilizador."
+        ), 400
 
-    if not req:
-        return jsonify(error="Request não existe"), 404
+    req = db.session.get(FollowRequest, pedido_id)
 
-    db.session.add(Follow(
-        id=str(uuid.uuid4()),
-        follower_id=req.from_user,
-        followed_id=req.to_user
-    ))
+    if not req or req.status != "pending":
+        return jsonify(
+            status="error",
+            error="Pedido inexistente ou já processado."
+        ), 404
 
-    db.session.delete(req)
+    # Só o destinatário pode aceitar o pedido.
+    if req.receiver_id != user_id:
+        return jsonify(
+            status="error",
+            error="Não tens permissão para aceitar este pedido."
+        ), 403
 
-    db.session.commit()
+    try:
+        # O remetente passa a seguir o destinatário.
+        follow_existente = Follow.query.filter_by(
+            follower_id=req.sender_id,
+            followed_id=req.receiver_id
+        ).first()
 
-    return jsonify(ok=True)
-    
+        if not follow_existente:
+            novo_follow = Follow(
+                follower_id=req.sender_id,
+                followed_id=req.receiver_id
+            )
+            db.session.add(novo_follow)
+
+        db.session.delete(req)
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            message="Pedido aceite com sucesso."
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao aceitar pedido")
+        return jsonify(
+            status="error",
+            error="Não foi possível aceitar o pedido."
+        ), 500
+
 @app.route("/follow/reject", methods=["POST"])
 def reject_follow():
 
