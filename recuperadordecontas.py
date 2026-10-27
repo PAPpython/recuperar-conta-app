@@ -10044,27 +10044,52 @@ def settings_privacy():
         mostrar_publicamente=user.mostrar_publicamente
     )
 
+
 @app.route("/api/settings/update-privacy", methods=["POST"])
 def update_privacy():
+    data = request.get_json(silent=True) or {}
 
-    data = request.get_json(force=True)
-
-    user = User.query.get(data.get("user_id"))
+    user_id = data.get("user_id")
+    user = db.session.get(User, user_id) if user_id else None
 
     if not user:
-        return jsonify(status="error")
+        return jsonify(status="error", error="Utilizador não encontrado"), 404
 
-    user.perfil_privado = bool(data.get("perfil_privado"))
+    privado = data.get("perfil_privado", False)
+    mostrar_nome = data.get("mostrar_nome", True)
+    mostrar_publicamente = data.get("mostrar_publicamente", True)
 
-    user.mostrar_nome = bool(data.get("mostrar_nome"))
+    if not all(isinstance(v, bool) for v in (
+        privado, mostrar_nome, mostrar_publicamente
+    )):
+        return jsonify(status="error", error="Definições inválidas"), 400
 
-    user.mostrar_publicamente = bool(data.get("mostrar_publicamente"))
+    try:
+        user.perfil_privado = privado
+        user.mostrar_nome = mostrar_nome
 
-    db.session.commit()
+        # Os dois campos passam a representar a mesma privacidade.
+        user.mostrar_jpublicamente = not privado
+        user.mostrar_publicamente = not privado
 
-    return jsonify(status="ok")
+        db.session.commit()
 
-from datetime import datetime
+        return jsonify(
+            status="ok",
+            perfil_privado=privado,
+            mostrar_jpublicamente=not privado,
+            mostrar_publicamente=not privado,
+            mostrar_nome=mostrar_nome
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao guardar definições de privacidade")
+        return jsonify(
+            status="error",
+            error="Não foi possível guardar as definições."
+        ), 500
+
 
 @app.route("/api/settings/change-password", methods=["POST"])
 def settings_change_password():
