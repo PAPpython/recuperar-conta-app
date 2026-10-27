@@ -4066,6 +4066,9 @@ def marcar_notificacao_lida(notif_id):
 
 # ================= PERFIL COMPLETO =================
 
+
+# ================= PERFIL COMPLETO =================
+
 @app.route("/users/<int:user_id>/profile", methods=["GET"])
 def perfil_completo(user_id):
 
@@ -4080,10 +4083,23 @@ def perfil_completo(user_id):
 
     # ================= VERIFICAR BLOQUEIO =================
 
-    if viewer_id and existe_bloqueio(viewer_id, user_id):
-        return jsonify(
-            error="Perfil indisponível"
-        ), 403
+    if viewer_id and viewer_id != user_id:
+        if existe_bloqueio(viewer_id, user_id):
+            return jsonify(
+                error="Perfil indisponível"
+            ), 403
+
+    # ================= PRIVACIDADE =================
+
+    # Se o campo ainda estiver a None, mantém a conta pública
+    # para não tornar privados os perfis antigos inesperadamente.
+    conta_publica = (
+        user.mostrar_jpublicamente
+        if user.mostrar_jpublicamente is not None
+        else True
+    )
+
+    conta_privada = not conta_publica
 
     # ================= ESTATÍSTICAS =================
 
@@ -4105,6 +4121,29 @@ def perfil_completo(user_id):
             followed_id=user_id
         ).first() is not None
 
+    # ================= VERIFICAR PEDIDO PENDENTE =================
+
+    pending_request = False
+
+    if viewer_id and viewer_id != user_id and not segue:
+        pedido = FollowRequest.query.filter_by(
+            sender_id=viewer_id,
+            receiver_id=user_id,
+            status="pending"
+        ).first()
+
+        pending_request = pedido is not None
+
+    # ================= AUTORIZAÇÃO DAS PUBLICAÇÕES =================
+
+    e_dono_do_perfil = viewer_id == user_id
+
+    pode_ver_publicacoes = (
+        not conta_privada
+        or e_dono_do_perfil
+        or segue
+    )
+
     # ================= DEVOLVER PERFIL =================
 
     return jsonify({
@@ -4114,38 +4153,97 @@ def perfil_completo(user_id):
         "avatar": user.avatar,
         "banner": user.banner,
         "bio": user.bio or "",
+
         "seguidores": seguidores,
         "seguindo": seguindo,
-        "seguindo_este_user": segue
+
+        "seguindo_este_user": segue,
+
+        "mostrar_jpublicamente": bool(conta_publica),
+        "is_private": conta_privada,
+        "pending_request": pending_request,
+        "pode_ver_publicacoes": pode_ver_publicacoes
+
     }), 200
+
 #================= POSTS DO PERFIL =================
+
+# ================= PUBLICAÇÕES DO PERFIL =================
+
 @app.route("/users/<int:user_id>/posts", methods=["GET"])
 def posts_perfil(user_id):
+
     viewer_id = request.args.get("viewer_id", type=int)
 
-    # 🔒 BLOQUEIO TOTAL
-    if viewer_id and existe_bloqueio(viewer_id, user_id):
-        return jsonify(error="Conteúdo indisponível"), 403
+    # ================= VERIFICAR UTILIZADOR =================
+
+    user = User.query.get(user_id)
+
+    if not user or user.apagado:
+        return jsonify(
+            error="Utilizador não encontrado"
+        ), 404
+
+    # ================= VERIFICAR BLOQUEIO =================
+
+    if viewer_id and viewer_id != user_id:
+        if existe_bloqueio(viewer_id, user_id):
+            return jsonify(
+                error="Conteúdo indisponível"
+            ), 403
+
+    # ================= VERIFICAR PRIVACIDADE =================
+
+    conta_publica = (
+        user.mostrar_jpublicamente
+        if user.mostrar_jpublicamente is not None
+        else True
+    )
+
+    e_dono_do_perfil = viewer_id == user_id
+
+    segue = False
+
+    if viewer_id and not e_dono_do_perfil:
+        segue = Follow.query.filter_by(
+            follower_id=viewer_id,
+            followed_id=user_id
+        ).first() is not None
+
+    # Impedir acesso às publicações de uma conta privada
+    # quando o visitante não é o dono nem um seguidor aceite.
+    if not conta_publica and not e_dono_do_perfil and not segue:
+        return jsonify({
+            "error": "Esta conta é privada",
+            "is_private": True,
+            "pode_ver_publicacoes": False
+        }), 403
+
+    # ================= CARREGAR PUBLICAÇÕES =================
 
     posts = Post.query.filter_by(
         autor_id=user_id
     ).order_by(Post.data.desc()).all()
 
     res = []
+
     for p in posts:
         res.append({
             "id": p.id,
             "texto": p.texto,
             "imagem": p.imagem,
             "data": p.data.strftime("%d/%m/%Y %H:%M"),
-            "likes": Like.query.filter_by(post_id=p.id).count(),
-            "comentarios": Comment.query.filter_by(post_id=p.id).count(),
-            "pode_editar": viewer_id == user_id,
-            "pode_apagar": viewer_id == user_id
+            "likes": Like.query.filter_by(
+                post_id=p.id
+            ).count(),
+            "comentarios": Comment.query.filter_by(
+                post_id=p.id
+            ).count(),
+            "pode_editar": e_dono_do_perfil,
+            "pode_apagar": e_dono_do_perfil
         })
 
-    return jsonify(res)
-
+    return jsonify(res), 200
 
 # ================= ENVIAR MENSAGEM =================
 
@@ -4178,7 +4276,20 @@ def enviar_mensagem():
     if not remetente or not destinatario:
         return jsonify(error="Utilizador não encontrado"), 404
 
-    if remetente.bloqueado:
+    # ================= VERIFICAR ESTADO DAS CONTAS =================
+
+    if getattr(remetente, "apagado", False):
+        return jsonify(error="A tua conta não está disponível."), 403
+
+    if getattr(destinatario, "apagado", False):
+        return jsonify(error="Este utilizador não está disponível."), 404
+
+    if getattr(remetente, "banido", False):
+        return jsonify(
+            error="A tua conta está suspensa de enviar mensagens."
+        ), 403
+
+    if getattr(remetente, "bloqueado", False):
         return jsonify(
             error="A tua conta está bloqueada e não podes enviar mensagens."
         ), 403
@@ -4188,17 +4299,48 @@ def enviar_mensagem():
             error="Este utilizador não pode receber mensagens."
         ), 403
 
+    # ================= VERIFICAR BLOQUEIOS =================
+
     if existe_bloqueio(from_user, to_user):
         return jsonify(
             error="Não é possível enviar mensagens a este utilizador."
         ), 403
 
-    # Validar a mensagem original, se for uma resposta.
+    # ================= VERIFICAR PRIVACIDADE DA CONTA =================
+
+    conta_publica = (
+        destinatario.mostrar_jpublicamente
+        if destinatario.mostrar_jpublicamente is not None
+        else True
+    )
+
+    if not conta_publica:
+        # O remetente tem de ser um seguidor aceite da conta privada.
+        seguimento_aceite = Follow.query.filter_by(
+            follower_id=from_user,
+            followed_id=to_user
+        ).first()
+
+        if not seguimento_aceite:
+            return jsonify({
+                "error": (
+                    "Esta conta é privada. "
+                    "Tens de enviar um pedido para seguir e aguardar "
+                    "que seja aceite antes de poderes enviar mensagens."
+                ),
+                "is_private": True,
+                "requires_follow_approval": True
+            }), 403
+
+    # ================= VALIDAR RESPOSTA =================
+
     if reply_to_id is not None:
         reply_to_id = str(reply_to_id).strip()
 
         if not reply_to_id:
-            return jsonify(error="Mensagem original inválida."), 400
+            return jsonify(
+                error="Mensagem original inválida."
+            ), 400
 
         mensagem_original = db.session.get(Message, reply_to_id)
 
@@ -4226,6 +4368,8 @@ def enviar_mensagem():
                 error="Não podes responder a uma mensagem apagada."
             ), 400
 
+    # ================= OBTER OU CRIAR CONVERSA =================
+
     menor, maior = sorted((from_user, to_user))
 
     try:
@@ -4235,6 +4379,7 @@ def enviar_mensagem():
         ).with_for_update().first()
 
         if conversa is None:
+
             mensagem_antiga = Message.query.filter(
                 db.or_(
                     db.and_(
@@ -4267,15 +4412,20 @@ def enviar_mensagem():
             db.session.add(conversa)
             db.session.flush()
 
+        # ================= VERIFICAR ESTADO DA CONVERSA =================
+
         if conversa.status == "blocked":
             db.session.rollback()
+
             return jsonify(
                 error="Esta conversa está bloqueada."
             ), 403
 
         if conversa.status == "pending":
+
             if conversa.requested_by_id != from_user:
                 db.session.rollback()
+
                 return jsonify(
                     error="Tens de aceitar o pedido antes de responder."
                 ), 403
@@ -4287,12 +4437,15 @@ def enviar_mensagem():
 
             if ja_enviou:
                 db.session.rollback()
+
                 return jsonify(
                     error=(
                         "O teu pedido já foi enviado. "
                         "Aguarda que o destinatário o aceite."
                     )
                 ), 403
+
+        # ================= CRIAR MENSAGEM =================
 
         mensagem = Message(
             id=str(uuid.uuid4()),
@@ -4305,7 +4458,8 @@ def enviar_mensagem():
         db.session.add(mensagem)
         db.session.flush()
 
-        # Guardar a ligação à mensagem original.
+        # ================= GUARDAR RESPOSTA =================
+
         if mensagem_original is not None:
             db.session.add(
                 MessageReply(
@@ -4313,6 +4467,8 @@ def enviar_mensagem():
                     reply_to_message_id=mensagem_original.id
                 )
             )
+
+        # ================= CRIAR NOTIFICAÇÃO =================
 
         db.session.add(Notification(
             id=str(uuid.uuid4()),
@@ -4332,12 +4488,14 @@ def enviar_mensagem():
 
     except Exception:
         db.session.rollback()
-        app.logger.exception("Erro ao enviar mensagem")
+
+        app.logger.exception(
+            "Erro ao enviar mensagem"
+        )
 
         return jsonify(
             error="Não foi possível enviar a mensagem."
         ), 500
-
 
 #================= CONVERSA =================
 # ============================================================
