@@ -9349,6 +9349,7 @@ def follow_request():
 
 
 
+
 @app.route("/follow/accept", methods=["POST"])
 def accept_follow():
     data = request.get_json(silent=True) or {}
@@ -9370,7 +9371,16 @@ def accept_follow():
             error="Pedido inexistente ou já processado."
         ), 404
 
-    # Só o destinatário pode aceitar o pedido.
+    # Converter para inteiro e validar o destinatário.
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify(
+            status="error",
+            error="ID de utilizador inválido."
+        ), 400
+
+    # Só quem recebeu o pedido pode aceitá-lo.
     if req.receiver_id != user_id:
         return jsonify(
             status="error",
@@ -9378,7 +9388,7 @@ def accept_follow():
         ), 403
 
     try:
-        # O remetente passa a seguir o destinatário.
+        # Verificar se a relação de seguimento já existe.
         follow_existente = Follow.query.filter_by(
             follower_id=req.sender_id,
             followed_id=req.receiver_id
@@ -9391,7 +9401,23 @@ def accept_follow():
             )
             db.session.add(novo_follow)
 
+            # Notificar quem aceitou: ganhou um novo seguidor.
+            notificacao = Notification(
+                id=str(uuid.uuid4()),
+                user_id=req.receiver_id,
+                tipo="follow",
+                origem_id=req.sender_id,
+                mensagem="começou a seguir-te",
+                lida=False,
+                data=datetime.utcnow()
+            )
+
+            db.session.add(notificacao)
+
+        # O pedido deixa de estar pendente.
         db.session.delete(req)
+
+        # Guardar a relação e a notificação na mesma transação.
         db.session.commit()
 
         return jsonify(
