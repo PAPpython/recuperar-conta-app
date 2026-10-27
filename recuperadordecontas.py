@@ -12758,6 +12758,38 @@ def alterar_privacidade_conta(user_id):
         )
     }), 200
 
+@app.route("/users/<int:user_id>/privacy", methods=["PUT"])
+def atualizar_privacidade_perfil(user_id):
+    dados = request.get_json(silent=True) or {}
+
+    requester_id = dados.get("user_id")
+
+    if requester_id is None or requester_id != user_id:
+        return jsonify(error="Sem permissão para alterar este perfil."), 403
+
+    utilizador = User.query.get(user_id)
+
+    if not utilizador:
+        return jsonify(error="Utilizador não encontrado."), 404
+
+    mostrar_publicamente = dados.get("mostrar_jpublicamente")
+
+    if not isinstance(mostrar_publicamente, bool):
+        return jsonify(error="Valor de privacidade inválido."), 400
+
+    try:
+        utilizador.mostrar_jpublicamente = mostrar_publicamente
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            mostrar_jpublicamente=utilizador.mostrar_jpublicamente
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao atualizar a privacidade do perfil.")
+        return jsonify(error="Erro ao guardar a privacidade."), 500
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
