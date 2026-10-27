@@ -13027,49 +13027,6 @@ def recusar_pedido_seguimento():
             error="Não foi possível recusar o pedido."
         ), 500
 
-
-@app.route("/follow/cancel", methods=["POST"])
-def cancelar_pedido_seguimento():
-    data = request.get_json(silent=True) or {}
-
-    sender_id = data.get("from_user_id")
-    receiver_id = data.get("to_user_id")
-
-    if not sender_id or not receiver_id:
-        return jsonify(
-            status="error",
-            error="Falta identificar os utilizadores."
-        ), 400
-
-    pedido = FollowRequest.query.filter_by(
-        sender_id=sender_id,
-        receiver_id=receiver_id,
-        status="pending"
-    ).first()
-
-    if not pedido:
-        return jsonify(
-            status="error",
-            error="Não existe um pedido pendente para cancelar."
-        ), 404
-
-    try:
-        db.session.delete(pedido)
-        db.session.commit()
-
-        return jsonify(
-            status="ok",
-            message="Pedido cancelado com sucesso."
-        ), 200
-
-    except Exception:
-        db.session.rollback()
-        app.logger.exception("Erro ao cancelar pedido de seguimento")
-        return jsonify(
-            status="error",
-            error="Não foi possível cancelar o pedido."
-        ), 500
-
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
