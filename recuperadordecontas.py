@@ -9418,27 +9418,57 @@ def heartbeat():
 
     return jsonify(ok=True)
 
+
 @app.route("/follow/cancel", methods=["POST"])
 def cancel_follow_request():
+    data = request.get_json(silent=True) or {}
 
-    data = request.get_json(force=True)
+    from_user = data.get("from_user_id", data.get("from"))
+    to_user = data.get("to_user_id", data.get("to"))
 
-    from_user = data["from"]
-    to_user = data["to"]
+    if from_user is None or to_user is None:
+        return jsonify(
+            status="error",
+            error="Falta identificar os utilizadores do pedido."
+        ), 400
 
-    req = FollowRequest.query.filter_by(
-        from_user=from_user,
-        to_user=to_user,
+    try:
+        from_user = int(from_user)
+        to_user = int(to_user)
+    except (TypeError, ValueError):
+        return jsonify(
+            status="error",
+            error="IDs de utilizador inválidos."
+        ), 400
+
+    pedido = FollowRequest.query.filter_by(
+        sender_id=from_user,
+        receiver_id=to_user,
         status="pending"
     ).first()
 
-    if not req:
-        return jsonify(error="Pedido não encontrado"), 404
+    if not pedido:
+        return jsonify(
+            status="error",
+            error="Não existe um pedido pendente para cancelar."
+        ), 404
 
-    db.session.delete(req)
-    db.session.commit()
+    try:
+        db.session.delete(pedido)
+        db.session.commit()
 
-    return jsonify(status="cancelled")
+        return jsonify(
+            status="ok",
+            message="Pedido cancelado com sucesso."
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao cancelar pedido")
+        return jsonify(
+            status="error",
+            error="Não foi possível cancelar o pedido."
+        ), 500
 
 @app.route("/follow/pending/count/<int:user_id>")
 def pending_follow_count(user_id):
