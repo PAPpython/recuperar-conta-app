@@ -8,5 +8,6 @@ gunicorn==21.2.0
 Werkzeug==3.0.1
 psycopg2-binary==2.9.9
 Authlib
+argon2-cffi
 Flask-Mail
 deep-translator
