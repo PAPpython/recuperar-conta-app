@@ -10753,7 +10753,7 @@ def send_email_change_code():
             msg="Preencha todos os campos"
         )
 
-    if hash_password(password) != user.password:
+    if not verificar_password(password, user.password):
         return jsonify(
             status="error",
             msg="Password incorreta"
