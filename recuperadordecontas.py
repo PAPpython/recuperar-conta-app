@@ -1938,7 +1938,6 @@ def validate_username_code():
 
     return jsonify(status="ok")
 
-# ================= API ALTERAR PASSWORD =================
 
 # ================= API ALTERAR PASSWORD =================
 @app.route("/api/change-password", methods=["POST"])
@@ -1980,23 +1979,24 @@ def change_password():
         ), 400
 
     # Confirmar a palavra-passe antiga
-    if user.password != hash_password(old_password):
+    # Compatível com SHA-256 antigo e Argon2id
+    if not verificar_hash_password(old_password, user.password):
         return jsonify(
             status="error",
             msg="A palavra-passe antiga está incorreta."
         ), 401
 
-    # Gerar o hash da nova palavra-passe
-    new_password_hash = hash_password(new_password)
-
-    # Obter o histórico de palavras-passe deste utilizador
+    # Obter o histórico de palavras-passe
     historico = PasswordHistory.query.filter_by(
         user_id=user.id
     ).all()
 
-    # Impedir a reutilização de qualquer palavra-passe registada
+    # Impedir reutilização de palavras-passe anteriores
     for registo in historico:
-        if registo.password_hash == new_password_hash:
+        if verificar_hash_password(
+            new_password,
+            registo.password_hash
+        ):
             return jsonify(
                 status="error",
                 msg="Já utilizaste esta palavra-passe anteriormente. Escolhe outra."
@@ -2010,8 +2010,8 @@ def change_password():
 
     db.session.add(registo_antigo)
 
-    # Atualizar a palavra-passe
-    user.password = new_password_hash
+    # Criar novo hash Argon2id
+    user.password = hash_password(new_password)
 
     # Registar a data da alteração, se o campo existir
     if hasattr(user, "password_changed"):
