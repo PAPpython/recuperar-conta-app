@@ -10670,7 +10670,7 @@ def update_recovery_questions():
 
     password = data.get("password", "")
 
-    if hash_password(password) != user.password:
+    if not verificar_password(password, user.password):
         return jsonify(
             status="error",
             msg="Password incorreta"
