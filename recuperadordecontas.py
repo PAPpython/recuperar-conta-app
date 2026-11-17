@@ -642,6 +642,63 @@ class MessageReaction(db.Model):
             name="uq_message_reaction_user"
         ),
     )
+
+
+# ================= QR LOGIN =================
+
+class QRLoginRequest(db.Model):
+    __tablename__ = "qr_login_requests"
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True
+    )
+
+    # Hash do código secreto incluído no QR
+    token_hash = db.Column(
+        db.String(64),
+        nullable=False,
+        unique=True
+    )
+
+    # Segredo que permite ao computador consultar o pedido
+    poll_token_hash = db.Column(
+        db.String(64),
+        nullable=False
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=True
+    )
+
+    status = db.Column(
+        db.String(20),
+        default="pending",
+        nullable=False
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    expires_at = db.Column(
+        db.DateTime,
+        nullable=False
+    )
+
+    approved_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    used_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
     
 class AdminAction(db.Model):
 
