@@ -2322,9 +2322,9 @@ def delete_account():
             status="error",
             msg="Conta já não existe"
         ), 404
-
-    # Verificar password
-    if hash_password(password) != user.password:
+        
+    
+    if not verificar_password(password, user.password):
         return jsonify(
             status="error",
             msg="Password incorreta"
