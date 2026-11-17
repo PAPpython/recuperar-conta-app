@@ -1671,6 +1671,39 @@ def generate_code(tipo):
     return os.urandom(16).hex()
 
 
+def obter_sessao_autenticada():
+    authorization = request.headers.get("Authorization", "")
+
+    if not authorization.startswith("Bearer "):
+        return None
+
+    token = authorization[7:].strip()
+
+    if not token:
+        return None
+
+    sessao = UserSession.query.filter_by(
+        session_token=token,
+        active=True
+    ).first()
+
+    if not sessao:
+        return None
+
+    user = User.query.get(sessao.user_id)
+
+    if not user:
+        return None
+
+    if getattr(user, "apagado", False):
+        return None
+
+    if getattr(user, "banido", False):
+        return None
+
+    return user
+
+
 # ==========================================
 # AUXILIARES DAS MISSÕES DIÁRIAS
 # ==========================================
@@ -13120,6 +13153,1025 @@ def recusar_pedido_seguimento():
             status="error",
             error="Não foi possível recusar o pedido."
         ), 500
+
+
+
+# =====================================================
+#                    AERON QR LOGIN
+# =====================================================
+
+def gerar_hash_qr(valor):
+    return hashlib.sha256(
+        valor.encode("utf-8")
+    ).hexdigest()
+
+
+def obter_pedido_qr(pedido_id):
+    pedido = QRLoginRequest.query.get(pedido_id)
+
+    if not pedido:
+        return None
+
+    if pedido.status in ("pending", "approved"):
+        if datetime.utcnow() >= pedido.expires_at:
+            pedido.status = "expired"
+            db.session.commit()
+
+    return pedido
+
+
+# -----------------------------------------------------
+# 1. CRIAR PEDIDO QR
+# -----------------------------------------------------
+
+@app.route("/qr-login/create", methods=["POST"])
+def qr_login_create():
+
+    qr_token = secrets.token_urlsafe(32)
+    poll_token = secrets.token_urlsafe(32)
+
+    pedido_id = str(uuid.uuid4())
+
+    agora = datetime.utcnow()
+
+    pedido = QRLoginRequest(
+        id=pedido_id,
+        token_hash=gerar_hash_qr(qr_token),
+        poll_token_hash=gerar_hash_qr(poll_token),
+        status="pending",
+        created_at=agora,
+        expires_at=agora + timedelta(minutes=2)
+    )
+
+    try:
+        db.session.add(pedido)
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        return jsonify(
+            status="error",
+            msg="Não foi possível criar o QR Code."
+        ), 500
+
+    link_qr = (
+        request.url_root.rstrip("/")
+        + "/qr-login/authorize/"
+        + qr_token
+    )
+
+    return jsonify(
+        status="ok",
+        request_id=pedido_id,
+        qr_url=link_qr,
+        poll_token=poll_token,
+        expires_in=120
+    ), 201
+
+
+# -----------------------------------------------------
+# 2. ABRIR LINK NO TELEMÓVEL
+# -----------------------------------------------------
+
+# =====================================================
+#       AERON - PAGINA DE AUTORIZACAO QR
+# =====================================================
+
+@app.route("/qr-login/authorize/<token>", methods=["GET"])
+def qr_login_authorize(token):
+
+    pedido = QRLoginRequest.query.filter_by(
+        token_hash=gerar_hash_qr(token)
+    ).first()
+
+    if not pedido:
+        return "QR Code inválido ou inexistente.", 404
+
+    pedido = obter_pedido_qr(pedido.id)
+
+    if pedido.status != "pending":
+        return "Este QR Code já não está disponível.", 410
+
+    html = """
+    <!DOCTYPE html>
+    <html lang="pt">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport"
+              content="width=device-width, initial-scale=1.0">
+        <meta name="referrer" content="no-referrer">
+
+        <title>AERON | QR Login</title>
+
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+                font-family: Arial, sans-serif;
+            }
+
+            body {
+                min-height: 100vh;
+                background: #080b12;
+                color: #f8fafc;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: 20px;
+            }
+
+            .container {
+                width: 100%;
+                max-width: 420px;
+                background: #111827;
+                border: 1px solid #263247;
+                border-radius: 22px;
+                padding: 30px 24px;
+                text-align: center;
+                box-shadow: 0 20px 60px #0008;
+            }
+
+            .logo {
+                font-size: 30px;
+                font-weight: 900;
+                letter-spacing: 5px;
+                margin-bottom: 10px;
+            }
+
+            .subtitle {
+                color: #94a3b8;
+                font-size: 14px;
+                margin-bottom: 28px;
+            }
+
+            h2 {
+                font-size: 23px;
+                margin-bottom: 12px;
+            }
+
+            .description {
+                color: #94a3b8;
+                font-size: 14px;
+                line-height: 1.6;
+                margin-bottom: 24px;
+            }
+
+            .account {
+                display: none;
+                background: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 14px;
+                padding: 18px;
+                margin-bottom: 20px;
+            }
+
+            .account-icon {
+                width: 55px;
+                height: 55px;
+                background: #334155;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 12px;
+                font-size: 25px;
+            }
+
+            .account-name {
+                font-weight: bold;
+                font-size: 17px;
+            }
+
+            input {
+                width: 100%;
+                padding: 15px;
+                margin-bottom: 12px;
+                border-radius: 10px;
+                border: 1px solid #334155;
+                background: #0b1220;
+                color: white;
+                outline: none;
+                font-size: 15px;
+            }
+
+            input:focus {
+                border-color: #3b82f6;
+            }
+
+            button {
+                width: 100%;
+                padding: 15px;
+                border: none;
+                border-radius: 11px;
+                font-size: 15px;
+                font-weight: bold;
+                cursor: pointer;
+                margin-top: 10px;
+            }
+
+            .primary {
+                background: #2563eb;
+                color: white;
+            }
+
+            .primary:disabled {
+                opacity: .5;
+                cursor: not-allowed;
+            }
+
+            .secondary {
+                background: #273449;
+                color: white;
+            }
+
+            .message {
+                font-size: 13px;
+                color: #94a3b8;
+                line-height: 1.5;
+                margin-top: 18px;
+            }
+
+            .error {
+                color: #f87171;
+            }
+
+            .success {
+                color: #4ade80;
+            }
+
+            .hidden {
+                display: none !important;
+            }
+
+            .footer {
+                margin-top: 25px;
+                color: #64748b;
+                font-size: 11px;
+                letter-spacing: 1px;
+            }
+        </style>
+    </head>
+
+    <body>
+
+        <main class="container">
+
+            <div class="logo">AERON</div>
+
+            <p class="subtitle">
+                MASTERING PERFORMANCE
+            </p>
+
+            <section id="loading">
+                <h2>A verificar sessão...</h2>
+                <p class="description">
+                    Estamos a verificar a tua conta AERON.
+                </p>
+            </section>
+
+            <section id="login-section" class="hidden">
+
+                <h2>Iniciar sessão</h2>
+
+                <p class="description">
+                    Para autorizar este computador,
+                    primeiro tens de entrar na tua conta.
+                </p>
+
+                <form id="login-form">
+
+                    <input
+                        type="text"
+                        id="username"
+                        placeholder="Username ou email"
+                        autocomplete="username"
+                        required
+                    >
+
+                    <input
+                        type="password"
+                        id="password"
+                        placeholder="Palavra-passe"
+                        autocomplete="current-password"
+                        required
+                    >
+
+                    <button class="primary" type="submit">
+                        Entrar na AERON
+                    </button>
+
+                </form>
+
+                <p id="login-message" class="message"></p>
+
+            </section>
+
+            <section id="authorization" class="hidden">
+
+                <h2>Autorizar computador?</h2>
+
+                <p class="description">
+                    Foi solicitado um início de sessão
+                    na tua conta através de outro dispositivo.
+                </p>
+
+                <div class="account">
+
+                    <div class="account-icon">👤</div>
+
+                    <div class="account-name"
+                         id="account-name"></div>
+
+                    <p class="message">
+                        Esta é a conta que vai ser utilizada
+                        no computador.
+                    </p>
+
+                </div>
+
+                <button
+                    class="primary"
+                    id="approve-button"
+                    onclick="approveLogin()">
+
+                    Autorizar acesso
+
+                </button>
+
+                <button
+                    class="secondary"
+                    onclick="rejectLogin()">
+
+                    Recusar
+
+                </button>
+
+                <p id="authorization-message"
+                   class="message"></p>
+
+            </section>
+
+            <section id="finished" class="hidden">
+
+                <h2 id="finished-title">Pedido concluído</h2>
+
+                <p id="finished-message"
+                   class="description"></p>
+
+            </section>
+
+            <div class="footer">
+                AERON SECURITY
+            </div>
+
+        </main>
+
+        <script>
+
+            const qrToken = {{ token | tojson }};
+
+            const loading = document.getElementById("loading");
+            const loginSection = document.getElementById("login-section");
+            const authorization = document.getElementById("authorization");
+            const finished = document.getElementById("finished");
+
+            function showSection(section) {
+                loading.classList.add("hidden");
+                loginSection.classList.add("hidden");
+                authorization.classList.add("hidden");
+                finished.classList.add("hidden");
+
+                section.classList.remove("hidden");
+            }
+
+            function showFinished(title, message) {
+                showSection(finished);
+
+                document.getElementById("finished-title").textContent = title;
+                document.getElementById("finished-message").textContent = message;
+            }
+
+            async function checkAccount() {
+
+                try {
+
+                    const response = await fetch("/qr-login/me", {
+                        method: "GET",
+                        credentials: "same-origin"
+                    });
+
+                    if (response.status === 401) {
+                        showSection(loginSection);
+                        return;
+                    }
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        showFinished(
+                            "Não foi possível continuar",
+                            data.msg || "Erro ao verificar a conta."
+                        );
+                        return;
+                    }
+
+                    document.getElementById("account-name").textContent =
+                        data.username;
+
+                    document.querySelector(".account").style.display = "block";
+
+                    showSection(authorization);
+
+                } catch (error) {
+
+                    showFinished(
+                        "Erro de ligação",
+                        "Não foi possível contactar a AERON."
+                    );
+
+                }
+            }
+
+            document.getElementById("login-form")
+                .addEventListener("submit", async function(event) {
+
+                    event.preventDefault();
+
+                    const message = document.getElementById("login-message");
+
+                    message.textContent = "A iniciar sessão...";
+                    message.className = "message";
+
+                    const username =
+                        document.getElementById("username").value;
+
+                    const password =
+                        document.getElementById("password").value;
+
+                    try {
+
+                        const response = await fetch("/login", {
+                            method: "POST",
+                            credentials: "same-origin",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                username: username,
+                                password: password,
+                                remember_me: false,
+                                platform: "AERON Mobile QR"
+                            })
+                        });
+
+                        const data = await response.json();
+
+                        if (!response.ok || data.status !== "ok") {
+
+                            message.textContent =
+                                data.msg || "Não foi possível iniciar sessão.";
+
+                            message.className = "message error";
+                            return;
+                        }
+
+                        // O login cria também o cookie Flask.
+                        // Não guardamos o token do computador.
+
+                        document.getElementById("password").value = "";
+
+                        await checkAccount();
+
+                    } catch (error) {
+
+                        message.textContent =
+                            "Erro de ligação ao servidor.";
+
+                        message.className = "message error";
+
+                    }
+
+                });
+
+
+            async function approveLogin() {
+
+                const button =
+                    document.getElementById("approve-button");
+
+                const message =
+                    document.getElementById("authorization-message");
+
+                button.disabled = true;
+                button.textContent = "A autorizar...";
+
+                try {
+
+                    const response = await fetch("/qr-login/approve-web", {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            qr_token: qrToken
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+
+                        message.textContent =
+                            data.msg || "Não foi possível autorizar.";
+
+                        message.className = "message error";
+
+                        button.disabled = false;
+                        button.textContent = "Autorizar acesso";
+
+                        return;
+                    }
+
+                    showFinished(
+                        "Acesso autorizado!",
+                        "Já podes voltar ao computador. A AERON está a concluir o início de sessão."
+                    );
+
+                } catch (error) {
+
+                    message.textContent =
+                        "Erro de ligação. Tenta novamente.";
+
+                    message.className = "message error";
+
+                    button.disabled = false;
+                    button.textContent = "Autorizar acesso";
+
+                }
+
+            }
+
+
+            async function rejectLogin() {
+
+                try {
+
+                    const response = await fetch("/qr-login/reject-web", {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            qr_token: qrToken
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        showFinished(
+                            "Não foi possível recusar",
+                            data.msg || "Tenta novamente."
+                        );
+                        return;
+                    }
+
+                    showFinished(
+                        "Pedido recusado",
+                        "O computador não terá acesso à tua conta."
+                    );
+
+                } catch (error) {
+
+                    showFinished(
+                        "Erro de ligação",
+                        "Não foi possível contactar a AERON."
+                    );
+
+                }
+
+            }
+
+            checkAccount();
+
+        </script>
+
+    </body>
+    </html>
+    """
+
+    response = app.make_response(
+        render_template_string(html, token=token)
+    )
+
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+
+    return response
+
+# -----------------------------------------------------
+# 3. AUTORIZAR LOGIN
+# -----------------------------------------------------
+
+@app.route("/qr-login/approve", methods=["POST"])
+def qr_login_approve():
+
+    user = obter_sessao_autenticada()
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Precisas de iniciar sessão no telemóvel."
+        ), 401
+
+    data = request.get_json(silent=True) or {}
+
+    qr_token = data.get("qr_token", "")
+
+    if not qr_token:
+        return jsonify(
+            status="error",
+            msg="Código QR em falta."
+        ), 400
+
+    pedido = QRLoginRequest.query.filter_by(
+        token_hash=gerar_hash_qr(qr_token)
+    ).with_for_update().first()
+
+    if not pedido:
+        return jsonify(
+            status="error",
+            msg="Pedido QR não encontrado."
+        ), 404
+
+    pedido = obter_pedido_qr(pedido.id)
+
+    if pedido.status != "pending":
+        return jsonify(
+            status="error",
+            msg="Este pedido já não pode ser autorizado."
+        ), 409
+
+    pedido.user_id = user.id
+    pedido.status = "approved"
+    pedido.approved_at = datetime.utcnow()
+
+    try:
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        return jsonify(
+            status="error",
+            msg="Não foi possível autorizar o login."
+        ), 500
+
+    return jsonify(
+        status="ok",
+        msg="Login autorizado com sucesso."
+    ), 200
+
+
+# -----------------------------------------------------
+# 4. RECUSAR LOGIN
+# -----------------------------------------------------
+
+@app.route("/qr-login/reject", methods=["POST"])
+def qr_login_reject():
+
+    user = obter_sessao_autenticada()
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Sessão não autenticada."
+        ), 401
+
+    data = request.get_json(silent=True) or {}
+
+    qr_token = data.get("qr_token", "")
+
+    if not qr_token:
+        return jsonify(
+            status="error",
+            msg="Código QR em falta."
+        ), 400
+
+    pedido = QRLoginRequest.query.filter_by(
+        token_hash=gerar_hash_qr(qr_token)
+    ).first()
+
+    if not pedido:
+        return jsonify(
+            status="error",
+            msg="Pedido QR não encontrado."
+        ), 404
+
+    pedido = obter_pedido_qr(pedido.id)
+
+    if pedido.status != "pending":
+        return jsonify(
+            status="error",
+            msg="Este pedido já não está pendente."
+        ), 409
+
+    pedido.status = "rejected"
+
+    db.session.commit()
+
+    return jsonify(
+        status="ok",
+        msg="Pedido recusado."
+    ), 200
+
+
+# -----------------------------------------------------
+# 5. COMPUTADOR CONSULTA ESTADO DO QR
+# -----------------------------------------------------
+
+@app.route("/qr-login/status/<pedido_id>", methods=["POST"])
+def qr_login_status(pedido_id):
+
+    data = request.get_json(silent=True) or {}
+
+    poll_token = data.get("poll_token", "")
+
+    if not poll_token:
+        return jsonify(
+            status="error",
+            msg="Token de consulta em falta."
+        ), 400
+
+    pedido = obter_pedido_qr(pedido_id)
+
+    if not pedido:
+        return jsonify(
+            status="error",
+            msg="Pedido não encontrado."
+        ), 404
+
+    if not secrets.compare_digest(
+        gerar_hash_qr(poll_token),
+        pedido.poll_token_hash
+    ):
+        return jsonify(
+            status="error",
+            msg="Token de consulta inválido."
+        ), 403
+
+    if pedido.status == "pending":
+        return jsonify(status="pending"), 200
+
+    if pedido.status == "rejected":
+        return jsonify(status="rejected"), 200
+
+    if pedido.status == "expired":
+        return jsonify(status="expired"), 200
+
+    if pedido.status == "used":
+        return jsonify(status="used"), 200
+
+    if pedido.status == "approved":
+
+        user = User.query.get(pedido.user_id)
+
+        if not user or getattr(user, "apagado", False) or getattr(user, "banido", False):
+            pedido.status = "rejected"
+            db.session.commit()
+
+            return jsonify(
+                status="error",
+                msg="Esta conta não pode iniciar sessão."
+            ), 403
+
+        novo_token = secrets.token_hex(32)
+
+        nova_sessao = UserSession(
+            user_id=user.id,
+            session_token=novo_token,
+            platform="AERON Desktop - QR",
+            ip_address=request.remote_addr,
+            location="Desconhecida",
+            remember_me=False,
+            active=True
+        )
+
+        try:
+            db.session.add(nova_sessao)
+
+            pedido.status = "used"
+            pedido.used_at = datetime.utcnow()
+
+            db.session.commit()
+
+        except Exception:
+            db.session.rollback()
+
+            return jsonify(
+                status="error",
+                msg="Não foi possível concluir o login."
+            ), 500
+
+        return jsonify(
+            status="ok",
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            avatar=user.avatar,
+            banner=user.banner,
+            moedas=user.moedas,
+            role=user.role,
+            session_token=novo_token,
+            remember_me=False,
+            avatares_comprados=json.loads(
+                user.avatares_comprados or "[]"
+            ),
+            banners_comprados=json.loads(
+                user.banners_comprados or "[]"
+            )
+        ), 200
+
+    return jsonify(
+        status="error",
+        msg="Estado desconhecido."
+    ), 400
+
+
+# =====================================================
+#       IDENTIFICAR CONTA NO TELEMOVEL
+# =====================================================
+
+@app.route("/qr-login/me", methods=["GET"])
+def qr_login_me():
+
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return jsonify(
+            status="error",
+            msg="Não tens sessão iniciada."
+        ), 401
+
+    user = db.session.get(User, user_id)
+
+    if not user:
+        session.clear()
+
+        return jsonify(
+            status="error",
+            msg="Conta não encontrada."
+        ), 401
+
+    if getattr(user, "apagado", False) or getattr(user, "banido", False):
+        session.clear()
+
+        return jsonify(
+            status="error",
+            msg="Esta conta não pode autorizar logins."
+        ), 403
+
+    return jsonify(
+        status="ok",
+        username=user.username,
+        avatar=user.avatar
+    ), 200
+
+
+# =====================================================
+#       AUTORIZAR QR PELO NAVEGADOR
+# =====================================================
+
+@app.route("/qr-login/approve-web", methods=["POST"])
+def qr_login_approve_web():
+
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return jsonify(
+            status="error",
+            msg="Inicia sessão primeiro."
+        ), 401
+
+    user = db.session.get(User, user_id)
+
+    if not user or getattr(user, "apagado", False) or getattr(user, "banido", False):
+        return jsonify(
+            status="error",
+            msg="Esta conta não pode autorizar o login."
+        ), 403
+
+    data = request.get_json(silent=True) or {}
+    qr_token = data.get("qr_token", "")
+
+    if not qr_token:
+        return jsonify(
+            status="error",
+            msg="Código QR em falta."
+        ), 400
+
+    pedido = QRLoginRequest.query.filter_by(
+        token_hash=gerar_hash_qr(qr_token)
+    ).first()
+
+    if not pedido:
+        return jsonify(
+            status="error",
+            msg="QR Code inválido."
+        ), 404
+
+    pedido = obter_pedido_qr(pedido.id)
+
+    if pedido.status != "pending":
+        return jsonify(
+            status="error",
+            msg="Este pedido já não está disponível."
+        ), 409
+
+    pedido.user_id = user.id
+    pedido.status = "approved"
+    pedido.approved_at = datetime.utcnow()
+
+    try:
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        return jsonify(
+            status="error",
+            msg="Não foi possível autorizar."
+        ), 500
+
+    return jsonify(
+        status="ok",
+        msg="Login autorizado."
+    ), 200
+
+
+# =====================================================
+#       RECUSAR QR PELO NAVEGADOR
+# =====================================================
+
+@app.route("/qr-login/reject-web", methods=["POST"])
+def qr_login_reject_web():
+
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return jsonify(
+            status="error",
+            msg="Inicia sessão primeiro."
+        ), 401
+
+    data = request.get_json(silent=True) or {}
+    qr_token = data.get("qr_token", "")
+
+    if not qr_token:
+        return jsonify(
+            status="error",
+            msg="Código QR em falta."
+        ), 400
+
+    pedido = QRLoginRequest.query.filter_by(
+        token_hash=gerar_hash_qr(qr_token)
+    ).first()
+
+    if not pedido:
+        return jsonify(
+            status="error",
+            msg="QR Code inválido."
+        ), 404
+
+    pedido = obter_pedido_qr(pedido.id)
+
+    if pedido.status != "pending":
+        return jsonify(
+            status="error",
+            msg="Este pedido já não está pendente."
+        ), 409
+
+    pedido.status = "rejected"
+
+    try:
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        return jsonify(
+            status="error",
+            msg="Não foi possível recusar o pedido."
+        ), 500
+
+    return jsonify(
+        status="ok",
+        msg="Pedido recusado."
+    ), 200
 
 #================= START =================
 if __name__ == "__main__":
