@@ -126,7 +126,7 @@ class User(db.Model):
     )
 
     password = db.Column(
-        db.String(128)
+        db.String(255)
     )
 
     provider = db.Column(
