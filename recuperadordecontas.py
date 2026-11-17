@@ -856,7 +856,7 @@ class PasswordHistory(db.Model):
     )
 
     password_hash = db.Column(
-        db.String(128),
+        db.String(255),
         nullable=False
     )
 
@@ -864,7 +864,7 @@ class PasswordHistory(db.Model):
         db.DateTime,
         default=datetime.utcnow
     )
-
+    
 class FollowRequest(db.Model):
     __tablename__ = "follow_requests"
 
