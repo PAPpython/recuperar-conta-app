@@ -2380,6 +2380,8 @@ def login():
 
     session["user_id"] = user.id
     session.permanent = True
+    
+    session.permanent = remember_me
 
     # ================= RESPOSTA =================
 
@@ -13253,6 +13255,7 @@ def recusar_pedido_seguimento():
 
 
 
+
 # =====================================================
 #                    AERON QR LOGIN
 # =====================================================
@@ -13264,7 +13267,7 @@ def gerar_hash_qr(valor):
 
 
 def obter_pedido_qr(pedido_id):
-    pedido = QRLoginRequest.query.get(pedido_id)
+    pedido = db.session.get(QRLoginRequest, pedido_id)
 
     if not pedido:
         return None
@@ -13275,6 +13278,28 @@ def obter_pedido_qr(pedido_id):
             db.session.commit()
 
     return pedido
+
+
+def obter_utilizador_sessao_mobile():
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return None
+
+    user = db.session.get(User, user_id)
+
+    if not user:
+        session.clear()
+        return None
+
+    if (
+        getattr(user, "apagado", False)
+        or getattr(user, "banido", False)
+    ):
+        session.clear()
+        return None
+
+    return user
 
 
 # -----------------------------------------------------
@@ -13288,7 +13313,6 @@ def qr_login_create():
     poll_token = secrets.token_urlsafe(32)
 
     pedido_id = str(uuid.uuid4())
-
     agora = datetime.utcnow()
 
     pedido = QRLoginRequest(
@@ -13306,6 +13330,8 @@ def qr_login_create():
 
     except Exception:
         db.session.rollback()
+
+        app.logger.exception("Erro ao criar pedido QR.")
 
         return jsonify(
             status="error",
@@ -13328,12 +13354,8 @@ def qr_login_create():
 
 
 # -----------------------------------------------------
-# 2. ABRIR LINK NO TELEMÓVEL
+# 2. PÁGINA DE AUTORIZAÇÃO NO TELEMÓVEL
 # -----------------------------------------------------
-
-# =====================================================
-#       AERON - PAGINA DE AUTORIZACAO QR
-# =====================================================
 
 @app.route("/qr-login/authorize/<token>", methods=["GET"])
 def qr_login_authorize(token):
@@ -13347,10 +13369,10 @@ def qr_login_authorize(token):
 
     pedido = obter_pedido_qr(pedido.id)
 
-    if pedido.status != "pending":
+    if not pedido or pedido.status != "pending":
         return "Este QR Code já não está disponível.", 410
 
-    html = """
+    html = r"""
     <!DOCTYPE html>
     <html lang="pt">
     <head>
@@ -13359,7 +13381,7 @@ def qr_login_authorize(token):
               content="width=device-width, initial-scale=1.0">
         <meta name="referrer" content="no-referrer">
 
-        <title>AERON | QR Login</title>
+        <title>AERON | Segurança</title>
 
         <style>
             * {
@@ -13371,7 +13393,8 @@ def qr_login_authorize(token):
 
             body {
                 min-height: 100vh;
-                background: #080b12;
+                background:
+                    radial-gradient(circle at top, #172554, #080b12 65%);
                 color: #f8fafc;
                 display: flex;
                 justify-content: center;
@@ -13381,30 +13404,36 @@ def qr_login_authorize(token):
 
             .container {
                 width: 100%;
-                max-width: 420px;
+                max-width: 430px;
                 background: #111827;
                 border: 1px solid #263247;
                 border-radius: 22px;
                 padding: 30px 24px;
                 text-align: center;
-                box-shadow: 0 20px 60px #0008;
+                box-shadow: 0 20px 60px #0009;
             }
 
             .logo {
-                font-size: 30px;
+                font-size: 32px;
                 font-weight: 900;
-                letter-spacing: 5px;
-                margin-bottom: 10px;
+                letter-spacing: 6px;
+                color: #ffffff;
+                margin-bottom: 8px;
+            }
+
+            .gold {
+                color: #d6b65b;
             }
 
             .subtitle {
                 color: #94a3b8;
-                font-size: 14px;
-                margin-bottom: 28px;
+                font-size: 12px;
+                letter-spacing: 2px;
+                margin-bottom: 30px;
             }
 
             h2 {
-                font-size: 23px;
+                font-size: 22px;
                 margin-bottom: 12px;
             }
 
@@ -13412,40 +13441,14 @@ def qr_login_authorize(token):
                 color: #94a3b8;
                 font-size: 14px;
                 line-height: 1.6;
-                margin-bottom: 24px;
-            }
-
-            .account {
-                display: none;
-                background: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 14px;
-                padding: 18px;
-                margin-bottom: 20px;
-            }
-
-            .account-icon {
-                width: 55px;
-                height: 55px;
-                background: #334155;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin: 0 auto 12px;
-                font-size: 25px;
-            }
-
-            .account-name {
-                font-weight: bold;
-                font-size: 17px;
+                margin-bottom: 22px;
             }
 
             input {
                 width: 100%;
                 padding: 15px;
                 margin-bottom: 12px;
-                border-radius: 10px;
+                border-radius: 11px;
                 border: 1px solid #334155;
                 background: #0b1220;
                 color: white;
@@ -13457,15 +13460,37 @@ def qr_login_authorize(token):
                 border-color: #3b82f6;
             }
 
+            .remember {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                color: #cbd5e1;
+                font-size: 13px;
+                text-align: left;
+                margin: 5px 0 14px;
+            }
+
+            .remember input {
+                width: 17px;
+                height: 17px;
+                margin: 0;
+                accent-color: #2563eb;
+            }
+
             button {
                 width: 100%;
                 padding: 15px;
                 border: none;
                 border-radius: 11px;
-                font-size: 15px;
+                font-size: 14px;
                 font-weight: bold;
                 cursor: pointer;
                 margin-top: 10px;
+            }
+
+            button:disabled {
+                opacity: .5;
+                cursor: not-allowed;
             }
 
             .primary {
@@ -13473,21 +13498,40 @@ def qr_login_authorize(token):
                 color: white;
             }
 
-            .primary:disabled {
-                opacity: .5;
-                cursor: not-allowed;
-            }
-
             .secondary {
                 background: #273449;
                 color: white;
+            }
+
+            .account {
+                background: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 14px;
+                padding: 18px;
+                margin-bottom: 20px;
+                display: none;
+            }
+
+            .account-name {
+                font-size: 17px;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+
+            .account-avatar {
+                width: 58px;
+                height: 58px;
+                border-radius: 50%;
+                object-fit: cover;
+                margin-bottom: 12px;
+                background: #334155;
             }
 
             .message {
                 font-size: 13px;
                 color: #94a3b8;
                 line-height: 1.5;
-                margin-top: 18px;
+                margin-top: 16px;
             }
 
             .error {
@@ -13503,10 +13547,10 @@ def qr_login_authorize(token):
             }
 
             .footer {
-                margin-top: 25px;
+                margin-top: 28px;
                 color: #64748b;
-                font-size: 11px;
-                letter-spacing: 1px;
+                font-size: 10px;
+                letter-spacing: 2px;
             }
         </style>
     </head>
@@ -13515,11 +13559,11 @@ def qr_login_authorize(token):
 
         <main class="container">
 
-            <div class="logo">AERON</div>
+            <div class="logo">
+                <span class="gold">A</span>ERON
+            </div>
 
-            <p class="subtitle">
-                MASTERING PERFORMANCE
-            </p>
+            <p class="subtitle">MASTERING PERFORMANCE</p>
 
             <section id="loading">
                 <h2>A verificar sessão...</h2>
@@ -13533,8 +13577,8 @@ def qr_login_authorize(token):
                 <h2>Iniciar sessão</h2>
 
                 <p class="description">
-                    Para autorizar este computador,
-                    primeiro tens de entrar na tua conta.
+                    Entra na tua conta para autorizar
+                    o acesso ao computador.
                 </p>
 
                 <form id="login-form">
@@ -13555,6 +13599,14 @@ def qr_login_authorize(token):
                         required
                     >
 
+                    <label class="remember">
+                        <input
+                            type="checkbox"
+                            id="remember-me"
+                        >
+                        Guardar conta neste telemóvel
+                    </label>
+
                     <button class="primary" type="submit">
                         Entrar na AERON
                     </button>
@@ -13574,15 +13626,22 @@ def qr_login_authorize(token):
                     na tua conta através de outro dispositivo.
                 </p>
 
-                <div class="account">
+                <div class="account" id="account">
 
-                    <div class="account-icon">👤</div>
+                    <img
+                        id="account-avatar"
+                        class="account-avatar"
+                        src=""
+                        alt="Avatar"
+                    >
 
-                    <div class="account-name"
-                         id="account-name"></div>
+                    <div
+                        class="account-name"
+                        id="account-name">
+                    </div>
 
                     <p class="message">
-                        Esta é a conta que vai ser utilizada
+                        Esta é a conta que será utilizada
                         no computador.
                     </p>
 
@@ -13592,30 +13651,32 @@ def qr_login_authorize(token):
                     class="primary"
                     id="approve-button"
                     onclick="approveLogin()">
-
                     Autorizar acesso
-
                 </button>
 
                 <button
                     class="secondary"
                     onclick="rejectLogin()">
-
                     Recusar
-
                 </button>
 
-                <p id="authorization-message"
-                   class="message"></p>
+                <p
+                    id="authorization-message"
+                    class="message">
+                </p>
 
             </section>
 
             <section id="finished" class="hidden">
 
-                <h2 id="finished-title">Pedido concluído</h2>
+                <h2 id="finished-title">
+                    Pedido concluído
+                </h2>
 
-                <p id="finished-message"
-                   class="description"></p>
+                <p
+                    id="finished-message"
+                    class="description">
+                </p>
 
             </section>
 
@@ -13635,6 +13696,7 @@ def qr_login_authorize(token):
             const finished = document.getElementById("finished");
 
             function showSection(section) {
+
                 loading.classList.add("hidden");
                 loginSection.classList.add("hidden");
                 authorization.classList.add("hidden");
@@ -13644,9 +13706,11 @@ def qr_login_authorize(token):
             }
 
             function showFinished(title, message) {
+
                 showSection(finished);
 
                 document.getElementById("finished-title").textContent = title;
+
                 document.getElementById("finished-message").textContent = message;
             }
 
@@ -13656,7 +13720,8 @@ def qr_login_authorize(token):
 
                     const response = await fetch("/qr-login/me", {
                         method: "GET",
-                        credentials: "same-origin"
+                        credentials: "same-origin",
+                        cache: "no-store"
                     });
 
                     if (response.status === 401) {
@@ -13666,18 +13731,29 @@ def qr_login_authorize(token):
 
                     const data = await response.json();
 
-                    if (!response.ok) {
+                    if (!response.ok || data.status !== "ok") {
+
                         showFinished(
                             "Não foi possível continuar",
                             data.msg || "Erro ao verificar a conta."
                         );
+
                         return;
                     }
 
                     document.getElementById("account-name").textContent =
                         data.username;
 
-                    document.querySelector(".account").style.display = "block";
+                    const avatar = document.getElementById("account-avatar");
+
+                    if (data.avatar) {
+                        avatar.src = data.avatar;
+                        avatar.style.display = "inline-block";
+                    } else {
+                        avatar.style.display = "none";
+                    }
+
+                    document.getElementById("account").style.display = "block";
 
                     showSection(authorization);
 
@@ -13691,21 +13767,35 @@ def qr_login_authorize(token):
                 }
             }
 
+
+            // ==========================================
+            // LOGIN UTILIZANDO A ROTA EXISTENTE /login
+            // ==========================================
+
             document.getElementById("login-form")
                 .addEventListener("submit", async function(event) {
 
                     event.preventDefault();
 
-                    const message = document.getElementById("login-message");
+                    const message =
+                        document.getElementById("login-message");
+
+                    const button =
+                        this.querySelector("button[type='submit']");
+
+                    const username =
+                        document.getElementById("username").value.trim();
+
+                    const password =
+                        document.getElementById("password").value;
+
+                    const rememberMe =
+                        document.getElementById("remember-me").checked;
 
                     message.textContent = "A iniciar sessão...";
                     message.className = "message";
 
-                    const username =
-                        document.getElementById("username").value;
-
-                    const password =
-                        document.getElementById("password").value;
+                    button.disabled = true;
 
                     try {
 
@@ -13718,8 +13808,9 @@ def qr_login_authorize(token):
                             body: JSON.stringify({
                                 username: username,
                                 password: password,
-                                remember_me: false,
-                                platform: "AERON Mobile QR"
+                                remember_me: rememberMe,
+                                platform: "AERON Mobile QR",
+                                location: "Telemóvel"
                             })
                         });
 
@@ -13731,11 +13822,14 @@ def qr_login_authorize(token):
                                 data.msg || "Não foi possível iniciar sessão.";
 
                             message.className = "message error";
+
+                            button.disabled = false;
+
                             return;
                         }
 
-                        // O login cria também o cookie Flask.
-                        // Não guardamos o token do computador.
+                        // O endpoint /login já criou a sessão Flask.
+                        // O browser guarda o cookie de sessão.
 
                         document.getElementById("password").value = "";
 
@@ -13748,10 +13842,16 @@ def qr_login_authorize(token):
 
                         message.className = "message error";
 
+                        button.disabled = false;
+
                     }
 
                 });
 
+
+            // ==========================================
+            // AUTORIZAR COMPUTADOR
+            // ==========================================
 
             async function approveLogin() {
 
@@ -13779,7 +13879,7 @@ def qr_login_authorize(token):
 
                     const data = await response.json();
 
-                    if (!response.ok) {
+                    if (!response.ok || data.status !== "ok") {
 
                         message.textContent =
                             data.msg || "Não foi possível autorizar.";
@@ -13812,6 +13912,10 @@ def qr_login_authorize(token):
             }
 
 
+            // ==========================================
+            // RECUSAR COMPUTADOR
+            // ==========================================
+
             async function rejectLogin() {
 
                 try {
@@ -13830,10 +13934,12 @@ def qr_login_authorize(token):
                     const data = await response.json();
 
                     if (!response.ok) {
+
                         showFinished(
                             "Não foi possível recusar",
                             data.msg || "Tenta novamente."
                         );
+
                         return;
                     }
 
@@ -13853,6 +13959,8 @@ def qr_login_authorize(token):
 
             }
 
+
+            // Verificar automaticamente se já existe sessão.
             checkAccount();
 
         </script>
@@ -13865,13 +13973,15 @@ def qr_login_authorize(token):
         render_template_string(html, token=token)
     )
 
-    response.headers["Cache-Control"] = "no-store"
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
     response.headers["Referrer-Policy"] = "no-referrer"
 
     return response
 
+
 # -----------------------------------------------------
-# 3. AUTORIZAR LOGIN
+# 3. AUTORIZAR LOGIN PELO CLIENTE AUTENTICADO
 # -----------------------------------------------------
 
 @app.route("/qr-login/approve", methods=["POST"])
@@ -13886,7 +13996,6 @@ def qr_login_approve():
         ), 401
 
     data = request.get_json(silent=True) or {}
-
     qr_token = data.get("qr_token", "")
 
     if not qr_token:
@@ -13897,7 +14006,7 @@ def qr_login_approve():
 
     pedido = QRLoginRequest.query.filter_by(
         token_hash=gerar_hash_qr(qr_token)
-    ).with_for_update().first()
+    ).first()
 
     if not pedido:
         return jsonify(
@@ -13907,7 +14016,7 @@ def qr_login_approve():
 
     pedido = obter_pedido_qr(pedido.id)
 
-    if pedido.status != "pending":
+    if not pedido or pedido.status != "pending":
         return jsonify(
             status="error",
             msg="Este pedido já não pode ser autorizado."
@@ -13923,6 +14032,8 @@ def qr_login_approve():
     except Exception:
         db.session.rollback()
 
+        app.logger.exception("Erro ao autorizar QR.")
+
         return jsonify(
             status="error",
             msg="Não foi possível autorizar o login."
@@ -13935,7 +14046,7 @@ def qr_login_approve():
 
 
 # -----------------------------------------------------
-# 4. RECUSAR LOGIN
+# 4. RECUSAR LOGIN PELO CLIENTE AUTENTICADO
 # -----------------------------------------------------
 
 @app.route("/qr-login/reject", methods=["POST"])
@@ -13950,7 +14061,6 @@ def qr_login_reject():
         ), 401
 
     data = request.get_json(silent=True) or {}
-
     qr_token = data.get("qr_token", "")
 
     if not qr_token:
@@ -13971,282 +14081,7 @@ def qr_login_reject():
 
     pedido = obter_pedido_qr(pedido.id)
 
-    if pedido.status != "pending":
-        return jsonify(
-            status="error",
-            msg="Este pedido já não está pendente."
-        ), 409
-
-    pedido.status = "rejected"
-
-    db.session.commit()
-
-    return jsonify(
-        status="ok",
-        msg="Pedido recusado."
-    ), 200
-
-
-# -----------------------------------------------------
-# 5. COMPUTADOR CONSULTA ESTADO DO QR
-# -----------------------------------------------------
-
-@app.route("/qr-login/status/<pedido_id>", methods=["POST"])
-def qr_login_status(pedido_id):
-
-    data = request.get_json(silent=True) or {}
-
-    poll_token = data.get("poll_token", "")
-
-    if not poll_token:
-        return jsonify(
-            status="error",
-            msg="Token de consulta em falta."
-        ), 400
-
-    pedido = obter_pedido_qr(pedido_id)
-
-    if not pedido:
-        return jsonify(
-            status="error",
-            msg="Pedido não encontrado."
-        ), 404
-
-    if not secrets.compare_digest(
-        gerar_hash_qr(poll_token),
-        pedido.poll_token_hash
-    ):
-        return jsonify(
-            status="error",
-            msg="Token de consulta inválido."
-        ), 403
-
-    if pedido.status == "pending":
-        return jsonify(status="pending"), 200
-
-    if pedido.status == "rejected":
-        return jsonify(status="rejected"), 200
-
-    if pedido.status == "expired":
-        return jsonify(status="expired"), 200
-
-    if pedido.status == "used":
-        return jsonify(status="used"), 200
-
-    if pedido.status == "approved":
-
-        user = User.query.get(pedido.user_id)
-
-        if not user or getattr(user, "apagado", False) or getattr(user, "banido", False):
-            pedido.status = "rejected"
-            db.session.commit()
-
-            return jsonify(
-                status="error",
-                msg="Esta conta não pode iniciar sessão."
-            ), 403
-
-        novo_token = secrets.token_hex(32)
-
-        nova_sessao = UserSession(
-            user_id=user.id,
-            session_token=novo_token,
-            platform="AERON Desktop - QR",
-            ip_address=request.remote_addr,
-            location="Desconhecida",
-            remember_me=False,
-            active=True
-        )
-
-        try:
-            db.session.add(nova_sessao)
-
-            pedido.status = "used"
-            pedido.used_at = datetime.utcnow()
-
-            db.session.commit()
-
-        except Exception:
-            db.session.rollback()
-
-            return jsonify(
-                status="error",
-                msg="Não foi possível concluir o login."
-            ), 500
-
-        return jsonify(
-            status="ok",
-            id=user.id,
-            username=user.username,
-            email=user.email,
-            avatar=user.avatar,
-            banner=user.banner,
-            moedas=user.moedas,
-            role=user.role,
-            session_token=novo_token,
-            remember_me=False,
-            avatares_comprados=json.loads(
-                user.avatares_comprados or "[]"
-            ),
-            banners_comprados=json.loads(
-                user.banners_comprados or "[]"
-            )
-        ), 200
-
-    return jsonify(
-        status="error",
-        msg="Estado desconhecido."
-    ), 400
-
-
-# =====================================================
-#       IDENTIFICAR CONTA NO TELEMOVEL
-# =====================================================
-
-@app.route("/qr-login/me", methods=["GET"])
-def qr_login_me():
-
-    user_id = session.get("user_id")
-
-    if not user_id:
-        return jsonify(
-            status="error",
-            msg="Não tens sessão iniciada."
-        ), 401
-
-    user = db.session.get(User, user_id)
-
-    if not user:
-        session.clear()
-
-        return jsonify(
-            status="error",
-            msg="Conta não encontrada."
-        ), 401
-
-    if getattr(user, "apagado", False) or getattr(user, "banido", False):
-        session.clear()
-
-        return jsonify(
-            status="error",
-            msg="Esta conta não pode autorizar logins."
-        ), 403
-
-    return jsonify(
-        status="ok",
-        username=user.username,
-        avatar=user.avatar
-    ), 200
-
-
-# =====================================================
-#       AUTORIZAR QR PELO NAVEGADOR
-# =====================================================
-
-@app.route("/qr-login/approve-web", methods=["POST"])
-def qr_login_approve_web():
-
-    user_id = session.get("user_id")
-
-    if not user_id:
-        return jsonify(
-            status="error",
-            msg="Inicia sessão primeiro."
-        ), 401
-
-    user = db.session.get(User, user_id)
-
-    if not user or getattr(user, "apagado", False) or getattr(user, "banido", False):
-        return jsonify(
-            status="error",
-            msg="Esta conta não pode autorizar o login."
-        ), 403
-
-    data = request.get_json(silent=True) or {}
-    qr_token = data.get("qr_token", "")
-
-    if not qr_token:
-        return jsonify(
-            status="error",
-            msg="Código QR em falta."
-        ), 400
-
-    pedido = QRLoginRequest.query.filter_by(
-        token_hash=gerar_hash_qr(qr_token)
-    ).first()
-
-    if not pedido:
-        return jsonify(
-            status="error",
-            msg="QR Code inválido."
-        ), 404
-
-    pedido = obter_pedido_qr(pedido.id)
-
-    if pedido.status != "pending":
-        return jsonify(
-            status="error",
-            msg="Este pedido já não está disponível."
-        ), 409
-
-    pedido.user_id = user.id
-    pedido.status = "approved"
-    pedido.approved_at = datetime.utcnow()
-
-    try:
-        db.session.commit()
-
-    except Exception:
-        db.session.rollback()
-
-        return jsonify(
-            status="error",
-            msg="Não foi possível autorizar."
-        ), 500
-
-    return jsonify(
-        status="ok",
-        msg="Login autorizado."
-    ), 200
-
-
-# =====================================================
-#       RECUSAR QR PELO NAVEGADOR
-# =====================================================
-
-@app.route("/qr-login/reject-web", methods=["POST"])
-def qr_login_reject_web():
-
-    user_id = session.get("user_id")
-
-    if not user_id:
-        return jsonify(
-            status="error",
-            msg="Inicia sessão primeiro."
-        ), 401
-
-    data = request.get_json(silent=True) or {}
-    qr_token = data.get("qr_token", "")
-
-    if not qr_token:
-        return jsonify(
-            status="error",
-            msg="Código QR em falta."
-        ), 400
-
-    pedido = QRLoginRequest.query.filter_by(
-        token_hash=gerar_hash_qr(qr_token)
-    ).first()
-
-    if not pedido:
-        return jsonify(
-            status="error",
-            msg="QR Code inválido."
-        ), 404
-
-    pedido = obter_pedido_qr(pedido.id)
-
-    if pedido.status != "pending":
+    if not pedido or pedido.status != "pending":
         return jsonify(
             status="error",
             msg="Este pedido já não está pendente."
@@ -14269,6 +14104,1502 @@ def qr_login_reject_web():
         status="ok",
         msg="Pedido recusado."
     ), 200
+
+
+# -----------------------------------------------------
+# 5. COMPUTADOR CONSULTA ESTADO DO QR
+# -----------------------------------------------------
+
+@app.route("/qr-login/status/<pedido_id>", methods=["POST"])
+def qr_login_status(pedido_id):
+
+    data = request.get_json(silent=True) or {}
+    poll_token = data.get("poll_token", "")
+
+    if not poll_token:
+        return jsonify(
+            status="error",
+            msg="Token de consulta em falta."
+        ), 400
+
+    pedido = obter_pedido_qr(pedido_id)
+
+    if not pedido:
+        return jsonify(
+            status="error",
+            msg="Pedido não encontrado."
+        ), 404
+
+    hash_recebido = gerar_hash_qr(poll_token)
+
+    if not secrets.compare_digest(
+        hash_recebido,
+        pedido.poll_token_hash
+    ):
+        return jsonify(
+            status="error",
+            msg="Token de consulta inválido."
+        ), 403
+
+    if pedido.status == "pending":
+        return jsonify(status="pending"), 200
+
+    if pedido.status == "rejected":
+        return jsonify(status="rejected"), 200
+
+    if pedido.status == "expired":
+        return jsonify(status="expired"), 200
+
+    if pedido.status == "used":
+        return jsonify(status="used"), 200
+
+    if pedido.status == "approved":
+
+        user = db.session.get(User, pedido.user_id)
+
+        if (
+            not user
+            or getattr(user, "apagado", False)
+            or getattr(user, "banido", False)
+        ):
+            pedido.status = "rejected"
+            db.session.commit()
+
+            return jsonify(
+                status="error",
+                msg="Esta conta não pode iniciar sessão."
+            ), 403
+
+        novo_token = secrets.token_hex(32)
+
+        nova_sessao = UserSession(
+            user_id=user.id,
+            session_token=novo_token,
+            platform="AERON Desktop - QR",
+            ip_address=request.remote_addr,
+            location="Desconhecida",
+            remember_me=False,
+            active=True
+        )
+
+        try:
+
+            db.session.add(nova_sessao)
+
+            pedido.status = "used"
+            pedido.used_at = datetime.utcnow()
+
+            db.session.commit()
+
+        except Exception:
+
+            db.session.rollback()
+
+            app.logger.exception(
+                "Erro ao concluir login QR."
+            )
+
+            return jsonify(
+                status="error",
+                msg="Não foi possível concluir o login."
+            ), 500
+
+        return jsonify(
+            status="ok",
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            avatar=user.avatar,
+            banner=user.banner,
+            moedas=user.moedas,
+            role=user.role,
+            session_token=novo_token,
+            remember_me=False,
+
+            avatares_comprados=json.loads(
+                user.avatares_comprados or "[]"
+            ),
+
+            banners_comprados=json.loads(
+                user.banners_comprados or "[]"
+            )
+        ), 200
+
+    return jsonify(
+        status="error",
+        msg="Estado desconhecido."
+    ), 400
+
+
+# -----------------------------------------------------
+# 6. IDENTIFICAR CONTA NO TELEMÓVEL
+# -----------------------------------------------------
+
+@app.route("/qr-login/me", methods=["GET"])
+def qr_login_me():
+
+    user = obter_utilizador_sessao_mobile()
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Não tens sessão iniciada."
+        ), 401
+
+    return jsonify(
+        status="ok",
+        id=user.id,
+        username=user.username,
+        avatar=user.avatar,
+        nome=getattr(user, "nome", None),
+        bio=getattr(user, "bio", None)
+    ), 200
+
+
+# -----------------------------------------------------
+# 7. AUTORIZAR QR PELO NAVEGADOR
+# -----------------------------------------------------
+
+@app.route("/qr-login/approve-web", methods=["POST"])
+def qr_login_approve_web():
+
+    user = obter_utilizador_sessao_mobile()
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Inicia sessão primeiro."
+        ), 401
+
+    data = request.get_json(silent=True) or {}
+    qr_token = data.get("qr_token", "")
+
+    if not qr_token:
+        return jsonify(
+            status="error",
+            msg="Código QR em falta."
+        ), 400
+
+    pedido = QRLoginRequest.query.filter_by(
+        token_hash=gerar_hash_qr(qr_token)
+    ).first()
+
+    if not pedido:
+        return jsonify(
+            status="error",
+            msg="QR Code inválido."
+        ), 404
+
+    pedido = obter_pedido_qr(pedido.id)
+
+    if not pedido or pedido.status != "pending":
+        return jsonify(
+            status="error",
+            msg="Este QR Code já não está disponível."
+        ), 409
+
+    pedido.user_id = user.id
+    pedido.status = "approved"
+    pedido.approved_at = datetime.utcnow()
+
+    try:
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        app.logger.exception("Erro na autorização web do QR.")
+
+        return jsonify(
+            status="error",
+            msg="Não foi possível autorizar."
+        ), 500
+
+    return jsonify(
+        status="ok",
+        msg="Login autorizado."
+    ), 200
+
+
+# -----------------------------------------------------
+# 8. RECUSAR QR PELO NAVEGADOR
+# -----------------------------------------------------
+
+@app.route("/qr-login/reject-web", methods=["POST"])
+def qr_login_reject_web():
+
+    user = obter_utilizador_sessao_mobile()
+
+    if not user:
+        return jsonify(
+            status="error",
+            msg="Inicia sessão primeiro."
+        ), 401
+
+    data = request.get_json(silent=True) or {}
+    qr_token = data.get("qr_token", "")
+
+    if not qr_token:
+        return jsonify(
+            status="error",
+            msg="Código QR em falta."
+        ), 400
+
+    pedido = QRLoginRequest.query.filter_by(
+        token_hash=gerar_hash_qr(qr_token)
+    ).first()
+
+    if not pedido:
+        return jsonify(
+            status="error",
+            msg="QR Code inválido."
+        ), 404
+
+    pedido = obter_pedido_qr(pedido.id)
+
+    if not pedido or pedido.status != "pending":
+        return jsonify(
+            status="error",
+            msg="Este QR Code já não está disponível."
+        ), 409
+
+    pedido.status = "rejected"
+
+    try:
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+
+        app.logger.exception("Erro ao recusar QR pelo navegador.")
+
+        return jsonify(
+            status="error",
+            msg="Não foi possível recusar o pedido."
+        ), 500
+
+    return jsonify(
+        status="ok",
+        msg="Pedido recusado."
+    ), 200
+
+
+# =====================================================
+#                 AERON MOBILE
+# =====================================================
+
+# Duração da sessão persistente: 30 dias
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+
+
+# -----------------------------------------------------
+# IDENTIFICAR UTILIZADOR MOBILE
+# -----------------------------------------------------
+
+@app.route("/mobile/me", methods=["GET"])
+def mobile_me():
+
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return jsonify(
+            status="error",
+            msg="Sessão não iniciada."
+        ), 401
+
+    user = db.session.get(User, user_id)
+
+    if not user:
+        session.clear()
+        return jsonify(
+            status="error",
+            msg="Conta não encontrada."
+        ), 404
+
+    if (
+        getattr(user, "apagado", False)
+        or getattr(user, "banido", False)
+        or getattr(user, "bloqueado", False)
+        or not getattr(user, "ativo", True)
+    ):
+        session.clear()
+        return jsonify(
+            status="error",
+            msg="Esta conta não pode aceder à AERON."
+        ), 403
+
+    return jsonify({
+        "status": "ok",
+        "id": user.id,
+        "username": user.username,
+        "nome": getattr(user, "nome", "") or "",
+        "bio": getattr(user, "bio", "") or "",
+        "avatar": getattr(user, "avatar", None),
+        "banner": getattr(user, "banner", None),
+        "moedas": getattr(user, "moedas", 0)
+    }), 200
+
+
+# -----------------------------------------------------
+# GUARDAR CONTA NESTE TELEMÓVEL
+# -----------------------------------------------------
+
+@app.route("/mobile/remember", methods=["POST"])
+def mobile_remember():
+
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return jsonify(
+            status="error",
+            msg="Sessão não iniciada."
+        ), 401
+
+    user = db.session.get(User, user_id)
+
+    if not user:
+        session.clear()
+        return jsonify(
+            status="error",
+            msg="Conta não encontrada."
+        ), 404
+
+    session.permanent = True
+
+    return jsonify(
+        status="ok",
+        msg="Conta guardada neste dispositivo."
+    ), 200
+
+
+# -----------------------------------------------------
+# PÁGINA DE LOGIN MOBILE
+# -----------------------------------------------------
+
+@app.route("/mobile", methods=["GET"])
+def aeron_mobile():
+
+    if session.get("user_id"):
+        user = db.session.get(User, session["user_id"])
+
+        if user and not getattr(user, "banido", False) and not getattr(user, "apagado", False):
+            return redirect("/mobile/home")
+
+        session.clear()
+
+    html = """
+    <!DOCTYPE html>
+    <html lang="pt">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#080d18">
+
+        <title>AERON | Mobile</title>
+
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+                font-family: Arial, sans-serif;
+            }
+
+            body {
+                min-height: 100vh;
+                background: #080d18;
+                color: #f1f5f9;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: 20px;
+            }
+
+            .container {
+                width: 100%;
+                max-width: 420px;
+            }
+
+            .logo {
+                text-align: center;
+                margin-bottom: 35px;
+            }
+
+            .logo h1 {
+                color: #d4af37;
+                font-size: 39px;
+                letter-spacing: 8px;
+                font-weight: 900;
+            }
+
+            .logo p {
+                color: #94a3b8;
+                font-size: 10px;
+                letter-spacing: 4px;
+                margin-top: 9px;
+            }
+
+            .card {
+                background: #111827;
+                border: 1px solid #263247;
+                border-radius: 20px;
+                padding: 26px;
+                box-shadow: 0 20px 60px #0008;
+            }
+
+            h2 {
+                font-size: 23px;
+                margin-bottom: 10px;
+            }
+
+            .description {
+                color: #94a3b8;
+                font-size: 13px;
+                line-height: 1.6;
+                margin-bottom: 25px;
+            }
+
+            label {
+                display: block;
+                font-size: 13px;
+                margin-bottom: 8px;
+                color: #cbd5e1;
+            }
+
+            input {
+                width: 100%;
+                padding: 15px;
+                margin-bottom: 18px;
+                border-radius: 10px;
+                border: 1px solid #334155;
+                background: #080d18;
+                color: white;
+                outline: none;
+                font-size: 15px;
+            }
+
+            input:focus {
+                border-color: #d4af37;
+            }
+
+            button {
+                width: 100%;
+                padding: 15px;
+                border: none;
+                border-radius: 10px;
+                background: #d4af37;
+                color: #080d18;
+                font-weight: bold;
+                font-size: 14px;
+                cursor: pointer;
+            }
+
+            button:disabled {
+                opacity: .5;
+            }
+
+            .message {
+                min-height: 20px;
+                margin-top: 15px;
+                font-size: 13px;
+                text-align: center;
+                color: #f87171;
+            }
+
+            .footer {
+                text-align: center;
+                margin-top: 25px;
+                color: #64748b;
+                font-size: 11px;
+            }
+        </style>
+    </head>
+
+    <body>
+
+        <main class="container">
+
+            <div class="logo">
+                <h1>AERON</h1>
+                <p>MASTERING PERFORMANCE</p>
+            </div>
+
+            <div class="card">
+
+                <h2>Bem-vindo de volta</h2>
+
+                <p class="description">
+                    Entra na tua conta e acompanha a comunidade automóvel.
+                </p>
+
+                <form id="login-form">
+
+                    <label>Username ou email</label>
+
+                    <input
+                        id="username"
+                        type="text"
+                        placeholder="Username ou email"
+                        autocomplete="username"
+                        required
+                    >
+
+                    <label>Palavra-passe</label>
+
+                    <input
+                        id="password"
+                        type="password"
+                        placeholder="Palavra-passe"
+                        autocomplete="current-password"
+                        required
+                    >
+
+                    <button id="login-button" type="submit">
+                        ENTRAR NA AERON
+                    </button>
+
+                </form>
+
+                <p id="message" class="message"></p>
+
+            </div>
+
+            <div class="footer">
+                AERON © 2026 · MASTERING PERFORMANCE
+            </div>
+
+        </main>
+
+        <script>
+
+            const form = document.getElementById("login-form");
+            const message = document.getElementById("message");
+            const button = document.getElementById("login-button");
+
+            // Verificar se já existe uma sessão
+            async function verificarSessao() {
+
+                try {
+
+                    const response = await fetch("/mobile/me", {
+                        credentials: "same-origin"
+                    });
+
+                    if (response.ok) {
+                        window.location.replace("/mobile/home");
+                    }
+
+                } catch (error) {
+                    console.error(error);
+                }
+
+            }
+
+            verificarSessao();
+
+            form.addEventListener("submit", async function(event) {
+
+                event.preventDefault();
+
+                button.disabled = true;
+                button.textContent = "A AUTENTICAR...";
+
+                message.textContent = "";
+
+                try {
+
+                    const response = await fetch("/login", {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            username: document.getElementById("username").value.trim(),
+                            password: document.getElementById("password").value,
+                            remember_me: false,
+                            platform: "AERON Mobile"
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok || data.status !== "ok") {
+
+                        message.textContent = data.msg ||
+                            "Não foi possível iniciar sessão.";
+
+                        button.disabled = false;
+                        button.textContent = "ENTRAR NA AERON";
+
+                        return;
+                    }
+
+                    document.getElementById("password").value = "";
+
+                    // Perguntar se quer guardar a conta
+                    const guardar = window.confirm(
+                        "Queres guardar a tua conta neste telemóvel? " +
+                        "Assim, nas próximas visitas, não precisas de iniciar sessão novamente."
+                    );
+
+                    if (guardar) {
+
+                        await fetch("/mobile/remember", {
+                            method: "POST",
+                            credentials: "same-origin"
+                        });
+
+                    }
+
+                    window.location.replace("/mobile/home");
+
+                } catch (error) {
+
+                    message.textContent = "Erro de ligação ao servidor.";
+
+                    button.disabled = false;
+                    button.textContent = "ENTRAR NA AERON";
+
+                }
+
+            });
+
+        </script>
+
+    </body>
+    </html>
+    """
+
+    response = app.make_response(
+        render_template_string(html)
+    )
+
+    response.headers["Cache-Control"] = "no-store"
+
+    return response
+
+
+# -----------------------------------------------------
+# PÁGINA PRINCIPAL MOBILE
+# -----------------------------------------------------
+
+@app.route("/mobile/home", methods=["GET"])
+def aeron_mobile_home():
+
+    if not session.get("user_id"):
+        return redirect("/mobile")
+
+    html = """
+    <!DOCTYPE html>
+    <html lang="pt">
+
+    <head>
+
+        <meta charset="UTF-8">
+
+        <meta name="viewport"
+              content="width=device-width, initial-scale=1">
+
+        <meta name="theme-color" content="#080d18">
+
+        <title>AERON | Home</title>
+
+        <style>
+
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+                font-family: Arial, sans-serif;
+            }
+
+            body {
+                background: #080d18;
+                color: #f1f5f9;
+                min-height: 100vh;
+            }
+
+            header {
+                height: 65px;
+                background: #101827;
+                border-bottom: 1px solid #263247;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 17px;
+                position: sticky;
+                top: 0;
+                z-index: 10;
+            }
+
+            .brand {
+                color: #d4af37;
+                font-size: 24px;
+                font-weight: 900;
+                letter-spacing: 4px;
+            }
+
+            .menu-button {
+                width: 42px;
+                height: 42px;
+                border: 1px solid #334155;
+                border-radius: 10px;
+                background: #1e293b;
+                color: white;
+                font-size: 23px;
+                cursor: pointer;
+            }
+
+            main {
+                max-width: 650px;
+                margin: auto;
+                padding: 18px 13px 90px;
+            }
+
+            .welcome {
+                background: linear-gradient(135deg, #17243b, #101827);
+                border: 1px solid #263247;
+                border-radius: 16px;
+                padding: 18px;
+                margin-bottom: 20px;
+                display: flex;
+                align-items: center;
+                gap: 14px;
+            }
+
+            .avatar {
+                width: 55px;
+                height: 55px;
+                border-radius: 50%;
+                object-fit: cover;
+                background: #334155;
+                border: 2px solid #d4af37;
+            }
+
+            .welcome-name {
+                font-size: 17px;
+                font-weight: bold;
+            }
+
+            .welcome-user {
+                color: #94a3b8;
+                font-size: 12px;
+                margin-top: 5px;
+            }
+
+            .section-title {
+                font-size: 18px;
+                margin: 22px 0 14px;
+            }
+
+            .post {
+                background: #111827;
+                border: 1px solid #263247;
+                border-radius: 15px;
+                padding: 16px;
+                margin-bottom: 15px;
+            }
+
+            .post-header {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 14px;
+            }
+
+            .post-header img {
+                width: 42px;
+                height: 42px;
+                border-radius: 50%;
+                object-fit: cover;
+                background: #334155;
+            }
+
+            .post-author {
+                font-weight: bold;
+                font-size: 14px;
+            }
+
+            .post-date {
+                font-size: 11px;
+                color: #64748b;
+                margin-top: 4px;
+            }
+
+            .post-text {
+                font-size: 14px;
+                line-height: 1.7;
+                white-space: pre-wrap;
+                overflow-wrap: anywhere;
+            }
+
+            .post-image {
+                width: 100%;
+                border-radius: 10px;
+                margin-top: 12px;
+                object-fit: contain;
+            }
+
+            .post-stats {
+                display: flex;
+                gap: 18px;
+                margin-top: 15px;
+                padding-top: 12px;
+                border-top: 1px solid #263247;
+                color: #94a3b8;
+                font-size: 12px;
+            }
+
+            .like-button {
+                background: transparent;
+                color: #d4af37;
+                border: none;
+                width: auto;
+                padding: 0;
+                cursor: pointer;
+            }
+
+            .empty {
+                text-align: center;
+                padding: 35px 15px;
+                color: #94a3b8;
+                background: #111827;
+                border-radius: 14px;
+                font-size: 14px;
+            }
+
+            .menu {
+                position: fixed;
+                top: 72px;
+                right: 12px;
+                width: 220px;
+                background: #172033;
+                border: 1px solid #334155;
+                border-radius: 13px;
+                padding: 8px;
+                z-index: 30;
+                display: none;
+                box-shadow: 0 15px 35px #0009;
+            }
+
+            .menu button {
+                width: 100%;
+                background: transparent;
+                color: #e2e8f0;
+                text-align: left;
+                padding: 13px;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+            }
+
+            .menu button:hover {
+                background: #263449;
+            }
+
+            .menu .logout {
+                color: #f87171;
+            }
+
+            .panel {
+                display: none;
+                background: #111827;
+                border: 1px solid #263247;
+                border-radius: 14px;
+                padding: 18px;
+                margin-bottom: 18px;
+            }
+
+            .panel h2 {
+                font-size: 19px;
+                margin-bottom: 14px;
+            }
+
+            .profile-avatar {
+                width: 85px;
+                height: 85px;
+                object-fit: cover;
+                border-radius: 50%;
+                border: 2px solid #d4af37;
+                margin-bottom: 12px;
+            }
+
+            .notification {
+                padding: 13px 0;
+                border-bottom: 1px solid #263247;
+                font-size: 13px;
+                line-height: 1.5;
+            }
+
+            .notification:last-child {
+                border-bottom: none;
+            }
+
+            .notification small {
+                color: #94a3b8;
+                display: block;
+                margin-top: 5px;
+            }
+
+            .bottom-nav {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 65px;
+                background: #101827;
+                border-top: 1px solid #263247;
+                display: flex;
+                justify-content: space-around;
+                align-items: center;
+                z-index: 8;
+            }
+
+            .bottom-nav button {
+                background: transparent;
+                border: none;
+                color: #94a3b8;
+                font-size: 12px;
+                cursor: pointer;
+                width: auto;
+                padding: 10px;
+            }
+
+            .bottom-nav button.active {
+                color: #d4af37;
+            }
+
+            .error {
+                color: #f87171;
+            }
+
+        </style>
+
+    </head>
+
+    <body>
+
+        <header>
+
+            <div class="brand">AERON</div>
+
+            <button class="menu-button"
+                    onclick="toggleMenu()">⋮</button>
+
+        </header>
+
+        <div class="menu" id="menu">
+
+            <button onclick="mostrarPerfil()">
+                👤 O meu perfil
+            </button>
+
+            <button onclick="mostrarNotificacoes()">
+                🔔 Notificações
+            </button>
+
+            <button onclick="window.location.href='/mobile'">
+                📱 Página mobile
+            </button>
+
+            <button onclick="window.location.href='/mobile/authorized'">
+                🔐 Entradas autorizadas por QR
+            </button>
+
+            <button class="logout" onclick="terminarSessao()">
+                Terminar sessão
+            </button>
+
+        </div>
+
+        <main>
+
+            <div class="welcome">
+
+                <img id="welcome-avatar"
+                     class="avatar"
+                     src=""
+                     alt="Avatar">
+
+                <div>
+                    <div class="welcome-name" id="welcome-name">
+                        A carregar...
+                    </div>
+
+                    <div class="welcome-user" id="welcome-user"></div>
+                </div>
+
+            </div>
+
+            <section id="feed-section">
+
+                <h2 class="section-title">
+                    Publicações
+                </h2>
+
+                <div id="feed">
+                    <div class="empty">
+                        A carregar publicações...
+                    </div>
+                </div>
+
+            </section>
+
+            <section id="profile-section" class="panel">
+
+                <h2>O meu perfil</h2>
+
+                <img id="profile-avatar"
+                     class="profile-avatar"
+                     src=""
+                     alt="Avatar">
+
+                <h3 id="profile-name"></h3>
+
+                <p id="profile-username"
+                   style="color:#94a3b8;margin:7px 0"></p>
+
+                <p id="profile-bio"
+                   style="font-size:14px;line-height:1.6"></p>
+
+            </section>
+
+            <section id="notifications-section" class="panel">
+
+                <h2>Notificações</h2>
+
+                <div id="notifications-list">
+                    A carregar notificações...
+                </div>
+
+            </section>
+
+        </main>
+
+        <nav class="bottom-nav">
+
+            <button class="active"
+                    onclick="mostrarFeed()">
+                🏠 Feed
+            </button>
+
+            <button onclick="mostrarPerfil()">
+                👤 Perfil
+            </button>
+
+            <button onclick="mostrarNotificacoes()">
+                🔔 Avisos
+            </button>
+
+        </nav>
+
+        <script>
+
+            let utilizador = null;
+
+            function escapar(valor) {
+                return String(valor ?? "").replace(/[&<>"']/g, function(c) {
+                    return {
+                        "&": "&amp;",
+                        "<": "&lt;",
+                        ">": "&gt;",
+                        '"': "&quot;",
+                        "'": "&#39;"
+                    }[c];
+                });
+            }
+
+            function imagemValida(url) {
+                if (!url) return "";
+
+                try {
+                    const parsed = new URL(url, window.location.origin);
+
+                    if (
+                        parsed.protocol !== "http:" &&
+                        parsed.protocol !== "https:"
+                    ) {
+                        return "";
+                    }
+
+                    return parsed.href;
+
+                } catch {
+                    return "";
+                }
+            }
+
+            function toggleMenu() {
+                const menu = document.getElementById("menu");
+
+                menu.style.display =
+                    menu.style.display === "block" ? "none" : "block";
+            }
+
+            function esconderPaineis() {
+
+                document.getElementById("feed-section").style.display = "none";
+                document.getElementById("profile-section").style.display = "none";
+                document.getElementById("notifications-section").style.display = "none";
+
+                document.getElementById("menu").style.display = "none";
+
+            }
+
+            function mostrarFeed() {
+
+                esconderPaineis();
+
+                document.getElementById("feed-section").style.display = "block";
+
+            }
+
+            function mostrarPerfil() {
+
+                esconderPaineis();
+
+                document.getElementById("profile-section").style.display = "block";
+
+            }
+
+            async function mostrarNotificacoes() {
+
+                esconderPaineis();
+
+                const section = document.getElementById("notifications-section");
+                const lista = document.getElementById("notifications-list");
+
+                section.style.display = "block";
+
+                lista.textContent = "A carregar notificações...";
+
+                try {
+
+                    const response = await fetch(
+                        "/notifications/" + utilizador.id,
+                        {credentials: "same-origin"}
+                    );
+
+                    if (!response.ok) {
+                        lista.textContent = "Não foi possível carregar notificações.";
+                        return;
+                    }
+
+                    const data = await response.json();
+
+                    lista.innerHTML = "";
+
+                    const notificacoes = Array.isArray(data)
+                        ? data
+                        : (data.notificacoes || []);
+
+                    if (!notificacoes.length) {
+                        lista.textContent = "Ainda não tens notificações.";
+                        return;
+                    }
+
+                    notificacoes.forEach(n => {
+
+                        const item = document.createElement("div");
+                        item.className = "notification";
+
+                        item.textContent =
+                            n.mensagem ||
+                            (n.nome || n.origem || "AERON");
+
+                        const detalhes = document.createElement("small");
+
+                        detalhes.textContent =
+                            n.data || "";
+
+                        item.appendChild(detalhes);
+
+                        lista.appendChild(item);
+
+                    });
+
+                } catch (error) {
+
+                    lista.textContent = "Erro de ligação.";
+
+                }
+
+            }
+
+            async function carregarPerfil() {
+
+                const response = await fetch("/mobile/me", {
+                    credentials: "same-origin"
+                });
+
+                if (!response.ok) {
+                    window.location.replace("/mobile");
+                    return false;
+                }
+
+                utilizador = await response.json();
+
+                const avatar = imagemValida(utilizador.avatar);
+
+                document.getElementById("welcome-name").textContent =
+                    utilizador.nome || utilizador.username;
+
+                document.getElementById("welcome-user").textContent =
+                    "@" + utilizador.username;
+
+                document.getElementById("welcome-avatar").src =
+                    avatar || "/static/avatars/default.png";
+
+                document.getElementById("profile-avatar").src =
+                    avatar || "/static/avatars/default.png";
+
+                document.getElementById("profile-name").textContent =
+                    utilizador.nome || utilizador.username;
+
+                document.getElementById("profile-username").textContent =
+                    "@" + utilizador.username;
+
+                document.getElementById("profile-bio").textContent =
+                    utilizador.bio || "Ainda não existe uma biografia.";
+
+                return true;
+
+            }
+
+            async function carregarFeed() {
+
+                const feed = document.getElementById("feed");
+
+                try {
+
+                    const response = await fetch(
+                        "/posts?user_id=" + utilizador.id,
+                        {credentials: "same-origin"}
+                    );
+
+                    if (!response.ok) {
+                        feed.textContent = "Não foi possível carregar o feed.";
+                        return;
+                    }
+
+                    const posts = await response.json();
+
+                    feed.innerHTML = "";
+
+                    if (!posts.length) {
+
+                        feed.innerHTML =
+                            '<div class="empty">Ainda não existem publicações.</div>';
+
+                        return;
+
+                    }
+
+                    posts.forEach(post => {
+
+                        const card = document.createElement("article");
+                        card.className = "post";
+
+                        const autor = post.autor || {};
+
+                        const avatar = imagemValida(autor.avatar);
+
+                        let html = `
+                            <div class="post-header">
+
+                                <img src="${escapar(
+                                    avatar || "/static/avatars/default.png"
+                                )}" alt="Avatar">
+
+                                <div>
+                                    <div class="post-author">
+                                        ${escapar(autor.username || "Utilizador")}
+                                    </div>
+
+                                    <div class="post-date">
+                                        ${escapar(post.data || "")}
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <div class="post-text">
+                                ${escapar(post.texto || "")}
+                            </div>
+                        `;
+
+                        (post.imagens || []).forEach(url => {
+
+                            const imagem = imagemValida(url);
+
+                            if (imagem) {
+                                html += `
+                                    <img class="post-image"
+                                         src="${escapar(imagem)}"
+                                         alt="Imagem da publicação"
+                                         loading="lazy">
+                                `;
+                            }
+
+                        });
+
+                        html += `
+                            <div class="post-stats">
+
+                                <button class="like-button"
+                                        data-post-id="${escapar(post.id)}">
+                                    ♡ ${Number(post.likes) || 0} gostos
+                                </button>
+
+                                <span>
+                                    💬 ${Number(post.comentarios) || 0} comentários
+                                </span>
+
+                            </div>
+                        `;
+
+                        card.innerHTML = html;
+
+                        card.querySelector(".like-button")
+                            .addEventListener("click", async function() {
+
+                                const botao = this;
+
+                                botao.disabled = true;
+
+                                try {
+
+                                    const resposta = await fetch(
+                                        "/posts/" + encodeURIComponent(post.id) + "/like",
+                                        {
+                                            method: "POST",
+                                            credentials: "same-origin",
+                                            headers: {
+                                                "Content-Type": "application/json"
+                                            },
+                                            body: JSON.stringify({
+                                                user_id: utilizador.id
+                                            })
+                                        }
+                                    );
+
+                                    const resultado = await resposta.json();
+
+                                    if (resposta.ok) {
+
+                                        botao.textContent =
+                                            (resultado.liked ? "♥ " : "♡ ") +
+                                            resultado.likes + " gostos";
+
+                                    }
+
+                                } catch (error) {
+                                    console.error(error);
+                                }
+
+                                botao.disabled = false;
+
+                            });
+
+                        feed.appendChild(card);
+
+                    });
+
+                } catch (error) {
+
+                    feed.textContent = "Erro ao carregar publicações.";
+
+                }
+
+            }
+
+            async function terminarSessao() {
+
+                if (!confirm("Queres terminar a sessão da AERON neste telemóvel?")) {
+                    return;
+                }
+
+                try {
+
+                    await fetch("/mobile/logout", {
+                        method: "POST",
+                        credentials: "same-origin"
+                    });
+
+                } finally {
+
+                    window.location.replace("/mobile");
+
+                }
+
+            }
+
+            async function iniciar() {
+
+                const valido = await carregarPerfil();
+
+                if (!valido) return;
+
+                await carregarFeed();
+
+            }
+
+            iniciar();
+
+        </script>
+
+    </body>
+    </html>
+    """
+
+    response = app.make_response(
+        render_template_string(html)
+    )
+
+    response.headers["Cache-Control"] = "no-store"
+
+    return response
+
+
+# -----------------------------------------------------
+# TERMINAR SESSÃO MOBILE
+# -----------------------------------------------------
+
+@app.route("/mobile/logout", methods=["POST"])
+def mobile_logout():
+
+    user_id = session.get("user_id")
+    session_token = session.get("session_token")
+
+    if session_token and user_id:
+
+        try:
+
+            sessao_db = UserSession.query.filter_by(
+                session_token=session_token,
+                user_id=user_id,
+                active=True
+            ).first()
+
+            if sessao_db:
+                sessao_db.active = False
+                db.session.commit()
+
+        except Exception:
+
+            db.session.rollback()
+            app.logger.exception(
+                "Erro ao terminar sessão mobile."
+            )
+
+    session.clear()
+
+    return jsonify(
+        status="ok",
+        msg="Sessão terminada."
+    ), 200
+
 
 #================= START =================
 if __name__ == "__main__":
