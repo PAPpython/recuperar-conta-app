@@ -2445,6 +2445,36 @@ def verificar_hash_password(password, password_guardada):
     ):
         return False
 
+
+
+# ================= VERIFICAR SE HASH PRECISA DE ATUALIZAÇÃO =================
+
+def password_needs_update(password_guardada):
+
+    if not password_guardada:
+        return True
+
+    # Hashes SHA-256 antigos precisam de migração
+    if len(password_guardada) == 64:
+        try:
+            int(password_guardada, 16)
+            return True
+        except ValueError:
+            pass
+
+    # Verificar se já é Argon2id
+    if password_guardada.startswith("$argon2"):
+
+        try:
+            return password_hasher.check_needs_rehash(
+                password_guardada
+            )
+        except Exception:
+            return True
+
+    # Qualquer outro formato precisa de atualização
+    return True
+
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
 def delete_account():
