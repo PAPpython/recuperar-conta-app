@@ -15045,6 +15045,11 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 # IDENTIFICAR UTILIZADOR MOBILE
 # -----------------------------------------------------
 
+
+# -----------------------------------------------------
+# IDENTIFICAR UTILIZADOR MOBILE
+# -----------------------------------------------------
+
 @app.route("/mobile/me", methods=["GET"])
 def mobile_me():
 
@@ -15077,17 +15082,30 @@ def mobile_me():
             msg="Esta conta não pode aceder à AERON."
         ), 403
 
+    avatar = (getattr(user, "avatar", None) or "").strip()
+
+    if not avatar:
+        avatar = "/static/avatars/default.png"
+
+    elif avatar.startswith(("http://", "https://", "/")):
+        pass
+
+    elif avatar.startswith("avatars/"):
+        avatar = "/static/" + avatar
+
+    else:
+        avatar = "/static/avatars/" + avatar.lstrip("/")
+
     return jsonify({
         "status": "ok",
         "id": user.id,
         "username": user.username,
         "nome": getattr(user, "nome", "") or "",
         "bio": getattr(user, "bio", "") or "",
-        "avatar": getattr(user, "avatar", None),
+        "avatar": avatar,
         "banner": getattr(user, "banner", None),
         "moedas": getattr(user, "moedas", 0)
     }), 200
-
 
 # -----------------------------------------------------
 # GUARDAR CONTA NESTE TELEMÓVEL
@@ -16249,6 +16267,347 @@ def mobile_logout():
         msg="Sessão terminada."
     ), 200
 
+
+# -----------------------------------------------------
+# ENTRADAS AUTORIZADAS POR QR - MOBILE
+# -----------------------------------------------------
+
+@app.route("/mobile/authorized", methods=["GET"])
+def mobile_authorized():
+
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return redirect("/mobile")
+
+    user = db.session.get(User, user_id)
+
+    if not user:
+        session.clear()
+        return redirect("/mobile")
+
+    html = """
+    <!DOCTYPE html>
+    <html lang="pt">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#080d18">
+        <title>AERON | Entradas autorizadas</title>
+
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+                font-family: Arial, sans-serif;
+            }
+
+            body {
+                background: #080d18;
+                color: #f1f5f9;
+                min-height: 100vh;
+            }
+
+            header {
+                padding: 20px;
+                background: #101827;
+                border-bottom: 1px solid #263247;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .brand {
+                color: #d4af37;
+                font-size: 23px;
+                font-weight: 900;
+                letter-spacing: 4px;
+            }
+
+            main {
+                max-width: 650px;
+                margin: auto;
+                padding: 22px 15px;
+            }
+
+            h1 {
+                font-size: 21px;
+                margin-bottom: 10px;
+            }
+
+            .description {
+                color: #94a3b8;
+                font-size: 13px;
+                line-height: 1.6;
+                margin-bottom: 22px;
+            }
+
+            .session-card {
+                background: #111827;
+                border: 1px solid #263247;
+                border-radius: 14px;
+                padding: 17px;
+                margin-bottom: 13px;
+            }
+
+            .session-title {
+                font-weight: bold;
+                margin-bottom: 9px;
+            }
+
+            .session-info {
+                color: #94a3b8;
+                font-size: 12px;
+                line-height: 1.8;
+            }
+
+            .revoke {
+                margin-top: 14px;
+                padding: 11px 14px;
+                background: #3b1720;
+                color: #fca5a5;
+                border: 1px solid #7f1d1d;
+                border-radius: 9px;
+                cursor: pointer;
+            }
+
+            .empty {
+                background: #111827;
+                border-radius: 13px;
+                padding: 25px;
+                text-align: center;
+                color: #94a3b8;
+                font-size: 14px;
+            }
+
+            .back {
+                display: inline-block;
+                margin-bottom: 20px;
+                color: #d4af37;
+                text-decoration: none;
+                font-size: 13px;
+            }
+        </style>
+    </head>
+
+    <body>
+
+        <header>
+            <div class="brand">AERON</div>
+        </header>
+
+        <main>
+            <a class="back" href="/mobile/home">← Voltar à AERON</a>
+
+            <h1>Entradas autorizadas por QR</h1>
+
+            <p class="description">
+                Aqui podes consultar os computadores que entraram
+                na tua conta AERON através de um código QR.
+                Podes terminar qualquer sessão que já não reconheças.
+            </p>
+
+            <div id="sessions">
+                <div class="empty">A carregar sessões...</div>
+            </div>
+        </main>
+
+        <script>
+            async function carregarSessoes() {
+
+                const container = document.getElementById("sessions");
+
+                try {
+                    const response = await fetch(
+                        "/mobile/authorized/data",
+                        {credentials: "same-origin"}
+                    );
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        container.textContent =
+                            data.msg || "Não foi possível carregar as sessões.";
+                        return;
+                    }
+
+                    container.innerHTML = "";
+
+                    if (!data.sessoes.length) {
+                        container.innerHTML =
+                            '<div class="empty">Não existem entradas QR ativas.</div>';
+                        return;
+                    }
+
+                    data.sessoes.forEach(s => {
+
+                        const card = document.createElement("div");
+                        card.className = "session-card";
+
+                        const titulo = document.createElement("div");
+                        titulo.className = "session-title";
+                        titulo.textContent = "💻 " + s.platform;
+
+                        const info = document.createElement("div");
+                        info.className = "session-info";
+                        info.textContent =
+                            "Localização: " + s.location +
+                            " | IP: " + s.ip +
+                            " | Entrada: " + s.created_at;
+
+                        const button = document.createElement("button");
+                        button.className = "revoke";
+                        button.textContent = "Terminar esta sessão";
+
+                        button.onclick = async function() {
+
+                            if (!confirm(
+                                "Queres terminar esta sessão autorizada?"
+                            )) return;
+
+                            button.disabled = true;
+
+                            try {
+                                const result = await fetch(
+                                    "/mobile/authorized/" + s.id + "/revoke",
+                                    {
+                                        method: "POST",
+                                        credentials: "same-origin"
+                                    }
+                                );
+
+                                const resposta = await result.json();
+
+                                if (!result.ok) {
+                                    alert(resposta.msg || "Não foi possível terminar a sessão.");
+                                    button.disabled = false;
+                                    return;
+                                }
+
+                                carregarSessoes();
+
+                            } catch (error) {
+                                alert("Erro de ligação.");
+                                button.disabled = false;
+                            }
+                        };
+
+                        card.appendChild(titulo);
+                        card.appendChild(info);
+                        card.appendChild(button);
+
+                        container.appendChild(card);
+                    });
+
+                } catch (error) {
+                    container.textContent = "Erro ao carregar as sessões.";
+                }
+            }
+
+            carregarSessoes();
+        </script>
+
+    </body>
+    </html>
+    """
+
+    return render_template_string(html)
+
+
+# -----------------------------------------------------
+# LISTAR SESSÕES QR ATIVAS
+# -----------------------------------------------------
+
+@app.route("/mobile/authorized/data", methods=["GET"])
+def mobile_authorized_data():
+
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return jsonify(status="error", msg="Sessão não iniciada."), 401
+
+    sessoes = UserSession.query.filter_by(
+        user_id=user_id,
+        active=True
+    ).filter(
+        UserSession.platform.ilike("%Desktop%")
+    ).filter(
+        UserSession.platform.ilike("%QR%")
+    ).order_by(
+        UserSession.id.desc()
+    ).all()
+
+    resultado = []
+
+    for s in sessoes:
+        resultado.append({
+            "id": s.id,
+            "platform": s.platform or "AERON Desktop - QR",
+            "location": s.location or "Desconhecida",
+            "ip": s.ip_address or "Desconhecido",
+            "created_at": str(getattr(s, "created_at", "Desconhecida"))
+        })
+
+    return jsonify(
+        status="ok",
+        sessoes=resultado
+    ), 200
+
+
+# -----------------------------------------------------
+# REVOGAR SESSÃO QR
+# -----------------------------------------------------
+
+@app.route(
+    "/mobile/authorized/<int:sessao_id>/revoke",
+    methods=["POST"]
+)
+def mobile_authorized_revoke(sessao_id):
+
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return jsonify(status="error", msg="Sessão não iniciada."), 401
+
+    sessao_db = UserSession.query.filter_by(
+        id=sessao_id,
+        user_id=user_id,
+        active=True
+    ).first()
+
+    if not sessao_db:
+        return jsonify(
+            status="error",
+            msg="Sessão não encontrada ou já terminada."
+        ), 404
+
+    if (
+        "Desktop" not in (sessao_db.platform or "")
+        or "QR" not in (sessao_db.platform or "")
+    ):
+        return jsonify(
+            status="error",
+            msg="Esta não é uma sessão de computador autorizada por QR."
+        ), 403
+
+    try:
+        sessao_db.active = False
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            msg="Sessão QR terminada com sucesso."
+        ), 200
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao revogar sessão QR.")
+
+        return jsonify(
+            status="error",
+            msg="Não foi possível terminar a sessão."
+        ), 500
 
 #================= START =================
 if __name__ == "__main__":
