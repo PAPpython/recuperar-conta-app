@@ -13256,6 +13256,7 @@ def recusar_pedido_seguimento():
 
 
 
+
 # =====================================================
 #                    AERON QR LOGIN
 # =====================================================
@@ -13264,6 +13265,7 @@ import hashlib
 import secrets
 import uuid
 import json
+import os
 
 from datetime import datetime, timedelta
 from flask import (
@@ -13284,6 +13286,40 @@ def gerar_hash_qr(valor):
     return hashlib.sha256(
         valor.encode("utf-8")
     ).hexdigest()
+
+
+def normalizar_avatar_aeron(valor):
+
+    """
+    Converte o valor guardado em User.avatar
+    num caminho utilizável pelo navegador.
+    """
+
+    avatar = str(valor or "").strip()
+
+    if not avatar:
+        return "/static/avatars/default.png"
+
+    avatar = avatar.replace("\\", "/")
+
+    # Imagens alojadas externamente
+    if avatar.startswith(("https://", "http://")):
+        return avatar
+
+    # Caminhos que já começam por /
+    if avatar.startswith("/"):
+        return avatar
+
+    # Exemplo: static/avatars/foto.png
+    if avatar.startswith("static/"):
+        return "/" + avatar
+
+    # Exemplo: avatars/foto.png
+    if avatar.startswith("avatars/"):
+        return "/static/" + avatar
+
+    # Exemplo: foto.png
+    return "/static/avatars/" + avatar.lstrip("/")
 
 
 def obter_pedido_qr(pedido_id):
@@ -13324,15 +13360,10 @@ def obter_utilizador_sessao_mobile():
     if not user_id:
         return None
 
-    user = db.session.get(
-        User,
-        user_id
-    )
+    user = db.session.get(User, user_id)
 
     if not user:
-
         session.clear()
-
         return None
 
     if (
@@ -13341,9 +13372,7 @@ def obter_utilizador_sessao_mobile():
         or getattr(user, "bloqueado", False)
         or not getattr(user, "ativo", True)
     ):
-
         session.clear()
-
         return None
 
     return user
@@ -13376,7 +13405,6 @@ def obter_lista_json(valor):
 def qr_login_create():
 
     qr_token = secrets.token_urlsafe(32)
-
     poll_token = secrets.token_urlsafe(32)
 
     pedido_id = str(uuid.uuid4())
@@ -13384,29 +13412,17 @@ def qr_login_create():
     agora = datetime.utcnow()
 
     pedido = QRLoginRequest(
-
         id=pedido_id,
-
-        token_hash=gerar_hash_qr(
-            qr_token
-        ),
-
-        poll_token_hash=gerar_hash_qr(
-            poll_token
-        ),
-
+        token_hash=gerar_hash_qr(qr_token),
+        poll_token_hash=gerar_hash_qr(poll_token),
         status="pending",
-
         created_at=agora,
-
         expires_at=agora + timedelta(minutes=2)
-
     )
 
     try:
 
         db.session.add(pedido)
-
         db.session.commit()
 
     except Exception:
@@ -13429,17 +13445,11 @@ def qr_login_create():
     )
 
     return jsonify(
-
         status="ok",
-
         request_id=pedido_id,
-
         qr_url=link_qr,
-
         poll_token=poll_token,
-
         expires_in=120
-
     ), 201
 
 
@@ -13454,19 +13464,15 @@ def qr_login_create():
 def qr_login_authorize(token):
 
     pedido = QRLoginRequest.query.filter_by(
-
         token_hash=gerar_hash_qr(token)
-
     ).first()
 
     if not pedido:
-
         return "QR Code inválido ou inexistente.", 404
 
     pedido = obter_pedido_qr(pedido.id)
 
     if not pedido or pedido.status != "pending":
-
         return "Este QR Code já não está disponível.", 410
 
     html = r"""
@@ -13497,57 +13503,49 @@ def qr_login_authorize(token):
 
             body {
                 min-height: 100vh;
-
                 background:
                     radial-gradient(
                         circle at top,
                         #172554,
                         #080b12 65%
                     );
-
                 color: #f8fafc;
-
                 display: flex;
-
                 justify-content: center;
-
                 align-items: center;
-
                 padding: 20px;
             }
 
             .container {
-
                 width: 100%;
-
                 max-width: 430px;
-
                 background: #111827;
-
                 border: 1px solid #263247;
-
                 border-radius: 22px;
-
                 padding: 30px 24px;
-
                 text-align: center;
-
                 box-shadow: 0 20px 60px #0009;
+            }
 
+            .logo-area {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                margin-bottom: 10px;
+            }
+
+            .logo-image {
+                width: 105px;
+                height: 105px;
+                object-fit: contain;
+                margin-bottom: 8px;
             }
 
             .logo {
-
-                font-size: 32px;
-
+                font-size: 29px;
                 font-weight: 900;
-
                 letter-spacing: 6px;
-
                 color: #ffffff;
-
-                margin-bottom: 8px;
-
             }
 
             .gold {
@@ -13555,57 +13553,34 @@ def qr_login_authorize(token):
             }
 
             .subtitle {
-
                 color: #94a3b8;
-
-                font-size: 12px;
-
+                font-size: 11px;
                 letter-spacing: 2px;
-
                 margin-bottom: 30px;
-
             }
 
             h2 {
-
                 font-size: 22px;
-
                 margin-bottom: 12px;
-
             }
 
             .description {
-
                 color: #94a3b8;
-
                 font-size: 14px;
-
                 line-height: 1.6;
-
                 margin-bottom: 22px;
-
             }
 
             input {
-
                 width: 100%;
-
                 padding: 15px;
-
                 margin-bottom: 12px;
-
                 border-radius: 11px;
-
                 border: 1px solid #334155;
-
                 background: #0b1220;
-
                 color: white;
-
                 outline: none;
-
                 font-size: 15px;
-
             }
 
             input:focus {
@@ -13613,143 +13588,93 @@ def qr_login_authorize(token):
             }
 
             .remember {
-
                 display: flex;
-
                 align-items: center;
-
                 gap: 10px;
-
                 color: #cbd5e1;
-
                 font-size: 13px;
-
                 text-align: left;
-
                 margin: 5px 0 14px;
-
             }
 
             .remember input {
-
                 width: 17px;
-
                 height: 17px;
-
                 margin: 0;
-
                 accent-color: #2563eb;
-
             }
 
             button {
-
                 width: 100%;
-
                 padding: 15px;
-
                 border: none;
-
                 border-radius: 11px;
-
                 font-size: 14px;
-
                 font-weight: bold;
-
                 cursor: pointer;
-
                 margin-top: 10px;
-
             }
 
             button:disabled {
-
                 opacity: .5;
-
                 cursor: not-allowed;
-
             }
 
             .primary {
-
                 background: #2563eb;
-
                 color: white;
-
             }
 
             .secondary {
-
                 background: #273449;
-
                 color: white;
-
             }
 
             .gold-button {
-
                 background: #d6b65b;
-
                 color: #080d18;
-
                 font-weight: 900;
-
             }
 
             .account {
-
                 background: #1e293b;
-
                 border: 1px solid #334155;
-
                 border-radius: 14px;
-
-                padding: 18px;
-
+                padding: 20px 18px;
                 margin-bottom: 20px;
-
                 display: none;
-
             }
 
             .account-avatar {
-
-                width: 65px;
-
-                height: 65px;
-
+                width: 90px;
+                height: 90px;
                 border-radius: 50%;
-
                 object-fit: cover;
-
                 margin-bottom: 12px;
-
                 background: #334155;
-
-                border: 2px solid #d6b65b;
-
+                border: 3px solid #d6b65b;
+                display: block;
+                margin-left: auto;
+                margin-right: auto;
             }
 
             .account-name {
-
-                font-size: 17px;
-
+                font-size: 18px;
                 font-weight: bold;
+                margin-bottom: 6px;
+            }
 
-                margin-bottom: 5px;
-
+            .account-username {
+                color: #94a3b8;
+                font-size: 13px;
+                margin-bottom: 10px;
             }
 
             .message {
-
                 font-size: 13px;
-
                 color: #94a3b8;
-
                 line-height: 1.5;
-
                 margin-top: 16px;
-
             }
 
             .error {
@@ -13765,61 +13690,35 @@ def qr_login_authorize(token):
             }
 
             .success-icon {
-
                 width: 68px;
-
                 height: 68px;
-
                 border-radius: 50%;
-
                 background: #123c2b;
-
                 color: #4ade80;
-
                 display: flex;
-
                 align-items: center;
-
                 justify-content: center;
-
                 font-size: 34px;
-
                 margin: 0 auto 20px;
-
             }
 
             .logged-status {
-
                 background: #123c2b;
-
                 border: 1px solid #226b48;
-
                 color: #4ade80;
-
                 padding: 12px;
-
                 border-radius: 10px;
-
                 margin: 15px 0;
-
                 font-size: 12px;
-
                 font-weight: bold;
-
                 letter-spacing: 1px;
-
             }
 
             .footer {
-
                 margin-top: 28px;
-
                 color: #64748b;
-
                 font-size: 10px;
-
                 letter-spacing: 2px;
-
             }
 
         </style>
@@ -13830,9 +13729,18 @@ def qr_login_authorize(token):
 
         <main class="container">
 
-            <div class="logo">
+            <div class="logo-area">
 
-                <span class="gold">A</span>ERON
+                <img
+                    class="logo-image"
+                    src="/static/LOGO/AERON.png"
+                    alt="AERON"
+                    onerror="this.style.display='none'"
+                >
+
+                <div class="logo">
+                    <span class="gold">A</span>ERON
+                </div>
 
             </div>
 
@@ -13848,9 +13756,7 @@ def qr_login_authorize(token):
                 <h2>A verificar sessão...</h2>
 
                 <p class="description">
-
                     Estamos a verificar a tua conta AERON.
-
                 </p>
 
             </section>
@@ -13863,10 +13769,8 @@ def qr_login_authorize(token):
                 <h2>Iniciar sessão</h2>
 
                 <p class="description">
-
                     Entra na tua conta para autorizar
                     o acesso ao computador.
-
                 </p>
 
                 <form id="login-form">
@@ -13903,17 +13807,12 @@ def qr_login_authorize(token):
                         type="submit"
                         id="login-button"
                     >
-
                         Entrar na AERON
-
                     </button>
 
                 </form>
 
-                <p
-                    id="login-message"
-                    class="message">
-                </p>
+                <p id="login-message" class="message"></p>
 
             </section>
 
@@ -13925,10 +13824,8 @@ def qr_login_authorize(token):
                 <h2>Autorizar computador?</h2>
 
                 <p class="description">
-
                     Foi solicitado um início de sessão
                     na tua conta através de outro dispositivo.
-
                 </p>
 
                 <div class="account" id="account">
@@ -13936,8 +13833,8 @@ def qr_login_authorize(token):
                     <img
                         id="account-avatar"
                         class="account-avatar"
-                        src=""
-                        alt="Avatar"
+                        src="/static/avatars/default.png"
+                        alt="Avatar do utilizador"
                     >
 
                     <div
@@ -13945,11 +13842,14 @@ def qr_login_authorize(token):
                         id="account-name">
                     </div>
 
-                    <p class="message">
+                    <div
+                        class="account-username"
+                        id="account-username">
+                    </div>
 
+                    <p class="message">
                         Esta é a conta que será utilizada
                         no computador.
-
                     </p>
 
                 </div>
@@ -13959,9 +13859,7 @@ def qr_login_authorize(token):
                     id="approve-button"
                     onclick="approveLogin()"
                 >
-
-                    Autorizar acesso
-
+                    AUTORIZAR ENTRADA
                 </button>
 
                 <button
@@ -13969,9 +13867,7 @@ def qr_login_authorize(token):
                     id="reject-button"
                     onclick="rejectLogin()"
                 >
-
-                    Recusar
-
+                    RECUSAR
                 </button>
 
                 <p
@@ -13995,17 +13891,13 @@ def qr_login_authorize(token):
                 </h2>
 
                 <div class="logged-status">
-
                     ✓ LOGADO NA TUA CONTA AERON
-
                 </div>
 
                 <p
                     id="finished-message"
                     class="description">
-
                     A tua conta está pronta a utilizar.
-
                 </p>
 
                 <button
@@ -14013,9 +13905,7 @@ def qr_login_authorize(token):
                     class="gold-button hidden"
                     onclick="abrirAeronWeb()"
                 >
-
                     ABRIR AERON WEB
-
                 </button>
 
                 <button
@@ -14023,18 +13913,14 @@ def qr_login_authorize(token):
                     class="secondary hidden"
                     onclick="window.location.reload()"
                 >
-
                     VOLTAR
-
                 </button>
 
             </section>
 
 
             <div class="footer">
-
                 AERON SECURITY
-
             </div>
 
         </main>
@@ -14064,15 +13950,11 @@ def qr_login_authorize(token):
             function showSection(section) {
 
                 loading.classList.add("hidden");
-
                 loginSection.classList.add("hidden");
-
                 authorization.classList.add("hidden");
-
                 finished.classList.add("hidden");
 
                 section.classList.remove("hidden");
-
             }
 
 
@@ -14087,7 +13969,6 @@ def qr_login_authorize(token):
                 document.getElementById(
                     "finished-message"
                 ).textContent = message;
-
             }
 
 
@@ -14098,7 +13979,58 @@ def qr_login_authorize(token):
             function abrirAeronWeb() {
 
                 window.location.replace("/mobile/home");
+            }
 
+
+            // ==========================================
+            // CARREGAR AVATAR SEM CACHE ANTIGA
+            // ==========================================
+
+            function definirAvatar(elemento, caminho) {
+
+                const fallback =
+                    "/static/avatars/default.png";
+
+                let endereco = caminho || fallback;
+
+                try {
+
+                    const url = new URL(
+                        endereco,
+                        window.location.origin
+                    );
+
+                    if (
+                        url.protocol !== "https:" &&
+                        url.protocol !== "http:"
+                    ) {
+                        endereco = fallback;
+                    } else {
+
+                        // Evita apresentar uma versão antiga
+                        // da imagem guardada na cache.
+
+                        url.searchParams.set(
+                            "_aeron",
+                            Date.now().toString()
+                        );
+
+                        endereco = url.href;
+                    }
+
+                } catch (error) {
+
+                    endereco = fallback;
+                }
+
+                elemento.onerror = function() {
+
+                    this.onerror = null;
+
+                    this.src = fallback + "?_aeron=" + Date.now();
+                };
+
+                elemento.src = endereco;
             }
 
 
@@ -14124,12 +14056,14 @@ def qr_login_authorize(token):
                         showSection(loginSection);
 
                         return;
-
                     }
 
                     const data = await response.json();
 
-                    if (!response.ok || data.status !== "ok") {
+                    if (
+                        !response.ok ||
+                        data.status !== "ok"
+                    ) {
 
                         showFinished(
                             "Não foi possível continuar",
@@ -14137,7 +14071,6 @@ def qr_login_authorize(token):
                         );
 
                         return;
-
                     }
 
                     document.getElementById(
@@ -14145,20 +14078,19 @@ def qr_login_authorize(token):
                     ).textContent =
                         data.nome || data.username;
 
-                    const avatar =
-                        document.getElementById("account-avatar");
+                    document.getElementById(
+                        "account-username"
+                    ).textContent =
+                        "@" + data.username;
 
-                    if (data.avatar) {
+                    const avatar = document.getElementById(
+                        "account-avatar"
+                    );
 
-                        avatar.src = data.avatar;
-
-                        avatar.style.display = "inline-block";
-
-                    } else {
-
-                        avatar.style.display = "none";
-
-                    }
+                    definirAvatar(
+                        avatar,
+                        data.avatar
+                    );
 
                     document.getElementById(
                         "account"
@@ -14172,9 +14104,7 @@ def qr_login_authorize(token):
                         "Erro de ligação",
                         "Não foi possível contactar a AERON."
                     );
-
                 }
-
             }
 
 
@@ -14214,8 +14144,7 @@ def qr_login_authorize(token):
 
                         button.disabled = true;
 
-                        button.textContent =
-                            "A AUTENTICAR...";
+                        button.textContent = "A AUTENTICAR...";
 
                         try {
 
@@ -14243,7 +14172,6 @@ def qr_login_authorize(token):
                                         location: "Telemóvel"
 
                                     })
-
                                 }
                             );
 
@@ -14267,15 +14195,14 @@ def qr_login_authorize(token):
                                     "Entrar na AERON";
 
                                 return;
-
                             }
 
                             document.getElementById(
                                 "password"
                             ).value = "";
 
-                            // A sessão Flask foi criada pelo /login.
-                            // Verificamos agora a conta autenticada.
+                            // A rota /login cria a sessão Flask.
+                            // Agora obtemos os dados e o avatar atual.
 
                             await checkAccount();
 
@@ -14291,9 +14218,7 @@ def qr_login_authorize(token):
 
                             button.textContent =
                                 "Entrar na AERON";
-
                         }
-
                     }
                 );
 
@@ -14316,7 +14241,6 @@ def qr_login_authorize(token):
                     );
 
                 button.disabled = true;
-
                 rejectButton.disabled = true;
 
                 button.textContent = "A AUTORIZAR...";
@@ -14335,11 +14259,8 @@ def qr_login_authorize(token):
                             },
 
                             body: JSON.stringify({
-
                                 qr_token: qrToken
-
                             })
-
                         }
                     );
 
@@ -14358,22 +14279,17 @@ def qr_login_authorize(token):
                             "message error";
 
                         button.disabled = false;
-
                         rejectButton.disabled = false;
 
                         button.textContent =
-                            "Autorizar acesso";
+                            "AUTORIZAR ENTRADA";
 
                         return;
-
                     }
 
                     showFinished(
-
                         "Acesso autorizado!",
-
-                        "A tua conta está agora ligada. Podes abrir o AERON Web neste telemóvel."
-
+                        "A tua conta está agora ligada. Podes abrir a AERON Web neste telemóvel."
                     );
 
                     document.getElementById(
@@ -14389,14 +14305,11 @@ def qr_login_authorize(token):
                         "message error";
 
                     button.disabled = false;
-
                     rejectButton.disabled = false;
 
                     button.textContent =
-                        "Autorizar acesso";
-
+                        "AUTORIZAR ENTRADA";
                 }
-
             }
 
 
@@ -14425,11 +14338,8 @@ def qr_login_authorize(token):
                             },
 
                             body: JSON.stringify({
-
                                 qr_token: qrToken
-
                             })
-
                         }
                     );
 
@@ -14438,11 +14348,8 @@ def qr_login_authorize(token):
                     if (!response.ok) {
 
                         showFinished(
-
                             "Não foi possível recusar",
-
                             data.msg || "Tenta novamente."
-
                         );
 
                         document.getElementById(
@@ -14450,29 +14357,20 @@ def qr_login_authorize(token):
                         ).classList.remove("hidden");
 
                         return;
-
                     }
 
                     showFinished(
-
                         "Pedido recusado",
-
                         "O computador não terá acesso à tua conta."
-
                     );
 
                 } catch (error) {
 
                     showFinished(
-
                         "Erro de ligação",
-
                         "Não foi possível contactar a AERON."
-
                     );
-
                 }
-
             }
 
 
@@ -14485,7 +14383,6 @@ def qr_login_authorize(token):
         </script>
 
     </body>
-
     </html>
     """
 
@@ -14538,9 +14435,7 @@ def qr_login_approve():
         ), 400
 
     pedido = QRLoginRequest.query.filter_by(
-
         token_hash=gerar_hash_qr(qr_token)
-
     ).first()
 
     if not pedido:
@@ -14560,9 +14455,7 @@ def qr_login_approve():
         ), 409
 
     pedido.user_id = user.id
-
     pedido.status = "approved"
-
     pedido.approved_at = datetime.utcnow()
 
     try:
@@ -14619,9 +14512,7 @@ def qr_login_reject():
         ), 400
 
     pedido = QRLoginRequest.query.filter_by(
-
         token_hash=gerar_hash_qr(qr_token)
-
     ).first()
 
     if not pedido:
@@ -14649,6 +14540,10 @@ def qr_login_reject():
     except Exception:
 
         db.session.rollback()
+
+        app.logger.exception(
+            "Erro ao recusar QR."
+        )
 
         return jsonify(
             status="error",
@@ -14704,28 +14599,16 @@ def qr_login_status(pedido_id):
         ), 403
 
     if pedido.status == "pending":
-
-        return jsonify(
-            status="pending"
-        ), 200
+        return jsonify(status="pending"), 200
 
     if pedido.status == "rejected":
-
-        return jsonify(
-            status="rejected"
-        ), 200
+        return jsonify(status="rejected"), 200
 
     if pedido.status == "expired":
-
-        return jsonify(
-            status="expired"
-        ), 200
+        return jsonify(status="expired"), 200
 
     if pedido.status == "used":
-
-        return jsonify(
-            status="used"
-        ), 200
+        return jsonify(status="used"), 200
 
     if pedido.status == "approved":
 
@@ -14758,21 +14641,13 @@ def qr_login_status(pedido_id):
         novo_token = secrets.token_hex(32)
 
         nova_sessao = UserSession(
-
             user_id=user.id,
-
             session_token=novo_token,
-
             platform="AERON Desktop - QR",
-
             ip_address=request.remote_addr,
-
             location="Desconhecida",
-
             remember_me=False,
-
             active=True
-
         )
 
         try:
@@ -14780,7 +14655,6 @@ def qr_login_status(pedido_id):
             db.session.add(nova_sessao)
 
             pedido.status = "used"
-
             pedido.used_at = datetime.utcnow()
 
             db.session.commit()
@@ -14799,35 +14673,22 @@ def qr_login_status(pedido_id):
             ), 500
 
         return jsonify(
-
             status="ok",
-
             id=user.id,
-
             username=user.username,
-
             email=user.email,
-
-            avatar=user.avatar,
-
+            avatar=normalizar_avatar_aeron(user.avatar),
             banner=user.banner,
-
             moedas=user.moedas,
-
             role=user.role,
-
             session_token=novo_token,
-
             remember_me=False,
-
             avatares_comprados=obter_lista_json(
                 getattr(user, "avatares_comprados", "[]")
             ),
-
             banners_comprados=obter_lista_json(
                 getattr(user, "banners_comprados", "[]")
             )
-
         ), 200
 
     return jsonify(
@@ -14855,20 +14716,17 @@ def qr_login_me():
             msg="Não tens sessão iniciada."
         ), 401
 
+    avatar = normalizar_avatar_aeron(
+        user.avatar
+    )
+
     return jsonify(
-
         status="ok",
-
         id=user.id,
-
         username=user.username,
-
-        avatar=user.avatar,
-
+        avatar=avatar,
         nome=getattr(user, "nome", None),
-
         bio=getattr(user, "bio", None)
-
     ), 200
 
 
@@ -14903,9 +14761,7 @@ def qr_login_approve_web():
         ), 400
 
     pedido = QRLoginRequest.query.filter_by(
-
         token_hash=gerar_hash_qr(qr_token)
-
     ).first()
 
     if not pedido:
@@ -14925,9 +14781,7 @@ def qr_login_approve_web():
         ), 409
 
     pedido.user_id = user.id
-
     pedido.status = "approved"
-
     pedido.approved_at = datetime.utcnow()
 
     try:
@@ -14984,9 +14838,7 @@ def qr_login_reject_web():
         ), 400
 
     pedido = QRLoginRequest.query.filter_by(
-
         token_hash=gerar_hash_qr(qr_token)
-
     ).first()
 
     if not pedido:
@@ -15033,6 +14885,7 @@ def qr_login_reject_web():
 # =====================================================
 #               FIM DO AERON QR LOGIN
 # =====================================================
+
 # =====================================================
 #                 AERON MOBILE
 # =====================================================
