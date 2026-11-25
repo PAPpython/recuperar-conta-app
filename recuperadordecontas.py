@@ -15077,52 +15077,6 @@ def mobile_email_envio(destino, assunto, corpo_html):
 
 
 # =====================================================
-# SERVIR AVATARES
-# =====================================================
-# Substitui a tua rota /avatar/<filename> anterior.
-# Não mantenhas duas rotas iguais.
-
-@app.route("/avatar/<path:filename>")
-def servir_avatar(filename):
-
-    pasta = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "static",
-        "avatars"
-    )
-
-    filename = os.path.basename(filename)
-
-    caminho = safe_join(pasta, filename)
-
-    if caminho and os.path.isfile(caminho):
-        return send_from_directory(
-            pasta,
-            filename,
-            max_age=0
-        )
-
-    if not os.path.splitext(filename)[1]:
-
-        for extensao in [".png", ".jpg", ".jpeg", ".webp"]:
-
-            nome = filename + extensao
-            caminho = safe_join(pasta, nome)
-
-            if caminho and os.path.isfile(caminho):
-                return send_from_directory(
-                    pasta,
-                    nome,
-                    max_age=0
-                )
-
-    return jsonify(
-        status="error",
-        msg="Avatar não encontrado."
-    ), 404
-
-
-# =====================================================
 # IDENTIFICAR UTILIZADOR
 # =====================================================
 
