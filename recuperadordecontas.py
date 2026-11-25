@@ -14904,7 +14904,6 @@ def qr_login_reject_web():
 #               FIM DO AERON QR LOGIN
 # =====================================================
 
-
 # =====================================================
 #                 AERON MOBILE
 # =====================================================
@@ -14916,13 +14915,19 @@ import smtplib
 
 from email.message import EmailMessage
 from datetime import datetime, timedelta
+from urllib.parse import quote
+
 from flask import (
     request,
     jsonify,
     render_template_string,
     redirect,
-    session
+    session,
+    send_from_directory
 )
+
+from werkzeug.utils import safe_join
+
 
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
@@ -14962,17 +14967,24 @@ def mobile_url_avatar(valor):
     if not valor:
         return "/static/avatars/default.png"
 
-    if valor.startswith(("http://", "https://", "/")):
+    if valor.startswith(("http://", "https://")):
         return valor
 
-    if valor.startswith("static/"):
-        return "/" + valor
+    if valor.startswith("/"):
+        return valor
 
-    if valor.startswith("avatars/"):
-        return "/static/" + valor
+    valor = valor.replace("\\", "/")
 
-    # Os avatares da loja são guardados como IDs simples.
-    return "/avatar/" + valor
+    if valor.startswith("static/avatars/"):
+        valor = valor.replace("static/avatars/", "", 1)
+
+    elif valor.startswith("avatars/"):
+        valor = valor.replace("avatars/", "", 1)
+
+    elif valor.startswith("static/"):
+        valor = valor.replace("static/", "", 1)
+
+    return "/avatar/" + quote(valor)
 
 
 def mobile_url_banner(valor):
@@ -14985,13 +14997,16 @@ def mobile_url_banner(valor):
     if valor.startswith(("http://", "https://", "/")):
         return valor
 
-    if valor.startswith("static/"):
-        return "/" + valor
+    if valor.startswith("static/banners/"):
+        valor = valor.replace("static/banners/", "", 1)
 
-    if valor.startswith("banners/"):
-        return "/static/" + valor
+    elif valor.startswith("banners/"):
+        valor = valor.replace("banners/", "", 1)
 
-    return "/banner/" + valor
+    elif valor.startswith("static/"):
+        valor = valor.replace("static/", "", 1)
+
+    return "/banner/" + quote(valor)
 
 
 def mobile_privacidade(user):
@@ -15011,17 +15026,20 @@ def mobile_privacidade(user):
 
 def mobile_email_envio(destino, assunto, corpo_html):
 
-    email_app = os.environ.get("EMAIL_APP")
+    # IMPORTANTE:
+    # Os nomes têm de corresponder às variáveis do Render.
+
+    email_user = os.environ.get("EMAIL_USER")
     email_pass = os.environ.get("EMAIL_PASS")
 
-    if not email_app or not email_pass:
+    if not email_user or not email_pass:
         raise RuntimeError(
-            "O envio de emails ainda não está configurado no servidor."
+            "EMAIL_USER ou EMAIL_PASS não estão configurados no Render."
         )
 
     msg = EmailMessage()
 
-    msg["From"] = f"AERON <{email_app}>"
+    msg["From"] = f"AERON <{email_user}>"
     msg["To"] = destino
     msg["Subject"] = assunto
 
@@ -15030,22 +15048,65 @@ def mobile_email_envio(destino, assunto, corpo_html):
         "Abre-o num cliente de email compatível."
     )
 
-    msg.add_alternative(corpo_html, subtype="html")
+    msg.add_alternative(
+        corpo_html,
+        subtype="html"
+    )
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(email_app, email_pass)
+    with smtplib.SMTP_SSL(
+        "smtp.gmail.com",
+        465,
+        timeout=30
+    ) as smtp:
+
+        smtp.login(email_user, email_pass)
         smtp.send_message(msg)
 
 
-def mobile_data_privacidade(user):
+# =====================================================
+# SERVIR AVATARES
+# =====================================================
+# Substitui a tua rota /avatar/<filename> anterior.
+# Não mantenhas duas rotas iguais.
 
-    return {
-        "email": getattr(user, "email", "") or "",
-        "email_recuperacao": (
-            getattr(user, "email_recuperacao", "") or ""
-        ),
-        "privacidade": mobile_privacidade(user)
-    }
+@app.route("/avatar/<path:filename>")
+def servir_avatar(filename):
+
+    pasta = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "static",
+        "avatars"
+    )
+
+    filename = os.path.basename(filename)
+
+    caminho = safe_join(pasta, filename)
+
+    if caminho and os.path.isfile(caminho):
+        return send_from_directory(
+            pasta,
+            filename,
+            max_age=0
+        )
+
+    if not os.path.splitext(filename)[1]:
+
+        for extensao in [".png", ".jpg", ".jpeg", ".webp"]:
+
+            nome = filename + extensao
+            caminho = safe_join(pasta, nome)
+
+            if caminho and os.path.isfile(caminho):
+                return send_from_directory(
+                    pasta,
+                    nome,
+                    max_age=0
+                )
+
+    return jsonify(
+        status="error",
+        msg="Avatar não encontrado."
+    ), 404
 
 
 # =====================================================
@@ -15104,7 +15165,9 @@ def mobile_remember():
     token = session.get("session_token")
 
     if token:
+
         try:
+
             sessao_db = UserSession.query.filter_by(
                 session_token=token,
                 user_id=user.id,
@@ -15116,7 +15179,9 @@ def mobile_remember():
                 db.session.commit()
 
         except Exception:
+
             db.session.rollback()
+
             app.logger.exception(
                 "Erro ao guardar sessão mobile."
             )
@@ -15145,15 +15210,20 @@ def aeron_mobile():
     html_login = """
     <!DOCTYPE html>
     <html lang="pt">
+
     <head>
+
         <meta charset="UTF-8">
+
         <meta name="viewport"
               content="width=device-width, initial-scale=1">
+
         <meta name="theme-color" content="#080d18">
 
         <title>AERON | Mobile</title>
 
         <style>
+
             * {
                 box-sizing: border-box;
                 margin: 0;
@@ -15270,7 +15340,9 @@ def aeron_mobile():
                 margin-top: 25px;
                 font-size: 11px;
             }
+
         </style>
+
     </head>
 
     <body>
@@ -15278,12 +15350,15 @@ def aeron_mobile():
         <main class="container">
 
             <div class="logo">
+
                 <img src="/static/LOGO/AERON.png"
                      alt="AERON"
                      onerror="this.style.display='none'">
 
                 <h1>AERON</h1>
+
                 <p>MASTERING PERFORMANCE</p>
+
             </div>
 
             <div class="card">
@@ -15381,22 +15456,29 @@ def aeron_mobile():
 
                     if (guardar) {
 
-                        await fetch("/mobile/remember", {
-                            method: "POST",
-                            credentials: "same-origin"
-                        });
+                        const rememberResponse = await fetch(
+                            "/mobile/remember",
+                            {
+                                method: "POST",
+                                credentials: "same-origin"
+                            }
+                        );
 
+                        if (!rememberResponse.ok) {
+                            console.warn("Não foi possível guardar a sessão.");
+                        }
                     }
 
                     window.location.replace("/mobile/home");
 
                 } catch (error) {
 
+                    console.error(error);
+
                     message.textContent = "Erro de ligação ao servidor.";
 
                     button.disabled = false;
                     button.textContent = "ENTRAR NA AERON";
-
                 }
 
             });
@@ -15458,10 +15540,6 @@ def aeron_mobile_home():
                 color: #f1f5f9;
                 min-height: 100vh;
                 padding-bottom: 90px;
-            }
-
-            button {
-                font-family: inherit;
             }
 
             header {
@@ -15634,8 +15712,7 @@ def aeron_mobile_home():
 
             .profile-cover {
                 height: 125px;
-                background:
-                    linear-gradient(120deg,#17243b,#263449);
+                background: linear-gradient(120deg,#17243b,#263449);
                 background-size: cover;
                 background-position: center;
                 border-bottom: 1px solid #334155;
@@ -15865,8 +15942,6 @@ def aeron_mobile_home():
                 line-height: 1.7;
             }
 
-            /* CRIAR PUBLICAÇÃO */
-
             .create-card {
                 background: #111827;
                 border: 1px solid #263247;
@@ -15964,8 +16039,6 @@ def aeron_mobile_home():
                 line-height: 1.5;
             }
 
-            /* MENU INFERIOR */
-
             .bottom-nav {
                 position: fixed;
                 bottom: 0;
@@ -16018,10 +16091,6 @@ def aeron_mobile_home():
                 font-weight: bold;
             }
 
-            .bottom-nav button.create-nav.active {
-                color: #d4af37;
-            }
-
             @media(max-width:380px) {
                 .profile-details {
                     grid-template-columns: 1fr;
@@ -16041,10 +16110,13 @@ def aeron_mobile_home():
         <header>
 
             <div class="brand">
+
                 <img src="/static/LOGO/AERON.png"
                      alt="AERON"
                      onerror="this.style.display='none'">
+
                 AERON
+
             </div>
 
             <button class="menu-button"
@@ -16056,11 +16128,9 @@ def aeron_mobile_home():
         </header>
 
 
-        <!-- MENU DE OPÇÕES -->
-
         <div class="menu" id="menu">
 
-            <button onclick="abrirLink('/suporte/new?user_id=' + utilizador.id)">
+            <button onclick="abrirLink('/suporte/new?user_id=' + encodeURIComponent(utilizador.id))">
                 🎧 Suporte
             </button>
 
@@ -16092,8 +16162,6 @@ def aeron_mobile_home():
 
 
         <main>
-
-            <!-- BOAS-VINDAS -->
 
             <div class="welcome">
 
@@ -16150,9 +16218,7 @@ def aeron_mobile_home():
 
                 <div class="section-heading">
 
-                    <h2 class="section-title">
-                        Criar publicação
-                    </h2>
+                    <h2 class="section-title">Criar publicação</h2>
 
                     <p class="section-subtitle">
                         Partilha algo com a comunidade AERON.
@@ -16355,7 +16421,7 @@ def aeron_mobile_home():
             </section>
 
 
-            <!-- PRIVACIDADE E SEGURANÇA -->
+            <!-- PRIVACIDADE -->
 
             <section id="privacy-section" class="panel">
 
@@ -16377,8 +16443,7 @@ def aeron_mobile_home():
                         Email principal
                     </div>
 
-                    <div class="detail-value"
-                         id="privacy-email">
+                    <div class="detail-value" id="privacy-email">
                         A carregar...
                     </div>
 
@@ -16388,8 +16453,7 @@ def aeron_mobile_home():
                         Email de recuperação
                     </div>
 
-                    <div class="detail-value"
-                         id="privacy-recovery">
+                    <div class="detail-value" id="privacy-recovery">
                         A carregar...
                     </div>
 
@@ -16399,8 +16463,7 @@ def aeron_mobile_home():
                         Privacidade da conta
                     </div>
 
-                    <div class="detail-value"
-                         id="privacy-status">
+                    <div class="detail-value" id="privacy-status">
                         A carregar...
                     </div>
 
@@ -16486,6 +16549,7 @@ def aeron_mobile_home():
                     <br>
 
                     <div class="profile-field-label">Tecnologias utilizadas</div>
+
                     <p style="line-height:2;color:#cbd5e1">
                         Python<br>
                         Tkinter / CustomTkinter<br>
@@ -16516,35 +16580,27 @@ def aeron_mobile_home():
             <button id="nav-feed"
                     class="active"
                     onclick="mostrarFeed()">
-
                 <span>⌂</span>
                 Feed
-
             </button>
 
             <button id="nav-create"
                     class="create-nav"
                     onclick="mostrarCriar()">
-
                 <span>+</span>
                 Criar
-
             </button>
 
             <button id="nav-profile"
                     onclick="mostrarPerfil()">
-
                 <span>◉</span>
                 Perfil
-
             </button>
 
             <button id="nav-notifications"
                     onclick="mostrarNotificacoes()">
-
                 <span>♧</span>
                 Notificações
-
             </button>
 
         </nav>
@@ -16574,21 +16630,20 @@ def aeron_mobile_home():
 
                 if (
                     valor.startsWith("http://") ||
-                    valor.startsWith("https://") ||
-                    valor.startsWith("/")
+                    valor.startsWith("https://")
                 ) {
                     return valor;
                 }
 
-                if (valor.startsWith("static/")) {
-                    return "/" + valor;
+                if (valor.startsWith("/")) {
+                    return valor;
                 }
 
-                if (valor.startsWith("avatars/")) {
-                    return "/static/" + valor;
-                }
+                valor = valor.replace(/^static\/avatars\//, "");
+                valor = valor.replace(/^static\//, "");
+                valor = valor.replace(/^avatars\//, "");
 
-                return "/avatar/" + valor;
+                return "/avatar/" + encodeURIComponent(valor);
             }
 
 
@@ -16596,12 +16651,21 @@ def aeron_mobile_home():
 
                 if (!elemento) return;
 
+                const avatarDefault = "/static/avatars/default.png";
+
                 elemento.onerror = function() {
                     this.onerror = null;
-                    this.src = "/static/avatars/default.png";
+                    this.src = avatarDefault;
                 };
 
-                elemento.src = prepararAvatar(valor);
+                let url = prepararAvatar(valor);
+
+                // Evita que o navegador mantenha o avatar antigo em cache.
+                const separador = url.includes("?") ? "&" : "?";
+
+                url += separador + "v=" + Date.now();
+
+                elemento.src = url;
             }
 
 
@@ -16610,6 +16674,13 @@ def aeron_mobile_home():
                 const elemento = document.getElementById("profile-cover");
 
                 if (!elemento) return;
+
+                if (!valor || typeof valor !== "string") {
+                    elemento.style.backgroundImage = "";
+                    return;
+                }
+
+                valor = valor.trim();
 
                 if (!valor) {
                     elemento.style.backgroundImage = "";
@@ -16623,7 +16694,7 @@ def aeron_mobile_home():
                     !url.startsWith("https://") &&
                     !url.startsWith("/")
                 ) {
-                    url = "/banner/" + url;
+                    url = "/banner/" + encodeURIComponent(url);
                 }
 
                 elemento.style.backgroundImage =
@@ -16632,7 +16703,7 @@ def aeron_mobile_home():
 
 
             // =============================================
-            // MENU
+            // MENU E NAVEGAÇÃO
             // =============================================
 
             function toggleMenu() {
@@ -16665,7 +16736,9 @@ def aeron_mobile_home():
                     "sessions-section",
                     "credits-section"
                 ].forEach(id => {
+
                     document.getElementById(id).style.display = "none";
+
                 });
 
                 document.getElementById("menu").style.display = "none";
@@ -16802,7 +16875,7 @@ def aeron_mobile_home():
 
                 } catch (error) {
 
-                    console.error(error);
+                    console.error("Erro ao carregar perfil:", error);
 
                     window.location.replace("/mobile");
 
@@ -16812,7 +16885,7 @@ def aeron_mobile_home():
 
 
             // =============================================
-            // CONTAR PUBLICAÇÕES DO UTILIZADOR
+            // PUBLICAÇÕES DO UTILIZADOR
             // =============================================
 
             function autorIdPost(post) {
@@ -16835,7 +16908,7 @@ def aeron_mobile_home():
 
 
             // =============================================
-            // CONSTRUIR CARTÃO DE PUBLICAÇÃO
+            // CARTÃO DE PUBLICAÇÃO
             // =============================================
 
             function criarCartaoPost(post, permitirApagar) {
@@ -16853,7 +16926,6 @@ def aeron_mobile_home():
                 const foto = document.createElement("img");
 
                 foto.className = "post-avatar";
-
                 foto.alt = "Avatar";
 
                 aplicarAvatar(foto, autor.avatar);
@@ -16874,7 +16946,6 @@ def aeron_mobile_home():
                 const data = document.createElement("div");
 
                 data.className = "post-date";
-
                 data.textContent = post.data || "";
 
                 info.appendChild(nome);
@@ -16888,11 +16959,9 @@ def aeron_mobile_home():
                 const texto = document.createElement("div");
 
                 texto.className = "post-text";
-
                 texto.textContent = post.texto || "";
 
                 card.appendChild(texto);
-
 
                 const imagens = Array.isArray(post.imagens)
                     ? post.imagens
@@ -16905,11 +16974,8 @@ def aeron_mobile_home():
                     const imagem = document.createElement("img");
 
                     imagem.className = "post-image";
-
                     imagem.src = url;
-
                     imagem.alt = "Imagem da publicação";
-
                     imagem.loading = "lazy";
 
                     imagem.onerror = function() {
@@ -16918,7 +16984,6 @@ def aeron_mobile_home():
 
                     card.appendChild(imagem);
                 });
-
 
                 const stats = document.createElement("div");
 
@@ -16962,18 +17027,21 @@ def aeron_mobile_home():
 
                         } else {
 
-                            alert(result.msg || result.error || "Não foi possível atualizar o gosto.");
+                            alert(
+                                result.msg ||
+                                result.error ||
+                                "Não foi possível atualizar o gosto."
+                            );
                         }
 
                     } catch (error) {
 
-                        alert("Erro de ligação.");
+                        alert("Erro de ligação ao servidor.");
 
                     }
 
                     like.disabled = false;
                 });
-
 
                 const comentarios = document.createElement("span");
 
@@ -16983,7 +17051,6 @@ def aeron_mobile_home():
                 stats.appendChild(like);
                 stats.appendChild(comentarios);
 
-
                 if (
                     permitirApagar &&
                     String(autorIdPost(post)) === String(utilizador.id)
@@ -16992,7 +17059,6 @@ def aeron_mobile_home():
                     const apagar = document.createElement("button");
 
                     apagar.className = "delete-post";
-
                     apagar.textContent = "🗑 Apagar";
 
                     apagar.onclick = () => apagarPublicacao(post.id);
@@ -17007,7 +17073,7 @@ def aeron_mobile_home():
 
 
             // =============================================
-            // FEED
+            // CARREGAR FEED
             // =============================================
 
             async function carregarFeed() {
@@ -17025,7 +17091,10 @@ def aeron_mobile_home():
                     );
 
                     if (!response.ok) {
-                        feed.textContent = "Não foi possível carregar o feed.";
+
+                        feed.textContent =
+                            "Não foi possível carregar o feed.";
+
                         return;
                     }
 
@@ -17112,7 +17181,6 @@ def aeron_mobile_home():
             // =============================================
 
             const postText = document.getElementById("post-text");
-
             const postImage = document.getElementById("post-image");
 
             postText.addEventListener("input", function() {
@@ -17188,7 +17256,6 @@ def aeron_mobile_home():
                 if (!texto) {
 
                     mensagem.style.color = "#f87171";
-
                     mensagem.textContent =
                         "Escreve alguma coisa antes de publicar.";
 
@@ -17198,7 +17265,6 @@ def aeron_mobile_home():
                 if (texto.length > 500) {
 
                     mensagem.style.color = "#f87171";
-
                     mensagem.textContent =
                         "A publicação ultrapassa os 500 caracteres.";
 
@@ -17206,9 +17272,7 @@ def aeron_mobile_home():
                 }
 
                 button.disabled = true;
-
                 button.textContent = "A PUBLICAR...";
-
                 mensagem.textContent = "";
 
                 try {
@@ -17216,15 +17280,10 @@ def aeron_mobile_home():
                     const form = new FormData();
 
                     form.append("autor_id", utilizador.id);
-
                     form.append("texto", texto);
-
                     form.append("formatacao", "[]");
-
                     form.append("hashtags", "[]");
-
                     form.append("links", "[]");
-
                     form.append("mencoes", "[]");
 
                     if (imagem) {
@@ -17265,7 +17324,6 @@ def aeron_mobile_home():
                         : "Publicação criada com sucesso!";
 
                     await carregarPerfil();
-
                     await carregarFeed();
 
                     setTimeout(() => {
@@ -17277,13 +17335,11 @@ def aeron_mobile_home():
                     console.error(error);
 
                     mensagem.style.color = "#f87171";
-
                     mensagem.textContent = "Erro de ligação ao servidor.";
 
                 } finally {
 
                     button.disabled = false;
-
                     button.textContent = "PUBLICAR";
                 }
             }
@@ -17327,7 +17383,6 @@ def aeron_mobile_home():
                     }
 
                     await carregarFeed();
-
                     await carregarMinhasPublicacoes();
 
                     alert("Publicação apagada com sucesso.");
@@ -17437,7 +17492,6 @@ def aeron_mobile_home():
                         conteudo.appendChild(detalhes);
 
                         item.appendChild(icon);
-
                         item.appendChild(conteudo);
 
                         lista.appendChild(item);
@@ -17466,6 +17520,16 @@ def aeron_mobile_home():
                 document.getElementById("menu").style.display = "none";
 
                 atualizarNavegacao("");
+
+                // Atualizar os dados antes de os apresentar.
+                const response = await fetch("/mobile/me", {
+                    credentials: "same-origin",
+                    cache: "no-store"
+                });
+
+                if (response.ok) {
+                    utilizador = await response.json();
+                }
 
                 document.getElementById("privacy-email").textContent =
                     utilizador.email || "Não definido";
@@ -17522,13 +17586,15 @@ def aeron_mobile_home():
 
                 } catch (error) {
 
+                    console.error(error);
+
                     alert("Erro de ligação ao servidor.");
                 }
             }
 
 
             // =============================================
-            // ALTERAR PASSWORD
+            // ALTERAR PALAVRA-PASSE
             // =============================================
 
             async function alterarPassword() {
@@ -17580,7 +17646,10 @@ def aeron_mobile_home():
 
                     if (!response.ok || result.status !== "ok") {
 
-                        alert(result.msg || "Não foi possível alterar a palavra-passe.");
+                        alert(
+                            result.msg ||
+                            "Não foi possível alterar a palavra-passe."
+                        );
 
                         return;
                     }
@@ -17632,7 +17701,10 @@ def aeron_mobile_home():
 
                     if (!response.ok || result.status !== "ok") {
 
-                        alert(result.msg || "Não foi possível eliminar a conta.");
+                        alert(
+                            result.msg ||
+                            "Não foi possível eliminar a conta."
+                        );
 
                         return;
                     }
@@ -17688,7 +17760,7 @@ def aeron_mobile_home():
 
                     container.innerHTML = "";
 
-                    if (!result.sessoes.length) {
+                    if (!result.sessoes || !result.sessoes.length) {
 
                         container.innerHTML =
                             '<div class="empty">Não existem sessões ativas.</div>';
@@ -17709,11 +17781,8 @@ def aeron_mobile_home():
                         const info = document.createElement("p");
 
                         info.style.color = "#94a3b8";
-
                         info.style.fontSize = "12px";
-
                         info.style.lineHeight = "1.8";
-
                         info.style.marginTop = "10px";
 
                         info.textContent =
@@ -17724,10 +17793,11 @@ def aeron_mobile_home():
                         const button = document.createElement("button");
 
                         button.className = "delete-post";
-
                         button.style.marginTop = "13px";
 
-                        button.textContent = "Terminar sessão";
+                        button.textContent = s.atual
+                            ? "Terminar esta sessão"
+                            : "Terminar sessão";
 
                         button.onclick = async function() {
 
@@ -17747,6 +17817,11 @@ def aeron_mobile_home():
 
                             if (!r.ok) {
                                 alert(d.msg || "Erro.");
+                                return;
+                            }
+
+                            if (s.atual) {
+                                window.location.replace("/mobile");
                                 return;
                             }
 
@@ -17782,16 +17857,6 @@ def aeron_mobile_home():
                 atualizarNavegacao("");
 
                 window.scrollTo({top: 0, behavior: "smooth"});
-            }
-
-
-            // =============================================
-            // QR
-            // =============================================
-
-            function abrirQR() {
-
-                abrirLink("/mobile/authorized");
             }
 
 
@@ -17859,7 +17924,6 @@ def aeron_mobile_home():
 def mobile_logout():
 
     user_id = session.get("user_id")
-
     token = session.get("session_token")
 
     if token and user_id:
@@ -17925,7 +17989,7 @@ def mobile_send_account_data():
     try:
 
         nome = html.escape(
-            getattr(user, "nome", "") or user.username
+            getattr(user, "nome", "") or user.username or ""
         )
 
         username = html.escape(user.username or "")
@@ -17953,6 +18017,7 @@ def mobile_send_account_data():
         corpo = f"""
         <!DOCTYPE html>
         <html lang="pt">
+
         <head>
             <meta charset="UTF-8">
         </head>
@@ -18031,7 +18096,7 @@ def mobile_send_account_data():
 
         return jsonify(
             status="error",
-            msg="Não foi possível enviar o email. Verifica a configuração de email do servidor."
+            msg="Não foi possível enviar o email. Verifica EMAIL_USER, EMAIL_PASS e a ligação ao Gmail."
         ), 500
 
 
@@ -18055,7 +18120,6 @@ def mobile_change_password():
     data = request.get_json(silent=True) or {}
 
     atual = data.get("old_password") or ""
-
     nova = data.get("new_password") or ""
 
     if not atual or not nova:
@@ -18109,8 +18173,9 @@ def mobile_change_password():
 
         user.password = hash_password(nova)
 
+        # password_changed é um indicador booleano no modelo.
         if hasattr(user, "password_changed"):
-            user.password_changed = datetime.utcnow()
+            user.password_changed = True
 
         db.session.commit()
 
@@ -18409,6 +18474,7 @@ def mobile_authorized():
     html_qr = """
     <!DOCTYPE html>
     <html lang="pt">
+
     <head>
 
         <meta charset="UTF-8">
@@ -18552,7 +18618,7 @@ def mobile_authorized():
 
                     container.innerHTML = "";
 
-                    if (!data.sessoes.length) {
+                    if (!data.sessoes || !data.sessoes.length) {
 
                         container.innerHTML =
                             '<div class="empty">Não existem entradas QR ativas.</div>';
@@ -18749,7 +18815,6 @@ def mobile_authorized_revoke(sessao_id):
             status="error",
             msg="Não foi possível terminar a sessão."
         ), 500
-
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
