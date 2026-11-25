@@ -15451,6 +15451,11 @@ def aeron_mobile():
 # PÁGINA PRINCIPAL MOBILE
 # -----------------------------------------------------
 
+
+# -----------------------------------------------------
+# PÁGINA PRINCIPAL MOBILE - AERON
+# -----------------------------------------------------
+
 @app.route("/mobile/home", methods=["GET"])
 def aeron_mobile_home():
 
@@ -15464,10 +15469,7 @@ def aeron_mobile_home():
     <head>
 
         <meta charset="UTF-8">
-
-        <meta name="viewport"
-              content="width=device-width, initial-scale=1">
-
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#080d18">
 
         <title>AERON | Home</title>
@@ -15485,19 +15487,27 @@ def aeron_mobile_home():
                 background: #080d18;
                 color: #f1f5f9;
                 min-height: 100vh;
+                padding-bottom: 85px;
             }
+
+            button {
+                font-family: inherit;
+            }
+
+            /* HEADER */
 
             header {
                 height: 65px;
-                background: #101827;
+                background: rgba(16, 24, 39, 0.97);
                 border-bottom: 1px solid #263247;
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                padding: 0 17px;
+                padding: 0 18px;
                 position: sticky;
                 top: 0;
-                z-index: 10;
+                z-index: 20;
+                backdrop-filter: blur(12px);
             }
 
             .brand {
@@ -15511,141 +15521,25 @@ def aeron_mobile_home():
                 width: 42px;
                 height: 42px;
                 border: 1px solid #334155;
-                border-radius: 10px;
+                border-radius: 12px;
                 background: #1e293b;
                 color: white;
-                font-size: 23px;
+                font-size: 24px;
                 cursor: pointer;
             }
 
-            main {
-                max-width: 650px;
-                margin: auto;
-                padding: 18px 13px 90px;
-            }
-
-            .welcome {
-                background: linear-gradient(135deg, #17243b, #101827);
-                border: 1px solid #263247;
-                border-radius: 16px;
-                padding: 18px;
-                margin-bottom: 20px;
-                display: flex;
-                align-items: center;
-                gap: 14px;
-            }
-
-            .avatar {
-                width: 55px;
-                height: 55px;
-                border-radius: 50%;
-                object-fit: cover;
-                background: #334155;
-                border: 2px solid #d4af37;
-            }
-
-            .welcome-name {
-                font-size: 17px;
-                font-weight: bold;
-            }
-
-            .welcome-user {
-                color: #94a3b8;
-                font-size: 12px;
-                margin-top: 5px;
-            }
-
-            .section-title {
-                font-size: 18px;
-                margin: 22px 0 14px;
-            }
-
-            .post {
-                background: #111827;
-                border: 1px solid #263247;
-                border-radius: 15px;
-                padding: 16px;
-                margin-bottom: 15px;
-            }
-
-            .post-header {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                margin-bottom: 14px;
-            }
-
-            .post-header img {
-                width: 42px;
-                height: 42px;
-                border-radius: 50%;
-                object-fit: cover;
-                background: #334155;
-            }
-
-            .post-author {
-                font-weight: bold;
-                font-size: 14px;
-            }
-
-            .post-date {
-                font-size: 11px;
-                color: #64748b;
-                margin-top: 4px;
-            }
-
-            .post-text {
-                font-size: 14px;
-                line-height: 1.7;
-                white-space: pre-wrap;
-                overflow-wrap: anywhere;
-            }
-
-            .post-image {
-                width: 100%;
-                border-radius: 10px;
-                margin-top: 12px;
-                object-fit: contain;
-            }
-
-            .post-stats {
-                display: flex;
-                gap: 18px;
-                margin-top: 15px;
-                padding-top: 12px;
-                border-top: 1px solid #263247;
-                color: #94a3b8;
-                font-size: 12px;
-            }
-
-            .like-button {
-                background: transparent;
-                color: #d4af37;
-                border: none;
-                width: auto;
-                padding: 0;
-                cursor: pointer;
-            }
-
-            .empty {
-                text-align: center;
-                padding: 35px 15px;
-                color: #94a3b8;
-                background: #111827;
-                border-radius: 14px;
-                font-size: 14px;
-            }
+            /* MENU */
 
             .menu {
                 position: fixed;
-                top: 72px;
+                top: 73px;
                 right: 12px;
-                width: 220px;
+                width: 245px;
                 background: #172033;
                 border: 1px solid #334155;
-                border-radius: 13px;
+                border-radius: 14px;
                 padding: 8px;
-                z-index: 30;
+                z-index: 40;
                 display: none;
                 box-shadow: 0 15px 35px #0009;
             }
@@ -15655,10 +15549,11 @@ def aeron_mobile_home():
                 background: transparent;
                 color: #e2e8f0;
                 text-align: left;
-                padding: 13px;
+                padding: 14px 12px;
                 border: none;
-                border-radius: 8px;
+                border-radius: 9px;
                 cursor: pointer;
+                font-size: 13px;
             }
 
             .menu button:hover {
@@ -15667,78 +15562,414 @@ def aeron_mobile_home():
 
             .menu .logout {
                 color: #f87171;
+                border-top: 1px solid #334155;
+                margin-top: 5px;
             }
+
+            /* MAIN */
+
+            main {
+                max-width: 720px;
+                margin: auto;
+                padding: 20px 14px 35px;
+            }
+
+            /* WELCOME */
+
+            .welcome {
+                background:
+                    radial-gradient(
+                        circle at top right,
+                        rgba(212,175,55,0.13),
+                        transparent 45%
+                    ),
+                    linear-gradient(135deg, #17243b, #101827);
+
+                border: 1px solid #34445c;
+                border-radius: 19px;
+                padding: 19px;
+                margin-bottom: 24px;
+                display: flex;
+                align-items: center;
+                gap: 15px;
+                box-shadow: 0 10px 30px #0003;
+            }
+
+            .welcome-avatar {
+                width: 65px;
+                height: 65px;
+                min-width: 65px;
+                border-radius: 50%;
+                object-fit: cover;
+                background: #263449;
+                border: 2px solid #d4af37;
+            }
+
+            .welcome-info {
+                min-width: 0;
+                flex: 1;
+            }
+
+            .welcome-label {
+                color: #94a3b8;
+                font-size: 11px;
+                margin-bottom: 5px;
+                text-transform: uppercase;
+                letter-spacing: 1.3px;
+            }
+
+            .welcome-name {
+                font-size: 18px;
+                font-weight: bold;
+                overflow-wrap: anywhere;
+            }
+
+            .welcome-user {
+                color: #d4af37;
+                font-size: 12px;
+                margin-top: 5px;
+            }
+
+            .welcome-coins {
+                color: #facc15;
+                font-size: 12px;
+                margin-top: 8px;
+            }
+
+            /* SECTIONS */
+
+            .section-heading {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin: 25px 2px 15px;
+            }
+
+            .section-title {
+                font-size: 19px;
+                font-weight: bold;
+            }
+
+            .section-subtitle {
+                color: #64748b;
+                font-size: 11px;
+                margin-top: 5px;
+            }
+
+            /* PROFILE */
 
             .panel {
                 display: none;
-                background: #111827;
-                border: 1px solid #263247;
-                border-radius: 14px;
-                padding: 18px;
-                margin-bottom: 18px;
+                margin-bottom: 20px;
             }
 
-            .panel h2 {
-                font-size: 19px;
-                margin-bottom: 14px;
+            .profile-card {
+                background: #111827;
+                border: 1px solid #263247;
+                border-radius: 18px;
+                overflow: hidden;
+                margin-bottom: 16px;
+            }
+
+            .profile-cover {
+                height: 105px;
+                background:
+                    radial-gradient(
+                        circle at 80% 20%,
+                        rgba(212,175,55,0.25),
+                        transparent 40%
+                    ),
+                    linear-gradient(120deg, #17243b, #263449);
+                border-bottom: 1px solid #334155;
+            }
+
+            .profile-main {
+                padding: 0 18px 20px;
+            }
+
+            .profile-avatar-container {
+                margin-top: -43px;
+                margin-bottom: 13px;
             }
 
             .profile-avatar {
-                width: 85px;
-                height: 85px;
+                width: 88px;
+                height: 88px;
                 object-fit: cover;
                 border-radius: 50%;
-                border: 2px solid #d4af37;
-                margin-bottom: 12px;
+                border: 4px solid #111827;
+                outline: 2px solid #d4af37;
+                background: #263449;
             }
 
-            .notification {
-                padding: 13px 0;
-                border-bottom: 1px solid #263247;
+            .profile-name {
+                font-size: 21px;
+                font-weight: bold;
+                overflow-wrap: anywhere;
+            }
+
+            .profile-username {
+                color: #d4af37;
                 font-size: 13px;
-                line-height: 1.5;
+                margin-top: 6px;
+            }
+
+            .profile-id {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+                margin-top: 12px;
+                background: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 8px;
+                padding: 7px 10px;
+                color: #94a3b8;
+                font-size: 11px;
+            }
+
+            .profile-bio-box {
+                background: #172033;
+                border: 1px solid #263449;
+                border-radius: 12px;
+                padding: 14px;
+                margin-top: 18px;
+            }
+
+            .profile-field-label {
+                color: #94a3b8;
+                font-size: 10px;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                margin-bottom: 8px;
+            }
+
+            .profile-bio {
+                color: #e2e8f0;
+                font-size: 13px;
+                line-height: 1.7;
+                overflow-wrap: anywhere;
+            }
+
+            .profile-details {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-top: 13px;
+            }
+
+            .detail-box {
+                background: #172033;
+                border: 1px solid #263449;
+                border-radius: 11px;
+                padding: 12px;
+                min-width: 0;
+            }
+
+            .detail-value {
+                font-size: 13px;
+                font-weight: bold;
+                overflow-wrap: anywhere;
+            }
+
+            /* FEED */
+
+            .post {
+                background: #111827;
+                border: 1px solid #263247;
+                border-radius: 16px;
+                padding: 16px;
+                margin-bottom: 15px;
+                box-shadow: 0 5px 18px #0002;
+            }
+
+            .post-header {
+                display: flex;
+                align-items: center;
+                gap: 11px;
+                margin-bottom: 14px;
+            }
+
+            .post-avatar {
+                width: 44px;
+                height: 44px;
+                min-width: 44px;
+                border-radius: 50%;
+                object-fit: cover;
+                background: #263449;
+                border: 1px solid #475569;
+            }
+
+            .post-author-info {
+                min-width: 0;
+                flex: 1;
+            }
+
+            .post-author {
+                font-weight: bold;
+                font-size: 14px;
+                overflow-wrap: anywhere;
+            }
+
+            .post-date {
+                font-size: 11px;
+                color: #64748b;
+                margin-top: 5px;
+            }
+
+            .post-text {
+                font-size: 14px;
+                line-height: 1.75;
+                white-space: pre-wrap;
+                overflow-wrap: anywhere;
+                color: #e2e8f0;
+            }
+
+            .post-image {
+                width: 100%;
+                max-height: 440px;
+                border-radius: 12px;
+                margin-top: 13px;
+                object-fit: contain;
+                background: #080d18;
+            }
+
+            .post-stats {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 18px;
+                margin-top: 15px;
+                padding-top: 13px;
+                border-top: 1px solid #263247;
+                color: #94a3b8;
+                font-size: 12px;
+            }
+
+            .like-button {
+                background: transparent;
+                color: #d4af37;
+                border: none;
+                cursor: pointer;
+                font-size: 12px;
+                padding: 0;
+            }
+
+            .like-button:disabled {
+                opacity: 0.6;
+            }
+
+            /* NOTIFICATIONS */
+
+            .notification {
+                display: flex;
+                gap: 11px;
+                padding: 15px 0;
+                border-bottom: 1px solid #263247;
             }
 
             .notification:last-child {
                 border-bottom: none;
             }
 
+            .notification-icon {
+                width: 38px;
+                height: 38px;
+                min-width: 38px;
+                border-radius: 50%;
+                background: #263449;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 17px;
+            }
+
+            .notification-content {
+                flex: 1;
+                min-width: 0;
+                font-size: 13px;
+                line-height: 1.5;
+                overflow-wrap: anywhere;
+            }
+
             .notification small {
-                color: #94a3b8;
+                color: #64748b;
                 display: block;
                 margin-top: 5px;
             }
+
+            /* EMPTY */
+
+            .empty {
+                text-align: center;
+                padding: 30px 18px;
+                color: #94a3b8;
+                background: #111827;
+                border: 1px solid #263247;
+                border-radius: 15px;
+                font-size: 13px;
+                line-height: 1.7;
+            }
+
+            /* BOTTOM NAV */
 
             .bottom-nav {
                 position: fixed;
                 bottom: 0;
                 left: 0;
                 right: 0;
-                height: 65px;
-                background: #101827;
+                height: 70px;
+                background: rgba(16, 24, 39, 0.98);
                 border-top: 1px solid #263247;
                 display: flex;
                 justify-content: space-around;
                 align-items: center;
-                z-index: 8;
+                z-index: 15;
+                backdrop-filter: blur(12px);
+                padding-bottom: env(safe-area-inset-bottom);
             }
 
             .bottom-nav button {
                 background: transparent;
                 border: none;
                 color: #94a3b8;
-                font-size: 12px;
+                font-size: 11px;
                 cursor: pointer;
-                width: auto;
-                padding: 10px;
+                flex: 1;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 5px;
+            }
+
+            .bottom-nav button span {
+                font-size: 19px;
             }
 
             .bottom-nav button.active {
                 color: #d4af37;
             }
 
-            .error {
-                color: #f87171;
+            .bottom-nav button.active span {
+                transform: translateY(-2px);
+            }
+
+            @media (max-width: 380px) {
+
+                .profile-details {
+                    grid-template-columns: 1fr;
+                }
+
+                .welcome {
+                    padding: 14px;
+                }
+
+                .welcome-avatar {
+                    width: 56px;
+                    height: 56px;
+                    min-width: 56px;
+                }
+
             }
 
         </style>
@@ -15747,14 +15978,21 @@ def aeron_mobile_home():
 
     <body>
 
+        <!-- HEADER -->
+
         <header>
 
             <div class="brand">AERON</div>
 
             <button class="menu-button"
-                    onclick="toggleMenu()">⋮</button>
+                    onclick="toggleMenu()"
+                    aria-label="Abrir menu">
+                ⋮
+            </button>
 
         </header>
+
+        <!-- MENU -->
 
         <div class="menu" id="menu">
 
@@ -15775,68 +16013,206 @@ def aeron_mobile_home():
             </button>
 
             <button class="logout" onclick="terminarSessao()">
-                Terminar sessão
+                ↪ Terminar sessão
             </button>
 
         </div>
 
         <main>
 
+            <!-- CARTÃO DE BOAS-VINDAS -->
+
             <div class="welcome">
 
                 <img id="welcome-avatar"
-                     class="avatar"
-                     src=""
+                     class="welcome-avatar"
+                     src="/static/avatars/default.png"
                      alt="Avatar">
 
-                <div>
+                <div class="welcome-info">
+
+                    <div class="welcome-label">
+                        Bem-vindo à AERON
+                    </div>
+
                     <div class="welcome-name" id="welcome-name">
                         A carregar...
                     </div>
 
                     <div class="welcome-user" id="welcome-user"></div>
+
+                    <div class="welcome-coins" id="welcome-coins">
+                        🪙 0 moedas
+                    </div>
+
                 </div>
 
             </div>
 
+            <!-- FEED -->
+
             <section id="feed-section">
 
-                <h2 class="section-title">
-                    Publicações
-                </h2>
+                <div class="section-heading">
+
+                    <div>
+                        <h2 class="section-title">
+                            Publicações
+                        </h2>
+
+                        <p class="section-subtitle">
+                            Descobre o que acontece na comunidade AERON
+                        </p>
+                    </div>
+
+                </div>
 
                 <div id="feed">
+
                     <div class="empty">
                         A carregar publicações...
                     </div>
+
                 </div>
 
             </section>
 
+            <!-- PERFIL -->
+
             <section id="profile-section" class="panel">
 
-                <h2>O meu perfil</h2>
+                <div class="section-heading">
 
-                <img id="profile-avatar"
-                     class="profile-avatar"
-                     src=""
-                     alt="Avatar">
+                    <div>
+                        <h2 class="section-title">
+                            O meu perfil
+                        </h2>
 
-                <h3 id="profile-name"></h3>
+                        <p class="section-subtitle">
+                            As tuas informações na comunidade AERON
+                        </p>
+                    </div>
 
-                <p id="profile-username"
-                   style="color:#94a3b8;margin:7px 0"></p>
+                </div>
 
-                <p id="profile-bio"
-                   style="font-size:14px;line-height:1.6"></p>
+                <div class="profile-card">
+
+                    <div class="profile-cover"></div>
+
+                    <div class="profile-main">
+
+                        <div class="profile-avatar-container">
+
+                            <img id="profile-avatar"
+                                 class="profile-avatar"
+                                 src="/static/avatars/default.png"
+                                 alt="Avatar do perfil">
+
+                        </div>
+
+                        <div class="profile-name" id="profile-name">
+                            A carregar...
+                        </div>
+
+                        <div class="profile-username" id="profile-username">
+                            @username
+                        </div>
+
+                        <div class="profile-id">
+                            <span>🆔</span>
+                            <span>ID:</span>
+                            <strong id="profile-id">---</strong>
+                        </div>
+
+                        <div class="profile-bio-box">
+
+                            <div class="profile-field-label">
+                                Biografia
+                            </div>
+
+                            <p class="profile-bio" id="profile-bio">
+                                Ainda não existe uma biografia.
+                            </p>
+
+                        </div>
+
+                        <div class="profile-details">
+
+                            <div class="detail-box">
+
+                                <div class="profile-field-label">
+                                    Nome
+                                </div>
+
+                                <div class="detail-value" id="profile-first-name">
+                                    ---
+                                </div>
+
+                            </div>
+
+                            <div class="detail-box">
+
+                                <div class="profile-field-label">
+                                    Apelido
+                                </div>
+
+                                <div class="detail-value" id="profile-last-name">
+                                    ---
+                                </div>
+
+                            </div>
+
+                            <div class="detail-box">
+
+                                <div class="profile-field-label">
+                                    Moedas AERON
+                                </div>
+
+                                <div class="detail-value" id="profile-coins">
+                                    🪙 0
+                                </div>
+
+                            </div>
+
+                            <div class="detail-box">
+
+                                <div class="profile-field-label">
+                                    Identificador
+                                </div>
+
+                                <div class="detail-value" id="profile-identifier">
+                                    ---
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
 
             </section>
 
+            <!-- NOTIFICAÇÕES -->
+
             <section id="notifications-section" class="panel">
 
-                <h2>Notificações</h2>
+                <div class="section-heading">
 
-                <div id="notifications-list">
+                    <div>
+                        <h2 class="section-title">
+                            Notificações
+                        </h2>
+
+                        <p class="section-subtitle">
+                            Mantém-te a par da tua atividade
+                        </p>
+                    </div>
+
+                </div>
+
+                <div class="post" id="notifications-list">
                     A carregar notificações...
                 </div>
 
@@ -15844,19 +16220,33 @@ def aeron_mobile_home():
 
         </main>
 
+        <!-- NAVEGAÇÃO INFERIOR -->
+
         <nav class="bottom-nav">
 
-            <button class="active"
+            <button id="nav-feed"
+                    class="active"
                     onclick="mostrarFeed()">
-                🏠 Feed
+
+                <span>⌂</span>
+                Feed
+
             </button>
 
-            <button onclick="mostrarPerfil()">
-                👤 Perfil
+            <button id="nav-profile"
+                    onclick="mostrarPerfil()">
+
+                <span>◉</span>
+                Perfil
+
             </button>
 
-            <button onclick="mostrarNotificacoes()">
-                🔔 Avisos
+            <button id="nav-notifications"
+                    onclick="mostrarNotificacoes()">
+
+                <span>♧</span>
+                Notificações
+
             </button>
 
         </nav>
@@ -15865,23 +16255,20 @@ def aeron_mobile_home():
 
             let utilizador = null;
 
-            function escapar(valor) {
-                return String(valor ?? "").replace(/[&<>"']/g, function(c) {
-                    return {
-                        "&": "&amp;",
-                        "<": "&lt;",
-                        ">": "&gt;",
-                        '"': "&quot;",
-                        "'": "&#39;"
-                    }[c];
-                });
-            }
+            // -------------------------------------------------
+            // IMAGENS
+            // -------------------------------------------------
 
             function imagemValida(url) {
+
                 if (!url) return "";
 
                 try {
-                    const parsed = new URL(url, window.location.origin);
+
+                    const parsed = new URL(
+                        url,
+                        window.location.origin
+                    );
 
                     if (
                         parsed.protocol !== "http:" &&
@@ -15895,19 +16282,96 @@ def aeron_mobile_home():
                 } catch {
                     return "";
                 }
+
             }
 
+            function prepararAvatar(valor) {
+
+                if (!valor || typeof valor !== "string") {
+                    return "/static/avatars/default.png";
+                }
+
+                valor = valor.trim();
+
+                if (!valor) {
+                    return "/static/avatars/default.png";
+                }
+
+                if (
+                    valor.startsWith("http://") ||
+                    valor.startsWith("https://")
+                ) {
+                    return valor;
+                }
+
+                if (valor.startsWith("/")) {
+                    return valor;
+                }
+
+                if (valor.startsWith("static/")) {
+                    return "/" + valor;
+                }
+
+                if (valor.startsWith("avatars/")) {
+                    return "/static/" + valor;
+                }
+
+                return "/static/avatars/" + valor.replace(/^\\/+/, "");
+
+            }
+
+            function aplicarAvatar(elemento, valor) {
+
+                if (!elemento) return;
+
+                elemento.onerror = function() {
+
+                    this.onerror = null;
+
+                    this.src = "/static/avatars/default.png";
+
+                };
+
+                elemento.src = prepararAvatar(valor);
+
+            }
+
+            // -------------------------------------------------
+            // MENU E NAVEGAÇÃO
+            // -------------------------------------------------
+
             function toggleMenu() {
+
                 const menu = document.getElementById("menu");
 
                 menu.style.display =
-                    menu.style.display === "block" ? "none" : "block";
+                    menu.style.display === "block"
+                    ? "none"
+                    : "block";
+
+            }
+
+            function atualizarNavegacao(ativo) {
+
+                document.querySelectorAll(".bottom-nav button")
+                    .forEach(button => {
+                        button.classList.remove("active");
+                    });
+
+                const botao = document.getElementById("nav-" + ativo);
+
+                if (botao) {
+                    botao.classList.add("active");
+                }
+
             }
 
             function esconderPaineis() {
 
                 document.getElementById("feed-section").style.display = "none";
+
                 document.getElementById("profile-section").style.display = "none";
+
                 document.getElementById("notifications-section").style.display = "none";
 
                 document.getElementById("menu").style.display = "none";
@@ -15920,6 +16384,10 @@ def aeron_mobile_home():
 
                 document.getElementById("feed-section").style.display = "block";
 
+                atualizarNavegacao("feed");
+
+                window.scrollTo({top: 0, behavior: "smooth"});
+
             }
 
             function mostrarPerfil() {
@@ -15928,29 +16396,153 @@ def aeron_mobile_home():
 
                 document.getElementById("profile-section").style.display = "block";
 
+                atualizarNavegacao("profile");
+
+                window.scrollTo({top: 0, behavior: "smooth"});
+
             }
+
+            // -------------------------------------------------
+            // PERFIL
+            // -------------------------------------------------
+
+            async function carregarPerfil() {
+
+                try {
+
+                    const response = await fetch("/mobile/me", {
+                        credentials: "same-origin",
+                        cache: "no-store"
+                    });
+
+                    if (!response.ok) {
+
+                        window.location.replace("/mobile");
+
+                        return false;
+
+                    }
+
+                    utilizador = await response.json();
+
+                    if (utilizador.status !== "ok") {
+                        window.location.replace("/mobile");
+                        return false;
+                    }
+
+                    const nome = utilizador.nome || utilizador.username || "Utilizador";
+
+                    const apelido = utilizador.apelido || "";
+
+                    const nomeCompleto = [nome, apelido]
+                        .filter(Boolean)
+                        .join(" ");
+
+                    const username = utilizador.username || "";
+
+                    const avatar = utilizador.avatar;
+
+                    const moedas = Number(utilizador.moedas) || 0;
+
+                    // Cartão inicial
+
+                    document.getElementById("welcome-name").textContent =
+                        nomeCompleto;
+
+                    document.getElementById("welcome-user").textContent =
+                        "@" + username;
+
+                    document.getElementById("welcome-coins").textContent =
+                        "🪙 " + moedas + " moedas";
+
+                    aplicarAvatar(
+                        document.getElementById("welcome-avatar"),
+                        avatar
+                    );
+
+                    // Perfil
+
+                    document.getElementById("profile-name").textContent =
+                        nomeCompleto;
+
+                    document.getElementById("profile-username").textContent =
+                        "@" + username;
+
+                    document.getElementById("profile-id").textContent =
+                        utilizador.id ?? "---";
+
+                    document.getElementById("profile-first-name").textContent =
+                        nome || "---";
+
+                    document.getElementById("profile-last-name").textContent =
+                        apelido || "---";
+
+                    document.getElementById("profile-identifier").textContent =
+                        username || "---";
+
+                    document.getElementById("profile-coins").textContent =
+                        "🪙 " + moedas;
+
+                    document.getElementById("profile-bio").textContent =
+                        utilizador.bio || "Ainda não existe uma biografia.";
+
+                    aplicarAvatar(
+                        document.getElementById("profile-avatar"),
+                        avatar
+                    );
+
+                    return true;
+
+                } catch (error) {
+
+                    console.error("Erro ao carregar perfil:", error);
+
+                    window.location.replace("/mobile");
+
+                    return false;
+
+                }
+
+            }
+
+            // -------------------------------------------------
+            // NOTIFICAÇÕES
+            // -------------------------------------------------
 
             async function mostrarNotificacoes() {
 
                 esconderPaineis();
 
-                const section = document.getElementById("notifications-section");
-                const lista = document.getElementById("notifications-list");
+                const section = document.getElementById(
+                    "notifications-section"
+                );
+
+                const lista = document.getElementById(
+                    "notifications-list"
+                );
 
                 section.style.display = "block";
 
+                atualizarNavegacao("notifications");
+
                 lista.textContent = "A carregar notificações...";
+
+                window.scrollTo({top: 0, behavior: "smooth"});
 
                 try {
 
                     const response = await fetch(
-                        "/notifications/" + utilizador.id,
+                        "/notifications/" + encodeURIComponent(utilizador.id),
                         {credentials: "same-origin"}
                     );
 
                     if (!response.ok) {
-                        lista.textContent = "Não foi possível carregar notificações.";
+
+                        lista.textContent =
+                            "Não foi possível carregar as notificações.";
+
                         return;
+
                     }
 
                     const data = await response.json();
@@ -15962,25 +16554,57 @@ def aeron_mobile_home():
                         : (data.notificacoes || []);
 
                     if (!notificacoes.length) {
-                        lista.textContent = "Ainda não tens notificações.";
+
+                        lista.innerHTML =
+                            '<div class="empty">Ainda não tens notificações.</div>';
+
                         return;
+
                     }
 
                     notificacoes.forEach(n => {
 
                         const item = document.createElement("div");
+
                         item.className = "notification";
 
-                        item.textContent =
+                        const icon = document.createElement("div");
+
+                        icon.className = "notification-icon";
+
+                        const tipo = String(n.tipo || "").toLowerCase();
+
+                        if (tipo.includes("like")) {
+                            icon.textContent = "❤️";
+                        } else if (tipo.includes("comment")) {
+                            icon.textContent = "💬";
+                        } else if (tipo.includes("follow")) {
+                            icon.textContent = "👤";
+                        } else if (tipo.includes("message")) {
+                            icon.textContent = "✉️";
+                        } else {
+                            icon.textContent = "🔔";
+                        }
+
+                        const conteudo = document.createElement("div");
+
+                        conteudo.className = "notification-content";
+
+                        conteudo.textContent =
                             n.mensagem ||
-                            (n.nome || n.origem || "AERON");
+                            n.nome ||
+                            n.origem ||
+                            "Tens uma nova notificação.";
 
                         const detalhes = document.createElement("small");
 
-                        detalhes.textContent =
-                            n.data || "";
+                        detalhes.textContent = n.data || "";
 
-                        item.appendChild(detalhes);
+                        conteudo.appendChild(detalhes);
+
+                        item.appendChild(icon);
+
+                        item.appendChild(conteudo);
 
                         lista.appendChild(item);
 
@@ -15988,51 +16612,17 @@ def aeron_mobile_home():
 
                 } catch (error) {
 
+                    console.error(error);
+
                     lista.textContent = "Erro de ligação.";
 
                 }
 
             }
 
-            async function carregarPerfil() {
-
-                const response = await fetch("/mobile/me", {
-                    credentials: "same-origin"
-                });
-
-                if (!response.ok) {
-                    window.location.replace("/mobile");
-                    return false;
-                }
-
-                utilizador = await response.json();
-
-                const avatar = imagemValida(utilizador.avatar);
-
-                document.getElementById("welcome-name").textContent =
-                    utilizador.nome || utilizador.username;
-
-                document.getElementById("welcome-user").textContent =
-                    "@" + utilizador.username;
-
-                document.getElementById("welcome-avatar").src =
-                    avatar || "/static/avatars/default.png";
-
-                document.getElementById("profile-avatar").src =
-                    avatar || "/static/avatars/default.png";
-
-                document.getElementById("profile-name").textContent =
-                    utilizador.nome || utilizador.username;
-
-                document.getElementById("profile-username").textContent =
-                    "@" + utilizador.username;
-
-                document.getElementById("profile-bio").textContent =
-                    utilizador.bio || "Ainda não existe uma biografia.";
-
-                return true;
-
-            }
+            // -------------------------------------------------
+            // FEED
+            // -------------------------------------------------
 
             async function carregarFeed() {
 
@@ -16041,23 +16631,27 @@ def aeron_mobile_home():
                 try {
 
                     const response = await fetch(
-                        "/posts?user_id=" + utilizador.id,
+                        "/posts?user_id=" + encodeURIComponent(utilizador.id),
                         {credentials: "same-origin"}
                     );
 
                     if (!response.ok) {
-                        feed.textContent = "Não foi possível carregar o feed.";
+
+                        feed.textContent =
+                            "Não foi possível carregar o feed.";
+
                         return;
+
                     }
 
                     const posts = await response.json();
 
                     feed.innerHTML = "";
 
-                    if (!posts.length) {
+                    if (!Array.isArray(posts) || !posts.length) {
 
                         feed.innerHTML =
-                            '<div class="empty">Ainda não existem publicações.</div>';
+                            '<div class="empty">Ainda não existem publicações.<br>Quando a comunidade partilhar novidades, vão aparecer aqui.</div>';
 
                         return;
 
@@ -16066,108 +16660,166 @@ def aeron_mobile_home():
                     posts.forEach(post => {
 
                         const card = document.createElement("article");
+
                         card.className = "post";
 
                         const autor = post.autor || {};
 
-                        const avatar = imagemValida(autor.avatar);
+                        const avatar = prepararAvatar(autor.avatar);
 
-                        let html = `
-                            <div class="post-header">
+                        const header = document.createElement("div");
 
-                                <img src="${escapar(
-                                    avatar || "/static/avatars/default.png"
-                                )}" alt="Avatar">
+                        header.className = "post-header";
 
-                                <div>
-                                    <div class="post-author">
-                                        ${escapar(autor.username || "Utilizador")}
-                                    </div>
+                        const foto = document.createElement("img");
 
-                                    <div class="post-date">
-                                        ${escapar(post.data || "")}
-                                    </div>
-                                </div>
+                        foto.className = "post-avatar";
 
-                            </div>
+                        foto.alt = "Avatar";
 
-                            <div class="post-text">
-                                ${escapar(post.texto || "")}
-                            </div>
-                        `;
+                        aplicarAvatar(foto, autor.avatar);
 
-                        (post.imagens || []).forEach(url => {
+                        const info = document.createElement("div");
 
-                            const imagem = imagemValida(url);
+                        info.className = "post-author-info";
 
-                            if (imagem) {
-                                html += `
-                                    <img class="post-image"
-                                         src="${escapar(imagem)}"
-                                         alt="Imagem da publicação"
-                                         loading="lazy">
-                                `;
+                        const nome = document.createElement("div");
+
+                        nome.className = "post-author";
+
+                        nome.textContent =
+                            autor.nome ||
+                            autor.username ||
+                            "Utilizador";
+
+                        const data = document.createElement("div");
+
+                        data.className = "post-date";
+
+                        data.textContent = post.data || "";
+
+                        info.appendChild(nome);
+
+                        info.appendChild(data);
+
+                        header.appendChild(foto);
+
+                        header.appendChild(info);
+
+                        card.appendChild(header);
+
+                        const texto = document.createElement("div");
+
+                        texto.className = "post-text";
+
+                        texto.textContent = post.texto || "";
+
+                        card.appendChild(texto);
+
+                        // Imagens da publicação
+
+                        (Array.isArray(post.imagens) ? post.imagens : [])
+                            .forEach(url => {
+
+                                const imagemUrl = imagemValida(url);
+
+                                if (!imagemUrl) return;
+
+                                const imagem = document.createElement("img");
+
+                                imagem.className = "post-image";
+
+                                imagem.src = imagemUrl;
+
+                                imagem.alt = "Imagem da publicação";
+
+                                imagem.loading = "lazy";
+
+                                imagem.onerror = function() {
+                                    this.style.display = "none";
+                                };
+
+                                card.appendChild(imagem);
+
+                            });
+
+                        // Estatísticas
+
+                        const stats = document.createElement("div");
+
+                        stats.className = "post-stats";
+
+                        const like = document.createElement("button");
+
+                        like.className = "like-button";
+
+                        like.textContent =
+                            "♡ " + (Number(post.likes) || 0) + " gostos";
+
+                        like.addEventListener("click", async function() {
+
+                            const botao = this;
+
+                            botao.disabled = true;
+
+                            try {
+
+                                const resposta = await fetch(
+                                    "/posts/" +
+                                    encodeURIComponent(post.id) +
+                                    "/like",
+                                    {
+                                        method: "POST",
+                                        credentials: "same-origin",
+                                        headers: {
+                                            "Content-Type": "application/json"
+                                        },
+                                        body: JSON.stringify({
+                                            user_id: utilizador.id
+                                        })
+                                    }
+                                );
+
+                                const resultado = await resposta.json();
+
+                                if (resposta.ok) {
+
+                                    botao.textContent =
+                                        (resultado.liked ? "♥ " : "♡ ") +
+                                        (Number(resultado.likes) || 0) +
+                                        " gostos";
+
+                                } else {
+
+                                    alert(
+                                        resultado.msg ||
+                                        "Não foi possível atualizar o gosto."
+                                    );
+
+                                }
+
+                            } catch (error) {
+
+                                console.error(error);
+
                             }
+
+                            botao.disabled = false;
 
                         });
 
-                        html += `
-                            <div class="post-stats">
+                        const comentarios = document.createElement("span");
 
-                                <button class="like-button"
-                                        data-post-id="${escapar(post.id)}">
-                                    ♡ ${Number(post.likes) || 0} gostos
-                                </button>
+                        comentarios.textContent =
+                            "💬 " +
+                            (Number(post.comentarios) || 0) +
+                            " comentários";
 
-                                <span>
-                                    💬 ${Number(post.comentarios) || 0} comentários
-                                </span>
+                        stats.appendChild(like);
 
-                            </div>
-                        `;
+                        stats.appendChild(comentarios);
 
-                        card.innerHTML = html;
-
-                        card.querySelector(".like-button")
-                            .addEventListener("click", async function() {
-
-                                const botao = this;
-
-                                botao.disabled = true;
-
-                                try {
-
-                                    const resposta = await fetch(
-                                        "/posts/" + encodeURIComponent(post.id) + "/like",
-                                        {
-                                            method: "POST",
-                                            credentials: "same-origin",
-                                            headers: {
-                                                "Content-Type": "application/json"
-                                            },
-                                            body: JSON.stringify({
-                                                user_id: utilizador.id
-                                            })
-                                        }
-                                    );
-
-                                    const resultado = await resposta.json();
-
-                                    if (resposta.ok) {
-
-                                        botao.textContent =
-                                            (resultado.liked ? "♥ " : "♡ ") +
-                                            resultado.likes + " gostos";
-
-                                    }
-
-                                } catch (error) {
-                                    console.error(error);
-                                }
-
-                                botao.disabled = false;
-
-                            });
+                        card.appendChild(stats);
 
                         feed.appendChild(card);
 
@@ -16175,15 +16827,23 @@ def aeron_mobile_home():
 
                 } catch (error) {
 
+                    console.error("Erro no feed:", error);
+
                     feed.textContent = "Erro ao carregar publicações.";
 
                 }
 
             }
 
+            // -------------------------------------------------
+            // TERMINAR SESSÃO
+            // -------------------------------------------------
+
             async function terminarSessao() {
 
-                if (!confirm("Queres terminar a sessão da AERON neste telemóvel?")) {
+                if (!confirm(
+                    "Queres terminar a sessão da AERON neste telemóvel?"
+                )) {
                     return;
                 }
 
@@ -16201,6 +16861,10 @@ def aeron_mobile_home():
                 }
 
             }
+
+            // -------------------------------------------------
+            // INICIAR
+            // -------------------------------------------------
 
             async function iniciar() {
 
