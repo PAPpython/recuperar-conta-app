@@ -2396,6 +2396,55 @@ def login():
         )
     )
 
+
+# ================= VERIFICAR HASH PASSWORD =================
+
+import hashlib
+import hmac
+
+from argon2 import PasswordHasher
+from argon2.exceptions import (
+    VerifyMismatchError,
+    VerificationError,
+    InvalidHashError
+)
+
+password_hasher = PasswordHasher()
+
+
+def verificar_hash_password(password, password_guardada):
+
+    if not password or not password_guardada:
+        return False
+
+    try:
+        # Verificar password Argon2id
+        if password_guardada.startswith("$argon2"):
+
+            return password_hasher.verify(
+                password_guardada,
+                password
+            )
+
+        # Compatibilidade com hashes SHA-256 antigos
+        hash_antigo = hashlib.sha256(
+            password.encode("utf-8")
+        ).hexdigest()
+
+        return hmac.compare_digest(
+            hash_antigo,
+            password_guardada
+        )
+
+    except (
+        VerifyMismatchError,
+        VerificationError,
+        InvalidHashError,
+        ValueError,
+        TypeError
+    ):
+        return False
+
 # ================= API PARA DELETAR CONTA =================
 @app.route("/delete-account", methods=["POST"])
 def delete_account():
