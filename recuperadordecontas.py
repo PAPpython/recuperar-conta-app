@@ -2237,12 +2237,13 @@ def register():
         username=user.username
     )
 
+
 # ================= LOGIN =================
 
 @app.route("/login", methods=["POST"])
 def login():
 
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
 
     identificador = (
         data.get("username") or ""
@@ -2285,7 +2286,6 @@ def login():
 
     if not password_valida:
 
-        # Verificar histórico de passwords
         if password_ja_utilizada(user.id, password):
             return jsonify(
                 status="error",
@@ -2353,8 +2353,18 @@ def login():
 
     db.session.add(nova_sessao)
 
-    # Guardar também a atualização do hash
-    db.session.commit()
+    # ================= GUARDAR ALTERAÇÕES =================
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Erro ao guardar login e sessão.")
+
+        return jsonify(
+            status="error",
+            msg="Não foi possível iniciar sessão. Tenta novamente."
+        ), 500
 
     # ================= SESSÃO FLASK =================
 
