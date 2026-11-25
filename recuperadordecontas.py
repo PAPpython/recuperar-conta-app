@@ -87,33 +87,46 @@ ADMIN_ACTIONS = {
 }
 
 # ================= SERVIR AVATARES =================
-@app.route("/avatar/<filename>")
+@app.route("/avatar/<path:filename>")
 def servir_avatar(filename):
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
     pasta = os.path.join(base_dir, "static", "avatars")
 
-    # Tentar primeiro o nome exato
+    print("A SERVIR AVATAR:", filename)
+    print("PASTA:", pasta)
+
+    # Evitar caminhos inválidos
+    filename = os.path.basename(filename)
+
+    # Tentar primeiro o nome original
     caminho = os.path.join(pasta, filename)
 
     if os.path.isfile(caminho):
         return send_from_directory(pasta, filename)
 
-    # Se não tiver extensão, procurar automaticamente
+    # Se não tiver extensão, experimentar formatos comuns
     if not os.path.splitext(filename)[1]:
 
-        for extensao in [".png", ".jpg", ".jpeg", ".webp"]:
+        for extensao in (".png", ".jpg", ".jpeg", ".webp"):
 
-            nome_completo = filename + extensao
-            caminho = os.path.join(pasta, nome_completo)
+            nome_com_extensao = filename + extensao
+
+            caminho = os.path.join(
+                pasta,
+                nome_com_extensao
+            )
 
             if os.path.isfile(caminho):
                 return send_from_directory(
                     pasta,
-                    nome_completo
+                    nome_com_extensao
                 )
 
-    return jsonify(error="Avatar não encontrado"), 404
+    return jsonify({
+        "error": "Avatar não encontrado",
+        "filename": filename
+    }), 404
 # ================= CONFIG =================
 app.config["SECRET_KEY"] = "recuperar-secret"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
