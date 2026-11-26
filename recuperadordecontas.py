@@ -18553,6 +18553,609 @@ def ticket_success(ticket_id):
     </body>
     </html>
     """
+
+
+# =========================================================
+#       AERON ADMIN - ABRIR E GERIR TICKET
+#       URL: /admin/ticket/<ticket_id>
+# =========================================================
+
+@app.route("/admin/ticket/<int:ticket_id>", methods=["GET"])
+def open_ticket(ticket_id):
+
+    from markupsafe import escape
+
+    # -----------------------------------------------------
+    # 1. VERIFICAR ADMINISTRADOR
+    # -----------------------------------------------------
+
+    admin_id = session.get("admin_ticket_id")
+
+    if not admin_id or not is_admin(admin_id):
+        return redirect("/admin/tickets/login")
+
+    # -----------------------------------------------------
+    # 2. PROCURAR TICKET
+    # -----------------------------------------------------
+
+    ticket = Ticket.query.get(ticket_id)
+
+    if not ticket:
+        return "Ticket não encontrado.", 404
+
+    # -----------------------------------------------------
+    # 3. PROCURAR UTILIZADOR
+    # -----------------------------------------------------
+
+    user = db.session.get(User, ticket.user_id)
+
+    if not user:
+        username = "Utilizador eliminado"
+        email = "Não disponível"
+    else:
+        username = getattr(user, "username", "Não disponível")
+        email = getattr(user, "email", "Não disponível")
+
+    # -----------------------------------------------------
+    # 4. ATRIBUIR TICKET AO ADMIN
+    # -----------------------------------------------------
+
+    if hasattr(ticket, "admin_id") and not ticket.admin_id:
+
+        ticket.admin_id = admin_id
+        db.session.commit()
+
+    ticket_admin_id = getattr(ticket, "admin_id", None)
+
+    admin = (
+        db.session.get(User, ticket_admin_id)
+        if ticket_admin_id else None
+    )
+
+    admin_username = (
+        getattr(admin, "username", "Administrador")
+        if admin else "Ainda não atribuído"
+    )
+
+    # -----------------------------------------------------
+    # 5. OBTER MENSAGENS
+    # -----------------------------------------------------
+
+    messages = (
+        TicketMessage.query
+        .filter_by(ticket_id=ticket.id)
+        .order_by(TicketMessage.id.asc())
+        .all()
+    )
+
+    html_msgs = ""
+
+    for m in messages:
+
+        is_admin_message = str(m.sender).lower() == "admin"
+
+        sender_name = (
+            admin_username if is_admin_message else username
+        )
+
+        bubble = "#172554" if is_admin_message else "#1e293b"
+        border = "#60a5fa" if is_admin_message else "#22c55e"
+
+        html_msgs += f"""
+        <div style="
+            display:flex;
+            justify-content:{'flex-end' if is_admin_message else 'flex-start'};
+            margin-bottom:15px;
+        ">
+
+            <div style="
+                max-width:80%;
+                padding:13px 16px;
+                background:{bubble};
+                border-left:4px solid {border};
+                border-radius:12px;
+                overflow-wrap:anywhere;
+            ">
+
+                <div style="
+                    color:{border};
+                    font-size:12px;
+                    font-weight:bold;
+                    margin-bottom:7px;
+                ">
+                    {escape(str(sender_name))}
+                </div>
+
+                <div style="
+                    color:white;
+                    white-space:pre-wrap;
+                    line-height:1.6;
+                    font-size:14px;
+                ">{escape(str(m.message or ""))}</div>
+
+            </div>
+        </div>
+        """
+
+    # -----------------------------------------------------
+    # 6. ESTADO DO TICKET
+    # -----------------------------------------------------
+
+    is_closed = str(ticket.status).lower() in (
+        "closed", "fechado", "fechada", "resolvido", "resolvida"
+    )
+
+    close_pending = getattr(ticket, "close_pending", False)
+
+    status_text = "FECHADO" if is_closed else "ABERTO"
+    status_color = "#ef4444" if is_closed else "#22c55e"
+
+    # -----------------------------------------------------
+    # 7. DADOS OPCIONAIS DO UTILIZADOR
+    # -----------------------------------------------------
+
+    def user_value(field, fallback="-"):
+
+        if not user:
+            return fallback
+
+        value = getattr(user, field, fallback)
+
+        if value is None or value == "":
+            return fallback
+
+        return escape(str(value))
+
+    # -----------------------------------------------------
+    # 8. CONSTRUIR PÁGINA
+    # -----------------------------------------------------
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="pt">
+
+    <head>
+
+        <meta charset="UTF-8">
+
+        <meta name="viewport"
+              content="width=device-width, initial-scale=1">
+
+        <title>AERON | Ticket #{ticket.id}</title>
+
+        <style>
+
+            * {{
+                box-sizing:border-box;
+            }}
+
+            body {{
+                margin:0;
+                background:#080d18;
+                color:white;
+                font-family:Arial,sans-serif;
+            }}
+
+            .layout {{
+                display:flex;
+                min-height:100vh;
+            }}
+
+            .sidebar {{
+                width:320px;
+                flex-shrink:0;
+                background:#111827;
+                padding:23px;
+                border-right:1px solid #26354d;
+                overflow-y:auto;
+            }}
+
+            .brand {{
+                color:#facc15;
+                font-size:13px;
+                font-weight:bold;
+                letter-spacing:3px;
+                margin-bottom:25px;
+            }}
+
+            .sidebar h2 {{
+                font-size:21px;
+                margin-bottom:20px;
+            }}
+
+            .info {{
+                padding:12px;
+                margin:10px 0;
+                background:#0b1424;
+                border:1px solid #26354d;
+                border-radius:9px;
+                overflow-wrap:anywhere;
+            }}
+
+            .info span {{
+                display:block;
+                color:#94a3b8;
+                font-size:11px;
+                margin-bottom:5px;
+            }}
+
+            .info strong {{
+                font-size:13px;
+            }}
+
+            .status {{
+                color:{status_color};
+            }}
+
+            .button {{
+                display:block;
+                width:100%;
+                padding:12px;
+                margin-top:12px;
+                border:0;
+                border-radius:9px;
+                text-align:center;
+                text-decoration:none;
+                font-weight:bold;
+                cursor:pointer;
+                font-size:13px;
+            }}
+
+            .blue {{
+                background:#2563eb;
+                color:white;
+            }}
+
+            .green {{
+                background:#22c55e;
+                color:#020617;
+            }}
+
+            .red {{
+                background:#dc2626;
+                color:white;
+            }}
+
+            .gray {{
+                background:#334155;
+                color:white;
+            }}
+
+            .chat-area {{
+                flex:1;
+                min-width:0;
+                display:flex;
+                flex-direction:column;
+                min-height:100vh;
+            }}
+
+            .chat-header {{
+                padding:20px;
+                background:#111827;
+                border-bottom:1px solid #26354d;
+            }}
+
+            .chat-header h2 {{
+                margin:0;
+                font-size:19px;
+            }}
+
+            .chat-header p {{
+                margin:5px 0 0;
+                color:#94a3b8;
+                font-size:12px;
+            }}
+
+            #chat {{
+                flex:1;
+                min-height:300px;
+                overflow-y:auto;
+                padding:22px;
+            }}
+
+            .reply {{
+                padding:18px;
+                background:#111827;
+                border-top:1px solid #26354d;
+            }}
+
+            textarea {{
+                width:100%;
+                height:100px;
+                resize:vertical;
+                padding:13px;
+                border-radius:9px;
+                background:#0b1424;
+                color:white;
+                border:1px solid #334155;
+                outline:none;
+                font-family:Arial;
+                font-size:14px;
+            }}
+
+            textarea:focus {{
+                border-color:#3b82f6;
+            }}
+
+            .closed {{
+                padding:20px;
+                text-align:center;
+                background:#451a1a;
+                color:#fecaca;
+                font-weight:bold;
+            }}
+
+            @media(max-width:750px) {{
+
+                .layout {{
+                    flex-direction:column;
+                }}
+
+                .sidebar {{
+                    width:100%;
+                    border-right:0;
+                    border-bottom:1px solid #26354d;
+                }}
+
+                .chat-area {{
+                    min-height:600px;
+                }}
+
+            }}
+
+        </style>
+
+    </head>
+
+    <body>
+
+        <div class="layout">
+
+            <aside class="sidebar">
+
+                <div class="brand">AERON SUPPORT</div>
+
+                <h2>🎫 Ticket #{ticket.id}</h2>
+
+                <div class="info">
+                    <span>ASSUNTO</span>
+                    <strong>{escape(str(ticket.title or "Sem assunto"))}</strong>
+                </div>
+
+                <div class="info">
+                    <span>PRIORIDADE</span>
+                    <strong>{escape(str(ticket.priority or "Normal")).upper()}</strong>
+                </div>
+
+                <div class="info">
+                    <span>ESTADO</span>
+                    <strong class="status">{status_text}</strong>
+                </div>
+
+                <div class="info">
+                    <span>PEDIDO DE FECHO</span>
+                    <strong>{"SIM" if close_pending else "NÃO"}</strong>
+                </div>
+
+                <hr style="border-color:#26354d;margin:22px 0;">
+
+                <h3>👤 Utilizador</h3>
+
+                <div class="info">
+                    <span>ID</span>
+                    <strong>{ticket.user_id}</strong>
+                </div>
+
+                <div class="info">
+                    <span>USERNAME</span>
+                    <strong>{escape(str(username))}</strong>
+                </div>
+
+                <div class="info">
+                    <span>EMAIL</span>
+                    <strong>{escape(str(email))}</strong>
+                </div>
+
+                <div class="info">
+                    <span>EMAIL DE RECUPERAÇÃO</span>
+                    <strong>{user_value("email_recuperacao")}</strong>
+                </div>
+
+                <div class="info">
+                    <span>MOEDAS</span>
+                    <strong>{user_value("moedas", "0")}</strong>
+                </div>
+
+                <div class="info">
+                    <span>ROLE</span>
+                    <strong>{user_value("role")}</strong>
+                </div>
+
+                <div class="info">
+                    <span>BANIDO</span>
+                    <strong>{user_value("banido", "Não disponível")}</strong>
+                </div>
+
+                <div class="info">
+                    <span>BLOQUEADO</span>
+                    <strong>{user_value("bloqueado", "Não disponível")}</strong>
+                </div>
+
+                <div class="info">
+                    <span>CONTA ATIVA</span>
+                    <strong>{user_value("ativo", "Não disponível")}</strong>
+                </div>
+
+                <a class="button blue"
+                   href="/admin/user/{ticket.user_id}/edit">
+                    ⚙ Editar utilizador
+                </a>
+
+                <hr style="border-color:#26354d;margin:22px 0;">
+
+                <h3>🛡️ Administrador</h3>
+
+                <div class="info">
+                    <span>ID</span>
+                    <strong>{escape(str(ticket_admin_id or "-"))}</strong>
+                </div>
+
+                <div class="info">
+                    <span>USERNAME</span>
+                    <strong>{escape(str(admin_username))}</strong>
+                </div>
+
+                <a class="button gray"
+                   href="/admin/tickets">
+                    ← Voltar aos tickets
+                </a>
+
+                {"".join([])}
+
+                {"<form method='POST' action='/ticket/" + str(ticket.id) + "/confirm-close'><button class='button green' type='submit'>✔ Confirmar fecho</button></form>" if not is_closed and close_pending else ""}
+
+                {"<form method='POST' action='/ticket/" + str(ticket.id) + "/request-close/admin'><button class='button red' type='submit'>🔒 Pedir fecho</button></form>" if not is_closed and not close_pending else ""}
+
+                {"<form method='POST' action='/ticket/" + str(ticket.id) + "/reopen'><button class='button green' type='submit'>🔓 Reabrir ticket</button></form>" if is_closed else ""}
+
+            </aside>
+
+            <main class="chat-area">
+
+                <header class="chat-header">
+
+                    <h2>💬 Conversa do ticket</h2>
+
+                    <p>
+                        Ticket #{ticket.id} ·
+                        @{escape(str(username))}
+                    </p>
+
+                </header>
+
+                <div id="chat">
+
+                    {html_msgs if html_msgs else
+                    '<p style="color:#94a3b8;text-align:center;">Ainda não existem mensagens.</p>'}
+
+                </div>
+
+                {"<div class='reply'><form id='form-resposta'><textarea id='message-text' maxlength='5000' required placeholder='Escreve uma resposta ao utilizador...'></textarea><button class='button blue' type='submit'>📨 Responder como administrador</button></form></div>" if not is_closed else
+                '<div class="closed">🔒 Este ticket encontra-se fechado.</div>'}
+
+            </main>
+
+        </div>
+
+        <script>
+
+            const ticketId = {ticket.id};
+
+            function atualizarChat() {{
+
+                fetch("/ticket/" + ticketId + "/messages")
+                    .then(response => {{
+                        if (!response.ok) throw new Error("Erro ao carregar mensagens");
+                        return response.text();
+                    }})
+                    .then(html => {{
+
+                        const chat = document.getElementById("chat");
+
+                        const estavaNoFundo =
+                            chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 60;
+
+                        chat.innerHTML = html;
+
+                        if (estavaNoFundo) {{
+                            chat.scrollTop = chat.scrollHeight;
+                        }}
+
+                    }})
+                    .catch(error => console.error(error));
+
+            }}
+
+            const form = document.getElementById("form-resposta");
+
+            if (form) {{
+
+                form.addEventListener("submit", function(event) {{
+
+                    event.preventDefault();
+
+                    const input = document.getElementById("message-text");
+                    const message = input.value.trim();
+
+                    if (!message) return;
+
+                    const button = form.querySelector("button");
+                    button.disabled = true;
+
+                    fetch("/ticket/" + ticketId + "/reply", {{
+
+                        method: "POST",
+
+                        headers: {{
+                            "Content-Type": "application/json"
+                        }},
+
+                        body: JSON.stringify({{
+                            message: message,
+                            sender: "admin"
+                        }})
+
+                    }})
+
+                    .then(response => response.json())
+
+                    .then(data => {{
+
+                        if (data.status === "ok") {{
+
+                            input.value = "";
+                            atualizarChat();
+
+                        }} else {{
+
+                            alert(data.error || "Não foi possível enviar a mensagem.");
+
+                        }}
+
+                    }})
+
+                    .catch(error => {{
+
+                        console.error(error);
+                        alert("Erro ao comunicar com o servidor.");
+
+                    }})
+
+                    .finally(() => {{
+                        button.disabled = false;
+                    }});
+
+                }});
+
+            }}
+
+            window.addEventListener("load", function() {{
+
+                const chat = document.getElementById("chat");
+                chat.scrollTop = chat.scrollHeight;
+
+            }});
+
+            setInterval(atualizarChat, 3000);
+
+        </script>
+
+    </body>
+    </html>
+    """
+
+    return html
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
