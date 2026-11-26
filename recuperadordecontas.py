@@ -127,9 +127,32 @@ def servir_avatar(filename):
         "error": "Avatar não encontrado",
         "filename": filename
     }), 404
+    
 # ================= CONFIG =================
-app.config["SECRET_KEY"] = "recuperar-secret"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
+
+app.config["SECRET_KEY"] = os.environ.get(
+    "SECRET_KEY",
+    "recuperar-secret"
+)
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if DATABASE_URL:
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace(
+            "postgres://",
+            "postgresql://",
+            1
+        )
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+
+else:
+    # Base de dados local para desenvolvimento no PyCharm
+    app.config["SQLALCHEMY_DATABASE_URI"] = (
+        "sqlite:///" + os.path.join(BASE_DIR, "users.db")
+    )
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # ================= DB =================
