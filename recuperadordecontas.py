@@ -7562,6 +7562,7 @@ def edit_user(user_id):
 
 
 
+
 @app.route("/admin/tickets")
 def admin_tickets():
 
@@ -7580,20 +7581,51 @@ def admin_tickets():
     pesquisa = request.args.get("q", "").strip()
     estado_filtro = request.args.get("status", "all").strip().lower()
 
+    # ==================================================
+    # FUNÇÕES AUXILIARES
+    # ==================================================
+
     def safe(value, fallback="Não disponível"):
         if value is None or str(value).strip() == "":
             return escape(fallback)
         return escape(str(value))
 
+    # CORREÇÃO DO AVATAR
+    def avatar_url(user):
+
+        if not user:
+            return "/avatar/default.png"
+
+        avatar = getattr(user, "avatar", None)
+
+        if not avatar:
+            return "/avatar/default.png"
+
+        avatar = str(avatar).strip()
+
+        if avatar.startswith(("https://", "http://")):
+            return escape(avatar)
+
+        if avatar.startswith("/avatar/"):
+            return escape(avatar)
+
+        avatar = os.path.basename(
+            avatar.replace("\\", "/")
+        )
+
+        return f"/avatar/{escape(avatar)}"
+
     def formatar_data(data):
         if not data:
             return "Não disponível"
+
         try:
             return escape(data.strftime("%d/%m/%Y às %H:%M"))
         except Exception:
             return escape(str(data))
 
     def badge_estado(estado):
+
         estado = str(estado or "pendente")
         normalizado = estado.lower()
 
@@ -7603,9 +7635,13 @@ def admin_tickets():
         ):
             classe = "resolved"
             texto = "RESOLVIDA"
-        elif normalizado in ("pending", "pendente", "open", "aberta"):
+
+        elif normalizado in (
+            "pending", "pendente", "open", "aberta"
+        ):
             classe = "pending"
             texto = "PENDENTE"
+
         else:
             classe = "review"
             texto = estado.upper()
@@ -7620,16 +7656,19 @@ def admin_tickets():
     # ==================================================
 
     if filter_type == "open":
+
         tickets = Ticket.query.filter_by(
             status="open"
         ).order_by(Ticket.id.desc()).all()
 
     elif filter_type == "closed":
+
         tickets = Ticket.query.filter_by(
             status="closed"
         ).order_by(Ticket.id.desc()).all()
 
     else:
+
         tickets = Ticket.query.order_by(
             Ticket.id.desc()
         ).all()
@@ -7637,6 +7676,7 @@ def admin_tickets():
     html_cards = ""
 
     for t in tickets:
+
         user = db.session.get(User, t.user_id)
 
         username = (
@@ -7644,8 +7684,27 @@ def admin_tickets():
             if user else "Utilizador eliminado"
         )
 
+        avatar = avatar_url(user)
+
+        avatar_ticket = f"""
+        <img
+            src="{avatar}"
+            alt="Avatar do utilizador"
+            style="
+                width:46px;
+                height:46px;
+                border-radius:13px;
+                object-fit:cover;
+                background:#263750;
+                flex-shrink:0;
+            "
+            onerror="this.onerror=null;this.src='/avatar/default.png';"
+        >
+        """
+
         html_cards += f"""
         <article class="card">
+
             <div class="card-top">
                 <span class="eyebrow">SUPORTE · #{t.id}</span>
                 {badge_estado(t.status)}
@@ -7653,23 +7712,39 @@ def admin_tickets():
 
             <h3>{safe(t.title, "Sem assunto")}</h3>
 
+            <div class="person" style="margin-top:15px;">
+                {avatar_ticket}
+
+                <div>
+                    <span class="muted">Utilizador</span>
+                    <h3>@{safe(username)}</h3>
+                </div>
+            </div>
+
             <div class="details">
-                <p><span>Utilizador</span>
-                   <strong>@{safe(username)}</strong></p>
-                <p><span>ID do utilizador</span>
-                   <strong>{safe(t.user_id)}</strong></p>
-                <p><span>Prioridade</span>
-                   <strong>{safe(t.priority)}</strong></p>
+
+                <p>
+                    <span>ID do utilizador</span>
+                    <strong>{safe(t.user_id)}</strong>
+                </p>
+
+                <p>
+                    <span>Prioridade</span>
+                    <strong>{safe(t.priority)}</strong>
+                </p>
+
             </div>
 
             <a class="button primary"
                href="/admin/ticket/{t.id}">
                 Abrir ticket →
             </a>
+
         </article>
         """
 
     if not html_cards:
+
         html_cards = """
         <div class="empty">
             <div class="empty-icon">🎫</div>
@@ -7691,6 +7766,7 @@ def admin_tickets():
     for r in reports:
 
         denunciante = db.session.get(User, r.reporter_id)
+
         denunciado = (
             db.session.get(User, r.reported_user_id)
             if r.reported_user_id else None
@@ -7711,22 +7787,25 @@ def admin_tickets():
             if denunciado else ""
         )
 
-        avatar = (
-            getattr(denunciado, "avatar", None)
-            if denunciado else None
-        )
+        # AVATAR CORRIGIDO
+        avatar = avatar_url(denunciado)
 
-        avatar_html = (
-            f'<img class="avatar" src="{safe(avatar)}" '
-            f'alt="Avatar" onerror="this.style.display=\'none\'">'
-            if avatar else
-            '<div class="avatar-placeholder">👤</div>'
-        )
+        avatar_html = f"""
+        <img
+            class="avatar"
+            src="{avatar}"
+            alt="Avatar do utilizador denunciado"
+            onerror="this.onerror=null;this.src='/avatar/default.png';"
+        >
+        """
 
         estado = str(r.estado or "pendente")
 
         motivo = r.motivo or "Não indicado"
-        descricao = r.descricao or "Não foi acrescentada descrição."
+
+        descricao = (
+            r.descricao or "Não foi acrescentada descrição."
+        )
 
         pesquisa_texto = " ".join([
             str(r.id),
@@ -7759,45 +7838,74 @@ def admin_tickets():
         resolver_html = ""
 
         if not resolvida:
+
             resolver_html = f"""
             <form method="POST"
                   action="/admin/report/{r.id}/resolve"
                   onsubmit="return confirm('Confirmas que analisaste esta denúncia?');">
+
                 <button class="button success" type="submit">
                     ✓ Marcar como resolvida
                 </button>
+
             </form>
             """
 
         denuncias_html += f"""
         <article class="card report-card">
+
             <div class="card-top">
-                <span class="eyebrow">DENÚNCIA DE CONTEÚDO · #{r.id}</span>
+                <span class="eyebrow">
+                    DENÚNCIA DE CONTEÚDO · #{r.id}
+                </span>
+
                 {badge_estado(estado)}
             </div>
 
             <div class="person">
+
                 {avatar_html}
+
                 <div>
                     <span class="muted">Utilizador denunciado</span>
                     <h3>@{safe(username_denunciado)}</h3>
                     <p>{safe(apelido, "")}</p>
                 </div>
+
             </div>
 
             <div class="details">
-                <p><span>ID da denúncia</span>
-                   <strong>#{r.id}</strong></p>
-                <p><span>ID do denunciante</span>
-                   <strong>{safe(r.reporter_id)}</strong></p>
-                <p><span>ID do denunciado</span>
-                   <strong>{safe(r.reported_user_id)}</strong></p>
-                <p><span>ID da publicação</span>
-                   <strong>{safe(r.post_id, "Não indicada")}</strong></p>
-                <p><span>ID do comentário</span>
-                   <strong>{safe(r.comment_id, "Não indicado")}</strong></p>
-                <p><span>Data de criação</span>
-                   <strong>{formatar_data(r.created_at)}</strong></p>
+
+                <p>
+                    <span>ID da denúncia</span>
+                    <strong>#{r.id}</strong>
+                </p>
+
+                <p>
+                    <span>ID do denunciante</span>
+                    <strong>{safe(r.reporter_id)}</strong>
+                </p>
+
+                <p>
+                    <span>ID do denunciado</span>
+                    <strong>{safe(r.reported_user_id)}</strong>
+                </p>
+
+                <p>
+                    <span>ID da publicação</span>
+                    <strong>{safe(r.post_id, "Não indicada")}</strong>
+                </p>
+
+                <p>
+                    <span>ID do comentário</span>
+                    <strong>{safe(r.comment_id, "Não indicado")}</strong>
+                </p>
+
+                <p>
+                    <span>Data de criação</span>
+                    <strong>{formatar_data(r.created_at)}</strong>
+                </p>
+
             </div>
 
             <div class="reason-box">
@@ -7816,12 +7924,16 @@ def admin_tickets():
             </div>
 
             <div class="actions">
+
                 <a class="button primary"
                    href="/admin/report/{r.id}">
                     Analisar denúncia →
                 </a>
+
                 {resolver_html}
+
             </div>
+
         </article>
         """
 
@@ -7836,6 +7948,7 @@ def admin_tickets():
     for r in message_reports:
 
         denunciante = db.session.get(User, r.reporter_id)
+
         denunciado = db.session.get(User, r.reported_user_id)
 
         username_denunciante = (
@@ -7853,17 +7966,17 @@ def admin_tickets():
             if denunciado else ""
         )
 
-        avatar = (
-            getattr(denunciado, "avatar", None)
-            if denunciado else None
-        )
+        # AVATAR CORRIGIDO
+        avatar = avatar_url(denunciado)
 
-        avatar_html = (
-            f'<img class="avatar" src="{safe(avatar)}" '
-            f'alt="Avatar" onerror="this.style.display=\'none\'">'
-            if avatar else
-            '<div class="avatar-placeholder">👤</div>'
-        )
+        avatar_html = f"""
+        <img
+            class="avatar"
+            src="{avatar}"
+            alt="Avatar do utilizador denunciado"
+            onerror="this.onerror=null;this.src='/avatar/default.png';"
+        >
+        """
 
         estado = str(r.status or "pending")
 
@@ -7895,41 +8008,64 @@ def admin_tickets():
         resolver_html = ""
 
         if not resolvida:
+
             resolver_html = f"""
             <form method="POST"
                   action="/admin/message-report/{r.id}/resolve"
                   onsubmit="return confirm('Confirmas que analisaste esta denúncia?');">
+
                 <button class="button success" type="submit">
                     ✓ Marcar como resolvida
                 </button>
+
             </form>
             """
 
         denuncias_html += f"""
         <article class="card report-card">
+
             <div class="card-top">
-                <span class="eyebrow">DENÚNCIA DE MENSAGEM · #{r.id}</span>
+                <span class="eyebrow">
+                    DENÚNCIA DE MENSAGEM · #{r.id}
+                </span>
+
                 {badge_estado(estado)}
             </div>
 
             <div class="person">
+
                 {avatar_html}
+
                 <div>
                     <span class="muted">Utilizador denunciado</span>
                     <h3>@{safe(username_denunciado)}</h3>
                     <p>{safe(apelido, "")}</p>
                 </div>
+
             </div>
 
             <div class="details">
-                <p><span>ID da denúncia</span>
-                   <strong>#{r.id}</strong></p>
-                <p><span>ID do denunciante</span>
-                   <strong>{safe(r.reporter_id)}</strong></p>
-                <p><span>ID do denunciado</span>
-                   <strong>{safe(r.reported_user_id)}</strong></p>
-                <p><span>Data de criação</span>
-                   <strong>{formatar_data(r.created_at)}</strong></p>
+
+                <p>
+                    <span>ID da denúncia</span>
+                    <strong>#{r.id}</strong>
+                </p>
+
+                <p>
+                    <span>ID do denunciante</span>
+                    <strong>{safe(r.reporter_id)}</strong>
+                </p>
+
+                <p>
+                    <span>ID do denunciado</span>
+                    <strong>{safe(r.reported_user_id)}</strong>
+                </p>
+
+                <p>
+                    <span>Data de criação</span>
+                    <strong>{formatar_data(r.created_at)}</strong>
+                </p>
+
             </div>
 
             <div class="reason-box">
@@ -7943,16 +8079,21 @@ def admin_tickets():
             </div>
 
             <div class="actions">
+
                 <a class="button primary"
                    href="/admin/message-report/{r.id}">
                     Analisar denúncia →
                 </a>
+
                 {resolver_html}
+
             </div>
+
         </article>
         """
 
     if not denuncias_html:
+
         denuncias_html = """
         <div class="empty">
             <div class="empty-icon">🛡️</div>
@@ -7966,26 +8107,39 @@ def admin_tickets():
     # ==================================================
 
     tickets_ativo = "active" if section != "reports" else ""
+
     denuncias_ativo = "active" if section == "reports" else ""
 
     if section == "reports":
 
         conteudo = f"""
         <header class="page-heading">
+
             <span class="eyebrow">CENTRO DE MODERAÇÃO</span>
+
             <h2>🛡️ Gestão de denúncias</h2>
-            <p>Consulta os detalhes, verifica os IDs e decide
-               manualmente as medidas adequadas.</p>
+
+            <p>
+                Consulta os detalhes, verifica os IDs e decide
+                manualmente as medidas adequadas.
+            </p>
+
         </header>
 
         <div class="notice">
+
             <strong>Área de decisão administrativa</strong>
-            <p>Analisa as informações antes de tomar qualquer medida.
-               Marcar uma denúncia como resolvida não aplica
-               automaticamente castigos ao utilizador denunciado.</p>
+
+            <p>
+                Analisa as informações antes de tomar qualquer medida.
+                Marcar uma denúncia como resolvida não aplica
+                automaticamente castigos ao utilizador denunciado.
+            </p>
+
         </div>
 
         <form class="search-form" method="GET" action="/admin/tickets">
+
             <input type="hidden" name="section" value="reports">
 
             <input type="search"
@@ -7994,17 +8148,32 @@ def admin_tickets():
                    placeholder="Pesquisar por ID, utilizador ou motivo...">
 
             <select name="status">
-                <option value="all" {"selected" if estado_filtro == "all" else ""}>Todos os estados</option>
-                <option value="pending" {"selected" if estado_filtro == "pending" else ""}>Pendentes</option>
-                <option value="resolved" {"selected" if estado_filtro == "resolved" else ""}>Resolvidas</option>
+
+                <option value="all" {"selected" if estado_filtro == "all" else ""}>
+                    Todos os estados
+                </option>
+
+                <option value="pending" {"selected" if estado_filtro == "pending" else ""}>
+                    Pendentes
+                </option>
+
+                <option value="resolved" {"selected" if estado_filtro == "resolved" else ""}>
+                    Resolvidas
+                </option>
+
             </select>
 
-            <button class="button primary" type="submit">Pesquisar</button>
+            <button class="button primary" type="submit">
+                Pesquisar
+            </button>
+
         </form>
 
         <div class="section-label">
             <span>Registos de denúncias</span>
-            <span class="muted">Perfis, publicações, comentários e mensagens</span>
+            <span class="muted">
+                Perfis, publicações, comentários e mensagens
+            </span>
         </div>
 
         {denuncias_html}
@@ -8014,18 +8183,34 @@ def admin_tickets():
 
         conteudo = f"""
         <header class="page-heading">
+
             <span class="eyebrow">CENTRO DE APOIO</span>
+
             <h2>🎫 Tickets de suporte</h2>
-            <p>Consulta e acompanha os pedidos de assistência.</p>
+
+            <p>
+                Consulta e acompanha os pedidos de assistência.
+            </p>
+
         </header>
 
         <nav class="filters">
+
             <a class="button primary"
-               href="/admin/tickets">Todos</a>
+               href="/admin/tickets">
+                Todos
+            </a>
+
             <a class="button warning"
-               href="/admin/tickets?filter=open">Abertos</a>
+               href="/admin/tickets?filter=open">
+                Abertos
+            </a>
+
             <a class="button success"
-               href="/admin/tickets?filter=closed">Fechados</a>
+               href="/admin/tickets?filter=closed">
+                Fechados
+            </a>
+
         </nav>
 
         {html_cards}
@@ -8038,14 +8223,20 @@ def admin_tickets():
     return f"""
     <!DOCTYPE html>
     <html lang="pt">
+
     <head>
+
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <meta name="viewport"
+              content="width=device-width, initial-scale=1">
+
         <meta name="color-scheme" content="dark">
 
         <title>AeronAI | Administração</title>
 
         <style>
+
             * {{
                 box-sizing: border-box;
             }}
@@ -8440,6 +8631,7 @@ def admin_tickets():
             }}
 
             @media (max-width: 600px) {{
+
                 body {{
                     padding: 16px 11px 35px;
                 }}
@@ -8472,21 +8664,28 @@ def admin_tickets():
                     width: 100%;
                 }}
             }}
+
         </style>
+
     </head>
 
     <body>
+
         <main class="container">
 
             <header class="brand">
+
                 <div class="brand-icon">🛡️</div>
+
                 <div>
                     <h1>AeronAI</h1>
                     <p>Painel de administração e moderação</p>
                 </div>
+
             </header>
 
             <nav class="tabs">
+
                 <a class="{tickets_ativo}"
                    href="/admin/tickets">
                     🎫 Tickets de suporte
@@ -8496,726 +8695,12 @@ def admin_tickets():
                    href="/admin/tickets?section=reports">
                     🛡️ Denúncias
                 </a>
+
             </nav>
 
             {conteudo}
 
         </main>
-    </body>
-    </html>
-    """
-
-@app.route("/admin/ticket/<int:ticket_id>")
-def open_ticket(ticket_id):
-
-    admin_id = session.get("admin_ticket_id")
-
-    if not is_admin(admin_id):
-        return jsonify(error="Sem permissão"), 403
-
-    ticket = Ticket.query.get(ticket_id)
-
-    if not ticket:
-        return "Ticket não encontrado", 404
-
-    # =============================================================
-    # NOVO: ATRIBUIR AUTOMATICAMENTE O TICKET AO ADMIN QUE O ABRIU
-    # =============================================================
-    if not ticket.admin_id:
-        ticket.admin_id = admin_id
-        db.session.commit()  # Grava na base de dados que este admin assumiu o ticket
-
-    user = User.query.get(ticket.user_id)
-
-    admin = None
-    if ticket.admin_id:
-        admin = User.query.get(ticket.admin_id)
-
-    messages = TicketMessage.query.filter_by(
-        ticket_id=ticket.id
-    ).order_by(TicketMessage.id.asc()).all()
-
-    html_msgs = ""
-
-    for m in messages:
-
-        if m.sender == "admin":
-
-            sender_name = admin.username if admin else "Administrador"
-            bubble = "#2563eb"
-            border = "#60a5fa"
-
-        else:
-
-            sender_name = user.username if user else "Utilizador"
-            bubble = "#1e293b"
-            border = "#22c55e"
-
-        html_msgs += f"""
-
-        <div style="
-            margin-bottom:15px;
-            padding:12px;
-            background:{bubble};
-            border-left:5px solid {border};
-            border-radius:10px;
-        ">
-
-            <b>{sender_name}</b>
-
-            <div style="margin-top:8px;white-space:pre-wrap;">
-                {m.message}
-            </div>
-
-        </div>
-
-        """
-
-    is_closed = ticket.status == "closed"
-
-    close_pending = getattr(ticket, "close_pending", False)
-
-    html = f"""
-
-<!DOCTYPE html>
-
-<html>
-
-<head>
-
-<meta charset="UTF-8">
-
-<title>Ticket #{ticket.id}</title>
-
-</head>
-
-<body style="margin:0;background:#0f172a;color:white;font-family:Arial;">
-
-<div style="display:flex;height:100vh;">
-
-<div style="
-width:320px;
-background:#111827;
-padding:20px;
-overflow:auto;
-border-right:1px solid #1f2937;
-">
-
-<h2>🎫 Ticket #{ticket.id}</h2>
-
-<hr>
-
-<h3>Informações</h3>
-
-<p><b>Assunto</b><br>{ticket.title}</p>
-
-<p><b>Prioridade</b><br>{ticket.priority.upper()}</p>
-
-<p><b>Status</b><br>{"🔴 FECHADO" if is_closed else "🟢 ABERTO"}</p>
-
-<p><b>Pedido Fecho</b><br>{"SIM" if close_pending else "NÃO"}</p>
-
-<hr>
-
-<h3>Utilizador</h3>
-
-<p><b>ID</b><br>{user.id}</p>
-
-<p><b>Username</b><br>{user.username}</p>
-
-<p><b>Email</b><br>{user.email}</p>
-
-<p><b>Recuperação</b><br>{user.email_recuperacao or "-"}</p>
-
-<p><b>Moedas</b><br>{user.moedas}</p>
-
-<p><b>Role</b><br>{user.role}</p>
-
-<p><b>Banido</b><br>{"SIM" if user.banido else "NÃO"}</p>
-
-<p><b>Bloqueado</b><br>{"SIM" if user.bloqueado else "NÃO"}</p>
-
-<p><b>Conta Ativa</b><br>{"SIM" if user.ativo else "NÃO"}</p>
-
-<a href="/admin/user/{user.id}/edit"
-style="
-display:block;
-margin-top:15px;
-padding:12px;
-background:#2563eb;
-color:white;
-text-align:center;
-border-radius:8px;
-text-decoration:none;
-">
-⚙ Editar Utilizador
-</a>
-
-<hr>
-
-<h3>Administrador</h3>
-
-<p><b>ID</b><br>{admin.id if admin else "-"}</p>
-
-<p><b>Username</b><br>{admin.username if admin else "Ainda não atribuído"}</p>
-
-<p><b>Email</b><br>{admin.email if admin else "-"}</p>
-<hr>
-
-<a href="/admin/tickets"
-style="
-display:block;
-padding:12px;
-background:#334155;
-color:white;
-text-align:center;
-border-radius:8px;
-text-decoration:none;
-margin-bottom:10px;
-">
-⬅ Voltar aos Tickets
-</a>
-
-"""
-
-    # ===========================
-    # BOTÕES DO TICKET
-    # ===========================
-
-    if not is_closed:
-
-        if close_pending:
-
-            html += f"""
-
-<form method="POST" action="/ticket/{ticket.id}/confirm-close">
-
-<button
-style="
-width:100%;
-padding:12px;
-margin-top:10px;
-background:#22c55e;
-border:none;
-border-radius:8px;
-color:black;
-font-weight:bold;
-cursor:pointer;
-">
-
-✔ Confirmar Fecho
-
-</button>
-
-</form>
-
-"""
-
-        else:
-
-            html += f"""
-
-<form method="POST" action="/ticket/{ticket.id}/request-close/admin">
-
-<button
-style="
-width:100%;
-padding:12px;
-margin-top:10px;
-background:#ef4444;
-border:none;
-border-radius:8px;
-color:white;
-cursor:pointer;
-">
-
-🔒 Pedir Fecho
-
-</button>
-
-</form>
-
-"""
-
-    else:
-
-        html += f"""
-
-<form method="POST" action="/ticket/{ticket.id}/reopen">
-
-<button
-style="
-width:100%;
-padding:12px;
-margin-top:10px;
-background:#22c55e;
-border:none;
-border-radius:8px;
-color:black;
-cursor:pointer;
-">
-
-🔓 Reabrir Ticket
-
-</button>
-
-</form>
-
-"""
-
-    # FECHA O PAINEL ESQUERDO
-    html += """
-</div>
-
-<div
-style="
-flex:1;
-display:flex;
-flex-direction:column;
-background:#0f172a;
-">
-
-<div
-style="
-padding:18px;
-background:#111827;
-border-bottom:1px solid #1f2937;
-font-size:22px;
-font-weight:bold;
-">
-
-💬 Conversa do Ticket
-
-</div>
-
-<div
-id="chat"
-style="
-flex:1;
-overflow:auto;
-padding:20px;
-">
-
-"""
-
-    html += html_msgs
-
-    html += """
-
-</div>
-
-"""
-    if not is_closed:
-
-        html += f"""
-
-<div style="
-padding:20px;
-background:#111827;
-border-top:1px solid #1f2937;
-">
-
-<form id="form-resposta">
-
-<input type="hidden" id="sender" value="admin">
-
-<textarea
-id="message-text"
-required
-placeholder="Escreva uma resposta..."
-style="
-width:100%;
-height:110px;
-padding:12px;
-border-radius:10px;
-resize:none;
-box-sizing:border-box;
-background:#1e293b;
-color:white;
-border:1px solid #334155;
-">
-</textarea>
-
-<button
-type="submit"
-style="
-margin-top:10px;
-width:100%;
-padding:14px;
-background:#2563eb;
-border:none;
-border-radius:10px;
-color:white;
-cursor:pointer;
-font-weight:bold;
-">
-📨 Responder como Admin
-</button>
-
-</form>
-
-</div>
-
-"""
-
-    else:
-
-        html += """
-
-<div style="
-padding:15px;
-background:#7f1d1d;
-border-radius:10px;
-text-align:center;
-font-weight:bold;
-">
-
-🔒 Este ticket encontra-se fechado.
-
-</div>
-
-"""
-
-    html += f"""
-
-</div>
-
-</div>
-
-<script>
-
-function atualizarChat(){{
-
-fetch("/ticket/{ticket.id}/messages")
-
-.then(r=>r.text())
-
-.then(html=>{{
-
-const chatDiv = document.getElementById("chat");
-const totalScroll = chatDiv.scrollHeight - chatDiv.clientHeight;
-const estaNoFundo = (chatDiv.scrollTop >= totalScroll - 50);
-
-chatDiv.innerHTML=html;
-
-if(estaNoFundo || chatDiv.scrollTop === 0){{
-    chatDiv.scrollTop = chatDiv.scrollHeight;
-}}
-
-}});
-
-}}
-
-// INTERCEPTAR SUBMISSÃO DO ADMIN VIA AJAX
-const form = document.getElementById("form-resposta");
-if(form){{
-    form.addEventListener("submit", function(e){{
-        e.preventDefault();
-        
-        const msgInput = document.getElementById("message-text");
-        const msgValor = msgInput.value;
-        const senderValor = document.getElementById("sender").value;
-        
-        if(!msgValor.trim()) return;
-
-        fetch("/ticket/{ticket.id}/reply", {{
-            method: "POST",
-            headers: {{ "Content-Type": "application/json" }},
-            body: JSON.stringify({{ message: msgValor, sender: senderValor }})
-        }})
-        .then(r => r.json())
-        .then(data => {{
-            if(data.status === "ok"){{
-                msgInput.value = "";
-                atualizarChat();
-            }}
-        }});
-    }});
-}}
-
-setInterval(atualizarChat,3000);
-
-window.onload=function(){{
-document.getElementById("chat").scrollTop = document.getElementById("chat").scrollHeight;
-}};
-
-</script>
-
-</body>
-
-</html>
-"""
-
-    return html
-
-@app.route("/ticket/<int:ticket_id>/reopen", methods=["POST"])
-def reopen_ticket(ticket_id):
-
-    ticket = Ticket.query.get(ticket_id)
-
-    if not ticket:
-        return "Ticket não encontrado", 404
-
-    ticket.status = "open"
-
-    db.session.commit()
-
-    return redirect(f"/admin/ticket/{ticket_id}")
-
-@app.route("/suporte")
-def user_tickets():
-
-    user_id = request.args.get("user_id")
-
-    user = User.query.get(user_id)
-    if not user:
-        return f"""
-        <!DOCTYPE html>
-        <html lang="pt">
-        <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AERON - Erro</title>
-        <style>
-        * {{ margin:0; padding:0; box-sizing:border-box; }}
-        body {{
-            height:100vh;
-            display:flex;
-            justify-content:center;
-            align-items:center;
-            font-family:"Segoe UI",sans-serif;
-            background:linear-gradient(135deg, #020617 0%, #0f172a 35%, #1e3a8a 70%, #3b82f6 100%);
-        }}
-        .card {{
-            width:700px; max-width:90%;
-            background:rgba(15,23,42,.92);
-            border:1px solid rgba(239,68,68,.25); /* Vermelho suave para erro */
-            border-radius:24px; padding:60px; text-align:center;
-            backdrop-filter:blur(12px);
-            box-shadow:0 0 60px rgba(239,68,68,.15);
-        }}
-        .logo {{ width:180px; max-width:80%; margin-bottom:25px; }}
-        .icon {{ font-size:72px; margin-bottom:15px; }}
-        h1 {{ color:white; margin-bottom:20px; font-size:36px; }}
-        p {{ color:#cbd5e1; font-size:18px; line-height:1.8; }}
-        .msg {{ margin-top:15px; color:#f87171; font-weight:bold; }}
-        </style>
-        </head>
-        <body>
-        <div class="card">
-            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" class="logo" alt="AERON">
-            <div class="icon">❌</div>
-            <h1>Utilizador não encontrado</h1>
-            <p>Não foi possível associar este pedido de suporte a uma conta ativa.</p>
-            <p class="msg">Por favor, verifica os teus dados de acesso e tenta novamente.</p>
-        </div>
-        </body>
-        </html>
-        """, 404
-
-    tickets = Ticket.query.filter_by(user_id=user_id).order_by(Ticket.id.desc()).all()
-
-    def card(t):
-        status_color = "#22c55e" if t.status == "open" else "#ef4444"
-
-        return f"""
-        <div style="background:#111827;padding:12px;margin-bottom:10px;border-radius:10px;">
-            <p><b>Ticket #{t.id}</b></p>
-            <p>Status: <span style="color:{status_color}">{t.status.upper()}</span></p>
-
-            <a href="/ticket/{t.id}"
-               style="display:inline-block;margin-top:8px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;text-decoration:none;">
-               Abrir
-            </a>
-        </div>
-        """
-
-    html = "".join(card(t) for t in tickets)
-
-    return f"""
-    <html>
-    <body style="background:#0f172a;color:white;font-family:Arial;">
-
-    <div style="max-width:700px;margin:auto;margin-top:40px;">
-
-        <h2>🎫 Os teus tickets</h2>
-
-        <a href="/suporte/new?user_id={user_id}"
-           style="display:inline-block;margin-bottom:15px;padding:10px 12px;background:#22c55e;color:black;border-radius:8px;text-decoration:none;">
-           + Criar novo ticket
-        </a>
-
-        {html if html else "<p>Sem tickets ainda</p>"}
-
-    </div>
-
-    </body>
-    </html>
-    """
-    
-@app.route("/suporte/new", methods=["GET", "POST"])
-def create_user_ticket():
-
-    user_id = request.args.get("user_id")
-
-    user = User.query.get(user_id)
-
-    # Reutiliza o estilo se o user_id for inválido aqui também
-    if not user:
-        return f"""
-        <!DOCTYPE html>
-        <html lang="pt">
-        <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AERON - Erro</title>
-        <style>
-        * {{ margin:0; padding:0; box-sizing:border-box; }}
-        body {{
-            height:100vh; display:flex; justify-content:center; align-items:center;
-            font-family:"Segoe UI",sans-serif;
-            background:linear-gradient(135deg, #020617 0%, #0f172a 35%, #1e3a8a 70%, #3b82f6 100%);
-        }}
-        .card {{
-            width:700px; max-width:90%; background:rgba(15,23,42,.92);
-            border:1px solid rgba(239,68,68,.25); border-radius:24px; padding:60px; text-align:center;
-            backdrop-filter:blur(12px); box-shadow:0 0 60px rgba(239,68,68,.15);
-        }}
-        .logo {{ width:180px; max-width:80%; margin-bottom:25px; }}
-        .icon {{ font-size:72px; margin-bottom:15px; }}
-        h1 {{ color:white; margin-bottom:20px; font-size:36px; }}
-        p {{ color:#cbd5e1; font-size:18px; line-height:1.8; }}
-        .msg {{ margin-top:15px; color:#f87171; font-weight:bold; }}
-        </style>
-        </head>
-        <body>
-        <div class="card">
-            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" class="logo" alt="AERON">
-            <div class="icon">❌</div>
-            <h1>Utilizador não encontrado</h1>
-            <p>O ID de utilizador fornecido é inválido.</p>
-            <p class="msg">Acede ao suporte através da tua aplicação oficial.</p>
-        </div>
-        </body>
-        </html>
-        """, 404
-
-    # 🔥 ERRO ESTILIZADO SE FOR ADMINISTRADOR A TENTAR CRIAR TICKET
-    if user.role == "admin":
-        return f"""
-        <!DOCTYPE html>
-        <html lang="pt">
-        <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AERON - Permissão Negada</title>
-        <style>
-        * {{ margin:0; padding:0; box-sizing:border-box; }}
-        body {{
-            height:100vh; display:flex; justify-content:center; align-items:center;
-            font-family:"Segoe UI",sans-serif;
-            background:linear-gradient(135deg, #020617 0%, #0f172a 35%, #1e3a8a 70%, #3b82f6 100%);
-        }}
-        .card {{
-            width:700px; max-width:90%; background:rgba(15,23,42,.92);
-            border:1px solid rgba(245,158,11,.25); /* Laranja de aviso */
-            border-radius:24px; padding:60px; text-align:center;
-            backdrop-filter:blur(12px); box-shadow:0 0 60px rgba(245,158,11,.15);
-        }}
-        .logo {{ width:180px; max-width:80%; margin-bottom:25px; }}
-        .icon {{ font-size:72px; margin-bottom:15px; }}
-        h1 {{ color:white; margin-bottom:20px; font-size:36px; }}
-        p {{ color:#cbd5e1; font-size:18px; line-height:1.8; }}
-        .msg {{ margin-top:15px; color:#fbbf24; font-weight:bold; }}
-        </style>
-        </head>
-        <body>
-        <div class="card">
-            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" class="logo" alt="AERON">
-            <div class="icon">⚠️</div>
-            <h1>Acesso Restrito</h1>
-            <p>Os administradores não possuem permissão para abrir novos tickets de suporte.</p>
-            <p class="msg">Utiliza o Painel de Controlo para gerir os pedidos existentes.</p>
-        </div>
-        </body>
-        </html>
-        """, 403
-
-    if request.method == "POST":
-
-        title = request.form.get("title")
-        priority = request.form.get("priority")
-        message = request.form.get("message")
-
-        ticket = Ticket(
-            user_id=user_id,
-            title=title,
-            priority=priority,
-            status="open"
-        )
-
-        db.session.add(ticket)
-        db.session.commit()
-
-        msg = TicketMessage(
-            ticket_id=ticket.id,
-            sender="user",
-            message=message
-        )
-
-        db.session.add(msg)
-        db.session.commit()
-
-        return redirect(f"/suporte/sucesso/{ticket.id}")
-
-    return f"""
-    <html>
-    <body style="background:#0f172a;color:white;font-family:Arial;">
-    <div style="max-width:600px;margin:auto;margin-top:60px;">
-        <h2>🆘 Criar Ticket</h2>
-        <form method="POST">
-            <input name="title" placeholder="Assunto do Ticket" required style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;">
-            <select name="priority" style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;">
-                <option value="urgent">🔴 Urgente</option>
-                <option value="high">🟠 Alta</option>
-                <option value="normal" selected>🟡 Normal</option>
-                <option value="low">🟢 Baixa</option>
-            </select>
-            <textarea name="message" required placeholder="Descreve o problema..." style="width:100%;height:120px;padding:10px;border-radius:8px;"></textarea>
-            <button style="width:100%;margin-top:10px;padding:12px; background:#22c55e;color:black;border:none;border-radius:8px;font-weight:bold;">
-                🎫 Enviar Ticket
-            </button>
-        </form>
-        <a href="/suporte?user_id={user_id}" style="display:block;margin-top:15px;text-align:center;color:white;">Voltar</a>
-    </div>
-    </body>
-    </html>
-    """
-
-@app.route("/suporte/sucesso/<int:ticket_id>")
-def ticket_success(ticket_id):
-
-    return f"""
-    <html>
-    <body style="background:#0f172a;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;">
-
-        <div style="text-align:center;background:#111827;padding:30px;border-radius:12px;width:420px;">
-
-            <h2>✔ Ticket enviado com sucesso!</h2>
-
-            <p>Deseja ver as atualizações do seu ticket?</p>
-
-            <a href="/ticket/{ticket_id}"
-               style="display:block;margin-top:15px;padding:10px;background:#22c55e;color:black;border-radius:8px;text-decoration:none;">
-               🔎 Abrir Ticket
-            </a>
-
-            <a href="/suporte?user_id=1"
-               style="display:block;margin-top:10px;color:white;">
-               ← Voltar
-            </a>
-
-        </div>
 
     </body>
     </html>
@@ -13288,6 +12773,7 @@ def recusar_pedido_seguimento():
 
 
 
+
 # =====================================================
 #                    AERON QR LOGIN
 # =====================================================
@@ -13324,12 +12810,19 @@ def normalizar_avatar_aeron(valor):
     """
     Converte o valor guardado em User.avatar
     num caminho utilizável pelo navegador.
+
+    Aceita:
+    - ID sem extensão: 1000135289
+    - Nome com extensão: foto.png
+    - Caminho /avatar/foto.png
+    - Caminho antigo /static/avatars/foto.png
+    - URL externa
     """
 
     avatar = str(valor or "").strip()
 
     if not avatar:
-        return "/static/avatars/default.png"
+        return "/avatar/default.png"
 
     avatar = avatar.replace("\\", "/")
 
@@ -13337,20 +12830,29 @@ def normalizar_avatar_aeron(valor):
     if avatar.startswith(("https://", "http://")):
         return avatar
 
-    # Caminhos que já começam por /
-    if avatar.startswith("/"):
+    # Já utiliza a rota de avatares
+    if avatar.startswith("/avatar/"):
         return avatar
 
-    # Exemplo: static/avatars/foto.png
-    if avatar.startswith("static/"):
-        return "/" + avatar
+    # Caminho antigo /static/avatars/foto.png
+    if avatar.startswith("/static/avatars/"):
+        nome = os.path.basename(avatar)
+        return "/avatar/" + nome
 
-    # Exemplo: avatars/foto.png
+    # Caminho static/avatars/foto.png
+    if avatar.startswith("static/avatars/"):
+        nome = os.path.basename(avatar)
+        return "/avatar/" + nome
+
+    # Caminho avatars/foto.png
     if avatar.startswith("avatars/"):
-        return "/static/" + avatar
+        nome = os.path.basename(avatar)
+        return "/avatar/" + nome
 
-    # Exemplo: foto.png
-    return "/static/avatars/" + avatar.lstrip("/")
+    # Nome simples ou ID sem extensão
+    avatar = os.path.basename(avatar)
+
+    return "/avatar/" + avatar
 
 
 def obter_pedido_qr(pedido_id):
@@ -13373,6 +12875,7 @@ def obter_pedido_qr(pedido_id):
                 db.session.commit()
 
             except Exception:
+
                 db.session.rollback()
 
                 app.logger.exception(
@@ -13403,6 +12906,7 @@ def obter_utilizador_sessao_mobile():
         or getattr(user, "bloqueado", False)
         or not getattr(user, "ativo", True)
     ):
+
         session.clear()
         return None
 
@@ -13864,7 +13368,7 @@ def qr_login_authorize(token):
                     <img
                         id="account-avatar"
                         class="account-avatar"
-                        src="/static/avatars/default.png"
+                        src="/avatar/default.png"
                         alt="Avatar do utilizador"
                     >
 
@@ -14019,8 +13523,7 @@ def qr_login_authorize(token):
 
             function definirAvatar(elemento, caminho) {
 
-                const fallback =
-                    "/static/avatars/default.png";
+                const fallback = "/avatar/default.png";
 
                 let endereco = caminho || fallback;
 
@@ -14035,7 +13538,9 @@ def qr_login_authorize(token):
                         url.protocol !== "https:" &&
                         url.protocol !== "http:"
                     ) {
+
                         endereco = fallback;
+
                     } else {
 
                         // Evita apresentar uma versão antiga
@@ -14916,6 +14421,7 @@ def qr_login_reject_web():
 # =====================================================
 #               FIM DO AERON QR LOGIN
 # =====================================================
+
 
 # =====================================================
 #                 AERON MOBILE
