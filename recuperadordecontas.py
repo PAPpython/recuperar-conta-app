@@ -12988,6 +12988,287 @@ def qr_login_create():
     ), 201
 
 
+# =====================================================
+# AERON MOBILE — REGISTAR CONTA SEM VERIFICAÇÃO EMAIL
+# =====================================================
+
+@app.route("/mobile/register", methods=["POST"])
+def mobile_register():
+
+    import re
+    import json
+    from datetime import datetime, date
+    from sqlalchemy import func
+    from sqlalchemy.exc import IntegrityError
+
+    data = request.get_json(silent=True) or {}
+
+    username = (data.get("username") or "").strip().lower()
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    nascimento = (data.get("data_nascimento") or "").strip()
+
+    # -------------------------------------------------
+    # VALIDAR CAMPOS
+    # -------------------------------------------------
+
+    if not username or not email or not password or not nascimento:
+        return jsonify(
+            status="error",
+            msg="Preenche todos os campos."
+        ), 400
+
+    # -------------------------------------------------
+    # VALIDAR USERNAME
+    # -------------------------------------------------
+
+    if not re.fullmatch(r"[a-zA-Z0-9._]{4,15}", username):
+
+        return jsonify(
+            status="error",
+            msg="O username deve ter entre 4 e 15 caracteres e apenas letras, números, pontos ou underscores."
+        ), 400
+
+    quantidade_letras = len(
+        re.findall(r"[a-zA-Z]", username)
+    )
+
+    if quantidade_letras < 4:
+
+        return jsonify(
+            status="error",
+            msg="O username deve conter pelo menos 4 letras."
+        ), 400
+
+    if User.query.filter(
+        func.lower(User.username) == username
+    ).first():
+
+        return jsonify(
+            status="error",
+            msg="Este username já está a ser utilizado."
+        ), 409
+
+    # -------------------------------------------------
+    # VALIDAR EMAIL
+    # -------------------------------------------------
+
+    emails_validos = [
+        "@gmail.com",
+        "@yahoo.com",
+        "@hotmail.com",
+        "@outlook.com",
+        "@outlook.pt",
+        "@live.com",
+        "@live.pt",
+        "@icloud.com",
+        "@aol.com",
+        "@protonmail.com",
+        "@zoho.com"
+    ]
+
+    if not re.fullmatch(
+        r"[^@\s]+@[^@\s]+\.[^@\s]+",
+        email
+    ):
+
+        return jsonify(
+            status="error",
+            msg="Introduz um endereço de email válido."
+        ), 400
+
+    if not any(
+        email.endswith(dominio)
+        for dominio in emails_validos
+    ):
+
+        return jsonify(
+            status="error",
+            msg="Este domínio de email não é permitido."
+        ), 400
+
+    if User.query.filter(
+        func.lower(User.email) == email
+    ).first():
+
+        return jsonify(
+            status="error",
+            msg="Este email já está associado a uma conta."
+        ), 409
+
+    # -------------------------------------------------
+    # VERIFICAR EMAIL BANIDO
+    # -------------------------------------------------
+
+    email_banido = User.query.filter_by(
+        email=email,
+        email_banido=True
+    ).first()
+
+    if email_banido:
+
+        return jsonify(
+            status="error",
+            msg="Este email foi permanentemente banido."
+        ), 403
+
+    # -------------------------------------------------
+    # VALIDAR PASSWORD
+    # -------------------------------------------------
+
+    if len(password) < 8 or len(password) > 30:
+
+        return jsonify(
+            status="error",
+            msg="A password deve ter entre 8 e 30 caracteres."
+        ), 400
+
+    if not re.search(r"[A-Z]", password):
+
+        return jsonify(
+            status="error",
+            msg="A password deve conter pelo menos uma letra maiúscula."
+        ), 400
+
+    if not re.search(r"[a-z]", password):
+
+        return jsonify(
+            status="error",
+            msg="A password deve conter pelo menos uma letra minúscula."
+        ), 400
+
+    if not re.search(r"[0-9]", password):
+
+        return jsonify(
+            status="error",
+            msg="A password deve conter pelo menos um número."
+        ), 400
+
+    if not re.search(r"[^a-zA-Z0-9]", password):
+
+        return jsonify(
+            status="error",
+            msg="A password deve conter pelo menos um símbolo especial."
+        ), 400
+
+    # -------------------------------------------------
+    # VALIDAR DATA DE NASCIMENTO E IDADE
+    # -------------------------------------------------
+
+    try:
+
+        data_nascimento = datetime.strptime(
+            nascimento,
+            "%Y-%m-%d"
+        ).date()
+
+    except ValueError:
+
+        return jsonify(
+            status="error",
+            msg="A data de nascimento não é válida."
+        ), 400
+
+    hoje = date.today()
+
+    if data_nascimento > hoje:
+
+        return jsonify(
+            status="error",
+            msg="A data de nascimento não pode ser futura."
+        ), 400
+
+    try:
+
+        data_limite = data_nascimento.replace(
+            year=data_nascimento.year + 18
+        )
+
+    except ValueError:
+
+        # Trata o caso de nascimento a 29 de fevereiro.
+
+        data_limite = data_nascimento.replace(
+            year=data_nascimento.year + 18,
+            day=28
+        )
+
+    if hoje < data_limite:
+
+        return jsonify(
+            status="error",
+            msg="Tens de ter pelo menos 18 anos para criar uma conta AERON."
+        ), 403
+
+    # -------------------------------------------------
+    # CRIAR CONTA
+    # -------------------------------------------------
+
+    try:
+
+        user = User(
+            username=username,
+            email=email,
+            password=hash_password(password),
+
+            provider="local",
+
+            avatar="default",
+            banner="bannerdefault",
+
+            avatares_comprados=json.dumps([]),
+            banners_comprados=json.dumps([]),
+
+            role="user",
+            moedas=0,
+
+            ativo=True,
+
+            reactivation_code=None,
+
+            email_verified=True,
+            email_status="verified",
+            needs_verification_email=False
+        )
+
+        # Compatibilidade com modelos que tenham
+        # este campo com outro nome.
+
+        if hasattr(user, "email_verificado"):
+            user.email_verificado = True
+
+        db.session.add(user)
+        db.session.commit()
+
+        return jsonify(
+            status="ok",
+            msg="A tua conta AERON foi criada com sucesso!",
+            username=user.username
+        ), 201
+
+    except IntegrityError:
+
+        db.session.rollback()
+
+        return jsonify(
+            status="error",
+            msg="Este username ou email já está a ser utilizado."
+        ), 409
+
+    except Exception:
+
+        db.session.rollback()
+
+        app.logger.exception(
+            "Erro ao criar conta AERON Mobile"
+        )
+
+        return jsonify(
+            status="error",
+            msg="Ocorreu um erro ao criar a conta. Tenta novamente."
+        ), 500
+
+
 # -----------------------------------------------------
 # 3. PÁGINA DE AUTORIZAÇÃO NO TELEMÓVEL
 # -----------------------------------------------------
@@ -12996,6 +13277,7 @@ def qr_login_create():
     "/qr-login/authorize/<token>",
     methods=["GET"]
 )
+
 def qr_login_authorize(token):
 
     pedido = QRLoginRequest.query.filter_by(
@@ -13015,20 +13297,14 @@ def qr_login_authorize(token):
     <html lang="pt">
 
     <head>
-
         <meta charset="UTF-8">
-
-        <meta name="viewport"
-              content="width=device-width, initial-scale=1.0">
-
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="referrer" content="no-referrer">
-
         <meta name="theme-color" content="#080d18">
 
         <title>AERON | Segurança</title>
 
         <style>
-
             * {
                 box-sizing: border-box;
                 margin: 0;
@@ -13038,12 +13314,7 @@ def qr_login_authorize(token):
 
             body {
                 min-height: 100vh;
-                background:
-                    radial-gradient(
-                        circle at top,
-                        #172554,
-                        #080b12 65%
-                    );
+                background: radial-gradient(circle at top, #172554, #080b12 65%);
                 color: #f8fafc;
                 display: flex;
                 justify-content: center;
@@ -13080,7 +13351,7 @@ def qr_login_authorize(token):
                 font-size: 29px;
                 font-weight: 900;
                 letter-spacing: 6px;
-                color: #ffffff;
+                color: white;
             }
 
             .gold {
@@ -13120,6 +13391,10 @@ def qr_login_authorize(token):
 
             input:focus {
                 border-color: #3b82f6;
+            }
+
+            input[type="date"] {
+                color-scheme: dark;
             }
 
             .remember {
@@ -13169,6 +13444,12 @@ def qr_login_authorize(token):
                 background: #d6b65b;
                 color: #080d18;
                 font-weight: 900;
+            }
+
+            .register-button {
+                background: transparent;
+                color: #d6b65b;
+                border: 1px solid #d6b65b;
             }
 
             .account {
@@ -13249,15 +13530,68 @@ def qr_login_authorize(token):
                 letter-spacing: 1px;
             }
 
+            .rules {
+                background: #0b1220;
+                border: 1px solid #263247;
+                border-radius: 12px;
+                padding: 14px;
+                margin: 4px 0 14px;
+                text-align: left;
+                color: #94a3b8;
+                font-size: 12px;
+                line-height: 1.8;
+            }
+
+            .rules strong {
+                color: #d6b65b;
+            }
+
+            .rules ul {
+                padding-left: 18px;
+                margin-top: 5px;
+            }
+
+            .support {
+                margin-top: 25px;
+                padding-top: 18px;
+                border-top: 1px solid #263247;
+            }
+
+            .support a {
+                color: #94a3b8;
+                text-decoration: none;
+                font-size: 12px;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .support a:hover {
+                color: #d6b65b;
+            }
+
+            .support-icon {
+                font-size: 18px;
+            }
+
             .footer {
-                margin-top: 28px;
+                margin-top: 18px;
                 color: #64748b;
                 font-size: 10px;
                 letter-spacing: 2px;
             }
 
-        </style>
+            @media(max-width: 380px) {
+                .container {
+                    padding: 25px 17px;
+                }
 
+                .logo-image {
+                    width: 85px;
+                    height: 85px;
+                }
+            }
+        </style>
     </head>
 
     <body>
@@ -13265,7 +13599,6 @@ def qr_login_authorize(token):
         <main class="container">
 
             <div class="logo-area">
-
                 <img
                     class="logo-image"
                     src="/static/LOGO/AERON.png"
@@ -13276,26 +13609,18 @@ def qr_login_authorize(token):
                 <div class="logo">
                     <span class="gold">A</span>ERON
                 </div>
-
             </div>
 
-            <p class="subtitle">
-                MASTERING PERFORMANCE
-            </p>
-
+            <p class="subtitle">MASTERING PERFORMANCE</p>
 
             <!-- VERIFICAR SESSÃO -->
 
             <section id="loading">
-
                 <h2>A verificar sessão...</h2>
-
                 <p class="description">
                     Estamos a verificar a tua conta AERON.
                 </p>
-
             </section>
-
 
             <!-- LOGIN -->
 
@@ -13327,14 +13652,8 @@ def qr_login_authorize(token):
                     >
 
                     <label class="remember">
-
-                        <input
-                            type="checkbox"
-                            id="remember-me"
-                        >
-
+                        <input type="checkbox" id="remember-me">
                         Guardar conta neste telemóvel
-
                     </label>
 
                     <button
@@ -13347,10 +13666,126 @@ def qr_login_authorize(token):
 
                 </form>
 
+                <button
+                    type="button"
+                    class="register-button"
+                    onclick="mostrarRegisto()"
+                >
+                    + Criar conta AERON
+                </button>
+
                 <p id="login-message" class="message"></p>
 
             </section>
 
+            <!-- REGISTO -->
+
+            <section id="register-section" class="hidden">
+
+                <h2>Criar conta</h2>
+
+                <p class="description">
+                    Junta-te à comunidade automóvel AERON.
+                    Cria a tua conta através do telemóvel.
+                </p>
+
+                <form id="register-form">
+
+                    <input
+                        type="text"
+                        id="register-username"
+                        placeholder="Username"
+                        maxlength="15"
+                        autocomplete="username"
+                        required
+                    >
+
+                    <input
+                        type="email"
+                        id="register-email"
+                        placeholder="Email"
+                        maxlength="120"
+                        autocomplete="email"
+                        required
+                    >
+
+                    <input
+                        type="password"
+                        id="register-password"
+                        placeholder="Criar palavra-passe"
+                        maxlength="30"
+                        autocomplete="new-password"
+                        required
+                    >
+
+                    <input
+                        type="date"
+                        id="register-birth"
+                        required
+                    >
+
+                    <div class="rules">
+
+                        <strong>Regras do username</strong>
+
+                        <ul>
+                            <li>Entre 4 e 15 caracteres.</li>
+                            <li>Apenas letras, números, pontos e underscores.</li>
+                            <li>Pelo menos 4 letras.</li>
+                        </ul>
+
+                        <br>
+
+                        <strong>Regras da password</strong>
+
+                        <ul>
+                            <li>Mínimo de 8 e máximo de 30 caracteres.</li>
+                            <li>Pelo menos uma letra maiúscula.</li>
+                            <li>Pelo menos uma letra minúscula.</li>
+                            <li>Pelo menos um número.</li>
+                            <li>Pelo menos um símbolo especial.</li>
+                        </ul>
+
+                        <br>
+
+                        <strong>Idade mínima</strong>
+
+                        <ul>
+                            <li>É obrigatório ter pelo menos 18 anos.</li>
+                        </ul>
+
+                        <br>
+
+                        <strong>Email</strong>
+
+                        <ul>
+                            <li>É necessário utilizar um dos domínios de email permitidos.</li>
+                            <li>Este registo mobile não exige confirmação por email.</li>
+                        </ul>
+
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="gold-button"
+                        id="register-button"
+                    >
+                        CRIAR CONTA AERON
+                    </button>
+
+                </form>
+
+                <p id="register-message" class="message"></p>
+
+                <button
+                    type="button"
+                    class="secondary"
+                    onclick="mostrarLogin()"
+                >
+                    ← Voltar ao login
+                </button>
+
+            </section>
 
             <!-- AUTORIZAÇÃO -->
 
@@ -13372,15 +13807,9 @@ def qr_login_authorize(token):
                         alt="Avatar do utilizador"
                     >
 
-                    <div
-                        class="account-name"
-                        id="account-name">
-                    </div>
+                    <div class="account-name" id="account-name"></div>
 
-                    <div
-                        class="account-username"
-                        id="account-username">
-                    </div>
+                    <div class="account-username" id="account-username"></div>
 
                     <p class="message">
                         Esta é a conta que será utilizada
@@ -13405,33 +13834,23 @@ def qr_login_authorize(token):
                     RECUSAR
                 </button>
 
-                <p
-                    id="authorization-message"
-                    class="message">
-                </p>
+                <p id="authorization-message" class="message"></p>
 
             </section>
-
 
             <!-- AUTORIZAÇÃO CONCLUÍDA -->
 
             <section id="finished" class="hidden">
 
-                <div class="success-icon">
-                    ✓
-                </div>
+                <div class="success-icon">✓</div>
 
-                <h2 id="finished-title">
-                    Acesso autorizado!
-                </h2>
+                <h2 id="finished-title">Acesso autorizado!</h2>
 
                 <div class="logged-status">
                     ✓ LOGADO NA TUA CONTA AERON
                 </div>
 
-                <p
-                    id="finished-message"
-                    class="description">
+                <p id="finished-message" class="description">
                     A tua conta está pronta a utilizar.
                 </p>
 
@@ -13453,6 +13872,14 @@ def qr_login_authorize(token):
 
             </section>
 
+            <!-- CONTACTO -->
+
+            <div class="support">
+                <a href="mailto:2024tgeigrupo8@gmail.com">
+                    <span class="support-icon">✉</span>
+                    Precisas de ajuda? Contacta o suporte
+                </a>
+            </div>
 
             <div class="footer">
                 AERON SECURITY
@@ -13460,23 +13887,15 @@ def qr_login_authorize(token):
 
         </main>
 
-
         <script>
 
             const qrToken = {{ token | tojson }};
 
-            const loading =
-                document.getElementById("loading");
-
-            const loginSection =
-                document.getElementById("login-section");
-
-            const authorization =
-                document.getElementById("authorization");
-
-            const finished =
-                document.getElementById("finished");
-
+            const loading = document.getElementById("loading");
+            const loginSection = document.getElementById("login-section");
+            const registerSection = document.getElementById("register-section");
+            const authorization = document.getElementById("authorization");
+            const finished = document.getElementById("finished");
 
             // ==========================================
             // MOSTRAR SECÇÕES
@@ -13486,12 +13905,20 @@ def qr_login_authorize(token):
 
                 loading.classList.add("hidden");
                 loginSection.classList.add("hidden");
+                registerSection.classList.add("hidden");
                 authorization.classList.add("hidden");
                 finished.classList.add("hidden");
 
                 section.classList.remove("hidden");
             }
 
+            function mostrarRegisto() {
+                showSection(registerSection);
+            }
+
+            function mostrarLogin() {
+                showSection(loginSection);
+            }
 
             function showFinished(title, message) {
 
@@ -13506,19 +13933,16 @@ def qr_login_authorize(token):
                 ).textContent = message;
             }
 
-
             // ==========================================
             // ABRIR AERON WEB
             // ==========================================
 
             function abrirAeronWeb() {
-
                 window.location.replace("/mobile/home");
             }
 
-
             // ==========================================
-            // CARREGAR AVATAR SEM CACHE ANTIGA
+            // AVATAR
             // ==========================================
 
             function definirAvatar(elemento, caminho) {
@@ -13538,14 +13962,8 @@ def qr_login_authorize(token):
                         url.protocol !== "https:" &&
                         url.protocol !== "http:"
                     ) {
-
                         endereco = fallback;
-
                     } else {
-
-                        // Evita apresentar uma versão antiga
-                        // da imagem guardada na cache.
-
                         url.searchParams.set(
                             "_aeron",
                             Date.now().toString()
@@ -13555,20 +13973,16 @@ def qr_login_authorize(token):
                     }
 
                 } catch (error) {
-
                     endereco = fallback;
                 }
 
                 elemento.onerror = function() {
-
                     this.onerror = null;
-
                     this.src = fallback + "?_aeron=" + Date.now();
                 };
 
                 elemento.src = endereco;
             }
-
 
             // ==========================================
             // VERIFICAR CONTA AUTENTICADA
@@ -13588,9 +14002,7 @@ def qr_login_authorize(token):
                     );
 
                     if (response.status === 401) {
-
                         showSection(loginSection);
-
                         return;
                     }
 
@@ -13611,20 +14023,14 @@ def qr_login_authorize(token):
 
                     document.getElementById(
                         "account-name"
-                    ).textContent =
-                        data.nome || data.username;
+                    ).textContent = data.nome || data.username;
 
                     document.getElementById(
                         "account-username"
-                    ).textContent =
-                        "@" + data.username;
-
-                    const avatar = document.getElementById(
-                        "account-avatar"
-                    );
+                    ).textContent = "@" + data.username;
 
                     definirAvatar(
-                        avatar,
+                        document.getElementById("account-avatar"),
                         data.avatar
                     );
 
@@ -13643,121 +14049,222 @@ def qr_login_authorize(token):
                 }
             }
 
-
             // ==========================================
             // LOGIN NO TELEMÓVEL
             // ==========================================
 
             document.getElementById("login-form")
-                .addEventListener(
-                    "submit",
-                    async function(event) {
+                .addEventListener("submit", async function(event) {
 
-                        event.preventDefault();
+                    event.preventDefault();
 
-                        const message =
-                            document.getElementById("login-message");
+                    const message = document.getElementById("login-message");
+                    const button = document.getElementById("login-button");
 
-                        const button =
-                            document.getElementById("login-button");
+                    const username = document.getElementById(
+                        "username"
+                    ).value.trim();
 
-                        const username =
-                            document.getElementById("username")
-                                .value.trim();
+                    const password = document.getElementById(
+                        "password"
+                    ).value;
 
-                        const password =
-                            document.getElementById("password")
-                                .value;
+                    const rememberMe = document.getElementById(
+                        "remember-me"
+                    ).checked;
 
-                        const rememberMe =
-                            document.getElementById("remember-me")
-                                .checked;
+                    message.textContent = "A iniciar sessão...";
+                    message.className = "message";
 
-                        message.textContent =
-                            "A iniciar sessão...";
+                    button.disabled = true;
+                    button.textContent = "A AUTENTICAR...";
 
-                        message.className = "message";
+                    try {
 
-                        button.disabled = true;
+                        const response = await fetch(
+                            "/login",
+                            {
+                                method: "POST",
+                                credentials: "same-origin",
 
-                        button.textContent = "A AUTENTICAR...";
+                                headers: {
+                                    "Content-Type": "application/json"
+                                },
 
-                        try {
-
-                            const response = await fetch(
-                                "/login",
-                                {
-                                    method: "POST",
-
-                                    credentials: "same-origin",
-
-                                    headers: {
-                                        "Content-Type": "application/json"
-                                    },
-
-                                    body: JSON.stringify({
-
-                                        username: username,
-
-                                        password: password,
-
-                                        remember_me: rememberMe,
-
-                                        platform: "AERON Mobile QR",
-
-                                        location: "Telemóvel"
-
-                                    })
-                                }
-                            );
-
-                            const data = await response.json();
-
-                            if (
-                                !response.ok ||
-                                data.status !== "ok"
-                            ) {
-
-                                message.textContent =
-                                    data.msg ||
-                                    "Não foi possível iniciar sessão.";
-
-                                message.className =
-                                    "message error";
-
-                                button.disabled = false;
-
-                                button.textContent =
-                                    "Entrar na AERON";
-
-                                return;
+                                body: JSON.stringify({
+                                    username: username,
+                                    password: password,
+                                    remember_me: rememberMe,
+                                    platform: "AERON Mobile QR",
+                                    location: "Telemóvel"
+                                })
                             }
+                        );
 
-                            document.getElementById(
-                                "password"
-                            ).value = "";
+                        const data = await response.json();
 
-                            // A rota /login cria a sessão Flask.
-                            // Agora obtemos os dados e o avatar atual.
-
-                            await checkAccount();
-
-                        } catch (error) {
+                        if (
+                            !response.ok ||
+                            data.status !== "ok"
+                        ) {
 
                             message.textContent =
-                                "Erro de ligação ao servidor.";
+                                data.msg ||
+                                "Não foi possível iniciar sessão.";
 
-                            message.className =
-                                "message error";
+                            message.className = "message error";
 
                             button.disabled = false;
+                            button.textContent = "Entrar na AERON";
 
-                            button.textContent =
-                                "Entrar na AERON";
+                            return;
                         }
-                    }
-                );
 
+                        document.getElementById("password").value = "";
+
+                        await checkAccount();
+
+                    } catch (error) {
+
+                        message.textContent =
+                            "Erro de ligação ao servidor.";
+
+                        message.className = "message error";
+
+                        button.disabled = false;
+                        button.textContent = "Entrar na AERON";
+                    }
+                });
+
+            // ==========================================
+            // REGISTAR CONTA MOBILE
+            // ==========================================
+
+            document.getElementById("register-form")
+                .addEventListener("submit", async function(event) {
+
+                    event.preventDefault();
+
+                    const message = document.getElementById(
+                        "register-message"
+                    );
+
+                    const button = document.getElementById(
+                        "register-button"
+                    );
+
+                    const username = document.getElementById(
+                        "register-username"
+                    ).value.trim().toLowerCase();
+
+                    const email = document.getElementById(
+                        "register-email"
+                    ).value.trim().toLowerCase();
+
+                    const password = document.getElementById(
+                        "register-password"
+                    ).value;
+
+                    const nascimento = document.getElementById(
+                        "register-birth"
+                    ).value;
+
+                    message.textContent = "";
+                    message.className = "message";
+
+                    if (!username || !email || !password || !nascimento) {
+
+                        message.textContent =
+                            "Preenche todos os campos.";
+
+                        message.className = "message error";
+                        return;
+                    }
+
+                    button.disabled = true;
+                    button.textContent = "A CRIAR CONTA...";
+
+                    message.textContent = "A validar os teus dados...";
+
+                    try {
+
+                        const response = await fetch(
+                            "/mobile/register",
+                            {
+                                method: "POST",
+                                credentials: "same-origin",
+
+                                headers: {
+                                    "Content-Type": "application/json"
+                                },
+
+                                body: JSON.stringify({
+                                    username: username,
+                                    email: email,
+                                    password: password,
+                                    data_nascimento: nascimento
+                                })
+                            }
+                        );
+
+                        const data = await response.json();
+
+                        if (
+                            !response.ok ||
+                            data.status !== "ok"
+                        ) {
+
+                            message.textContent =
+                                data.msg || "Não foi possível criar a conta.";
+
+                            message.className = "message error";
+
+                            button.disabled = false;
+                            button.textContent = "CRIAR CONTA AERON";
+
+                            return;
+                        }
+
+                        document.getElementById(
+                            "register-password"
+                        ).value = "";
+
+                        document.getElementById(
+                            "username"
+                        ).value = username;
+
+                        document.getElementById(
+                            "password"
+                        ).value = "";
+
+                        document.getElementById(
+                            "register-form"
+                        ).reset();
+
+                        mostrarLogin();
+
+                        const loginMessage = document.getElementById(
+                            "login-message"
+                        );
+
+                        loginMessage.textContent =
+                            "Conta criada com sucesso! Já podes iniciar sessão.";
+
+                        loginMessage.className = "message success";
+
+                    } catch (error) {
+
+                        message.textContent =
+                            "Erro de ligação ao servidor.";
+
+                        message.className = "message error";
+
+                    } finally {
+
+                        button.disabled = false;
+                        button.textContent = "CRIAR CONTA AERON";
+                    }
+                });
 
             // ==========================================
             // AUTORIZAR COMPUTADOR
@@ -13765,16 +14272,15 @@ def qr_login_authorize(token):
 
             async function approveLogin() {
 
-                const button =
-                    document.getElementById("approve-button");
+                const button = document.getElementById("approve-button");
 
-                const rejectButton =
-                    document.getElementById("reject-button");
+                const rejectButton = document.getElementById(
+                    "reject-button"
+                );
 
-                const message =
-                    document.getElementById(
-                        "authorization-message"
-                    );
+                const message = document.getElementById(
+                    "authorization-message"
+                );
 
                 button.disabled = true;
                 rejectButton.disabled = true;
@@ -13787,7 +14293,6 @@ def qr_login_authorize(token):
                         "/qr-login/approve-web",
                         {
                             method: "POST",
-
                             credentials: "same-origin",
 
                             headers: {
@@ -13808,17 +14313,14 @@ def qr_login_authorize(token):
                     ) {
 
                         message.textContent =
-                            data.msg ||
-                            "Não foi possível autorizar.";
+                            data.msg || "Não foi possível autorizar.";
 
-                        message.className =
-                            "message error";
+                        message.className = "message error";
 
                         button.disabled = false;
                         rejectButton.disabled = false;
 
-                        button.textContent =
-                            "AUTORIZAR ENTRADA";
+                        button.textContent = "AUTORIZAR ENTRADA";
 
                         return;
                     }
@@ -13837,17 +14339,14 @@ def qr_login_authorize(token):
                     message.textContent =
                         "Erro de ligação. Tenta novamente.";
 
-                    message.className =
-                        "message error";
+                    message.className = "message error";
 
                     button.disabled = false;
                     rejectButton.disabled = false;
 
-                    button.textContent =
-                        "AUTORIZAR ENTRADA";
+                    button.textContent = "AUTORIZAR ENTRADA";
                 }
             }
-
 
             // ==========================================
             // RECUSAR COMPUTADOR
@@ -13855,8 +14354,7 @@ def qr_login_authorize(token):
 
             async function rejectLogin() {
 
-                const button =
-                    document.getElementById("reject-button");
+                const button = document.getElementById("reject-button");
 
                 button.disabled = true;
 
@@ -13866,7 +14364,6 @@ def qr_login_authorize(token):
                         "/qr-login/reject-web",
                         {
                             method: "POST",
-
                             credentials: "same-origin",
 
                             headers: {
@@ -13909,7 +14406,6 @@ def qr_login_authorize(token):
                 }
             }
 
-
             // ==========================================
             // VERIFICAÇÃO INICIAL
             // ==========================================
@@ -13934,12 +14430,9 @@ def qr_login_authorize(token):
     )
 
     response.headers["Pragma"] = "no-cache"
-
     response.headers["Referrer-Policy"] = "no-referrer"
 
     return response
-
-
 # -----------------------------------------------------
 # 4. AUTORIZAR LOGIN PELO CLIENTE AUTENTICADO
 # -----------------------------------------------------
