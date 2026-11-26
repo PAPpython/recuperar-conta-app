@@ -19156,6 +19156,107 @@ def open_ticket(ticket_id):
 
     return html
 
+
+# =====================================================
+#          AVALIAR ATENDIMENTO DO TICKET
+# =====================================================
+
+@app.route("/ticket/<int:ticket_id>/rate", methods=["POST"])
+def rate_ticket(ticket_id):
+
+    # Obter utilizador autenticado
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return "Sessão não encontrada. Inicia sessão novamente.", 401
+
+    # Procurar ticket
+    ticket = Ticket.query.get(ticket_id)
+
+    if not ticket:
+        return "Ticket não encontrado.", 404
+
+    # Confirmar que o ticket pertence ao utilizador
+    if ticket.user_id != user_id:
+        return "Não tens autorização para avaliar este ticket.", 403
+
+    # Obter classificação
+    try:
+        rating = int(request.form.get("rating", 0))
+    except (ValueError, TypeError):
+        return "Avaliação inválida.", 400
+
+    # Validar classificação
+    if rating < 1 or rating > 5:
+        return "A avaliação deve estar entre 1 e 5 estrelas.", 400
+
+    # Impedir avaliações repetidas
+    if ticket.rating is not None:
+        return """
+        <h2>Este ticket já foi avaliado.</h2>
+        <a href="/suporte?user_id={}">Voltar aos meus tickets</a>
+        """.format(ticket.user_id)
+
+    # Guardar avaliação
+    try:
+        ticket.rating = rating
+        ticket.updated_at = datetime.utcnow()
+
+        db.session.commit()
+
+        return """
+        <!DOCTYPE html>
+        <html lang="pt">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Avaliação submetida - AERON</title>
+        </head>
+        <body style="
+            margin:0;
+            background:#020617;
+            color:white;
+            font-family:Arial,sans-serif;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            min-height:100vh;
+            text-align:center;
+        ">
+            <div style="
+                background:#111827;
+                padding:40px;
+                border-radius:16px;
+                border:1px solid #334155;
+                max-width:400px;
+                width:85%;
+            ">
+                <div style="font-size:50px;">⭐</div>
+                <h2 style="color:#22c55e;">Avaliação submetida!</h2>
+                <p style="color:#94a3b8;">
+                    Obrigado por avaliares o atendimento da AERON.
+                </p>
+                <p style="font-size:25px;">{}</p>
+                <a href="/suporte?user_id={}" style="
+                    display:inline-block;
+                    margin-top:15px;
+                    padding:12px 22px;
+                    background:#22c55e;
+                    color:#020617;
+                    text-decoration:none;
+                    border-radius:8px;
+                    font-weight:bold;
+                ">Voltar aos meus tickets</a>
+            </div>
+        </body>
+        </html>
+        """.format("⭐" * rating, ticket.user_id)
+
+    except Exception as e:
+        db.session.rollback()
+        print("ERRO AO SUBMETER AVALIAÇÃO:", str(e))
+        return "Ocorreu um erro ao guardar a avaliação.", 500
+
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
