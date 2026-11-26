@@ -18294,248 +18294,265 @@ def mobile_authorized_revoke(sessao_id):
 #                 SUPORTE DO UTILIZADOR
 # =====================================================
 
-@app.route("/suporte", methods=["GET"])
+
+@app.route("/suporte")
 def user_tickets():
 
-    user_id = request.args.get("user_id", type=int)
-
-    if not user_id:
-        user_id = session.get("user_id")
-
-    if not user_id:
-        return """
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>AERON - Suporte</title>
-        </head>
-        <body style="
-            background:#020617;
-            color:white;
-            font-family:Arial;
-            text-align:center;
-            padding:60px 20px;
-        ">
-            <h1>AERON SUPPORT</h1>
-            <p>Não foi possível identificar a tua conta.</p>
-        </body>
-        </html>
-        """, 400
+    user_id = request.args.get("user_id")
 
     user = User.query.get(user_id)
-
     if not user:
-        return """
-        <html>
+        return f"""
+        <!DOCTYPE html>
+        <html lang="pt">
         <head>
-            <meta charset="UTF-8">
-            <title>AERON - Suporte</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AERON - Erro</title>
+        <style>
+        * {{ margin:0; padding:0; box-sizing:border-box; }}
+        body {{
+            height:100vh;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            font-family:"Segoe UI",sans-serif;
+            background:linear-gradient(135deg, #020617 0%, #0f172a 35%, #1e3a8a 70%, #3b82f6 100%);
+        }}
+        .card {{
+            width:700px; max-width:90%;
+            background:rgba(15,23,42,.92);
+            border:1px solid rgba(239,68,68,.25); /* Vermelho suave para erro */
+            border-radius:24px; padding:60px; text-align:center;
+            backdrop-filter:blur(12px);
+            box-shadow:0 0 60px rgba(239,68,68,.15);
+        }}
+        .logo {{ width:180px; max-width:80%; margin-bottom:25px; }}
+        .icon {{ font-size:72px; margin-bottom:15px; }}
+        h1 {{ color:white; margin-bottom:20px; font-size:36px; }}
+        p {{ color:#cbd5e1; font-size:18px; line-height:1.8; }}
+        .msg {{ margin-top:15px; color:#f87171; font-weight:bold; }}
+        </style>
         </head>
-        <body style="
-            background:#020617;
-            color:white;
-            font-family:Arial;
-            text-align:center;
-            padding:60px 20px;
-        ">
-            <h1>AERON SUPPORT</h1>
-            <p>Utilizador não encontrado.</p>
+        <body>
+        <div class="card">
+            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" class="logo" alt="AERON">
+            <div class="icon">❌</div>
+            <h1>Utilizador não encontrado</h1>
+            <p>Não foi possível associar este pedido de suporte a uma conta ativa.</p>
+            <p class="msg">Por favor, verifica os teus dados de acesso e tenta novamente.</p>
+        </div>
         </body>
         </html>
         """, 404
 
-    tickets = (
-        Ticket.query
-        .filter_by(user_id=user_id)
-        .order_by(Ticket.id.desc())
-        .all()
-    )
+    tickets = Ticket.query.filter_by(user_id=user_id).order_by(Ticket.id.desc()).all()
 
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="pt">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AERON - Os teus tickets</title>
+    def card(t):
+        status_color = "#22c55e" if t.status == "open" else "#ef4444"
 
-        <style>
-            * {
-                box-sizing: border-box;
-            }
+        return f"""
+        <div style="background:#111827;padding:12px;margin-bottom:10px;border-radius:10px;">
+            <p><b>Ticket #{t.id}</b></p>
+            <p>Status: <span style="color:{status_color}">{t.status.upper()}</span></p>
 
-            body {
-                margin: 0;
-                padding: 35px 18px;
-                background: #020617;
-                color: #f8fafc;
-                font-family: Arial, sans-serif;
-            }
-
-            .container {
-                max-width: 900px;
-                margin: auto;
-            }
-
-            .header {
-                margin-bottom: 30px;
-            }
-
-            .logo {
-                color: #facc15;
-                font-size: 13px;
-                font-weight: bold;
-                letter-spacing: 4px;
-            }
-
-            h1 {
-                margin: 12px 0 8px;
-                font-size: 30px;
-            }
-
-            .subtitle {
-                color: #94a3b8;
-                font-size: 14px;
-            }
-
-            .actions {
-                margin: 25px 0;
-            }
-
-            .btn {
-                display: inline-block;
-                padding: 13px 20px;
-                background: #eab308;
-                color: #020617;
-                text-decoration: none;
-                font-weight: bold;
-                border-radius: 9px;
-            }
-
-            .ticket {
-                background: #111827;
-                border: 1px solid #273449;
-                border-radius: 13px;
-                padding: 20px;
-                margin-bottom: 15px;
-            }
-
-            .ticket h3 {
-                margin: 0 0 12px;
-            }
-
-            .meta {
-                color: #94a3b8;
-                font-size: 13px;
-                margin: 7px 0;
-            }
-
-            .status {
-                display: inline-block;
-                padding: 6px 10px;
-                border-radius: 20px;
-                background: #1e293b;
-                color: #facc15;
-                font-size: 12px;
-                font-weight: bold;
-            }
-
-            .priority {
-                color: #cbd5e1;
-                font-size: 13px;
-            }
-
-            .open-ticket {
-                display: inline-block;
-                margin-top: 13px;
-                color: #60a5fa;
-                text-decoration: none;
-                font-weight: bold;
-            }
-
-            .empty {
-                background: #111827;
-                border: 1px solid #273449;
-                border-radius: 13px;
-                padding: 30px;
-                text-align: center;
-                color: #94a3b8;
-            }
-        </style>
-    </head>
-
-    <body>
-        <div class="container">
-
-            <div class="header">
-                <div class="logo">AERON SUPPORT</div>
-
-                <h1>🎫 Os teus tickets</h1>
-
-                <div class="subtitle">
-                    Olá, {{ user.username }}.
-                    Aqui podes acompanhar os teus pedidos de suporte.
-                </div>
-            </div>
-
-            <div class="actions">
-                <a class="btn"
-                   href="/suporte/new?user_id={{ user.id }}">
-                    + Criar Ticket
-                </a>
-            </div>
-
-            {% if tickets %}
-
-                {% for t in tickets %}
-
-                    <div class="ticket">
-
-                        <h3>{{ t.title }}</h3>
-
-                        <div class="meta">
-                            Ticket #{{ t.id }}
-                        </div>
-
-                        <div class="meta">
-                            Prioridade:
-                            <span class="priority">
-                                {{ t.priority }}
-                            </span>
-                        </div>
-
-                        <div style="margin-top:12px;">
-                            <span class="status">
-                                {{ t.status }}
-                            </span>
-                        </div>
-
-                        <a class="open-ticket"
-                           href="/ticket/{{ t.id }}">
-                            Ver conversa →
-                        </a>
-
-                    </div>
-
-                {% endfor %}
-
-            {% else %}
-
-                <div class="empty">
-                    <h3>Ainda não tens tickets.</h3>
-                    <p>
-                        Se precisares de ajuda, cria um novo pedido
-                        de suporte.
-                    </p>
-                </div>
-
-            {% endif %}
-
+            <a href="/ticket/{t.id}"
+               style="display:inline-block;margin-top:8px;padding:8px 12px;background:#2563eb;color:white;border-radius:8px;text-decoration:none;">
+               Abrir
+            </a>
         </div>
+        """
+
+    html = "".join(card(t) for t in tickets)
+
+    return f"""
+    <html>
+    <body style="background:#0f172a;color:white;font-family:Arial;">
+
+    <div style="max-width:700px;margin:auto;margin-top:40px;">
+
+        <h2>🎫 Os teus tickets</h2>
+
+        <a href="/suporte/new?user_id={user_id}"
+           style="display:inline-block;margin-bottom:15px;padding:10px 12px;background:#22c55e;color:black;border-radius:8px;text-decoration:none;">
+           + Criar novo ticket
+        </a>
+
+        {html if html else "<p>Sem tickets ainda</p>"}
+
+    </div>
+
     </body>
     </html>
-    """, user=user, tickets=tickets)
+    """
+    
+@app.route("/suporte/new", methods=["GET", "POST"])
+def create_user_ticket():
 
+    user_id = request.args.get("user_id")
+
+    user = User.query.get(user_id)
+
+    # Reutiliza o estilo se o user_id for inválido aqui também
+    if not user:
+        return f"""
+        <!DOCTYPE html>
+        <html lang="pt">
+        <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AERON - Erro</title>
+        <style>
+        * {{ margin:0; padding:0; box-sizing:border-box; }}
+        body {{
+            height:100vh; display:flex; justify-content:center; align-items:center;
+            font-family:"Segoe UI",sans-serif;
+            background:linear-gradient(135deg, #020617 0%, #0f172a 35%, #1e3a8a 70%, #3b82f6 100%);
+        }}
+        .card {{
+            width:700px; max-width:90%; background:rgba(15,23,42,.92);
+            border:1px solid rgba(239,68,68,.25); border-radius:24px; padding:60px; text-align:center;
+            backdrop-filter:blur(12px); box-shadow:0 0 60px rgba(239,68,68,.15);
+        }}
+        .logo {{ width:180px; max-width:80%; margin-bottom:25px; }}
+        .icon {{ font-size:72px; margin-bottom:15px; }}
+        h1 {{ color:white; margin-bottom:20px; font-size:36px; }}
+        p {{ color:#cbd5e1; font-size:18px; line-height:1.8; }}
+        .msg {{ margin-top:15px; color:#f87171; font-weight:bold; }}
+        </style>
+        </head>
+        <body>
+        <div class="card">
+            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" class="logo" alt="AERON">
+            <div class="icon">❌</div>
+            <h1>Utilizador não encontrado</h1>
+            <p>O ID de utilizador fornecido é inválido.</p>
+            <p class="msg">Acede ao suporte através da tua aplicação oficial.</p>
+        </div>
+        </body>
+        </html>
+        """, 404
+
+    # 🔥 ERRO ESTILIZADO SE FOR ADMINISTRADOR A TENTAR CRIAR TICKET
+    if user.role == "admin":
+        return f"""
+        <!DOCTYPE html>
+        <html lang="pt">
+        <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AERON - Permissão Negada</title>
+        <style>
+        * {{ margin:0; padding:0; box-sizing:border-box; }}
+        body {{
+            height:100vh; display:flex; justify-content:center; align-items:center;
+            font-family:"Segoe UI",sans-serif;
+            background:linear-gradient(135deg, #020617 0%, #0f172a 35%, #1e3a8a 70%, #3b82f6 100%);
+        }}
+        .card {{
+            width:700px; max-width:90%; background:rgba(15,23,42,.92);
+            border:1px solid rgba(245,158,11,.25); /* Laranja de aviso */
+            border-radius:24px; padding:60px; text-align:center;
+            backdrop-filter:blur(12px); box-shadow:0 0 60px rgba(245,158,11,.15);
+        }}
+        .logo {{ width:180px; max-width:80%; margin-bottom:25px; }}
+        .icon {{ font-size:72px; margin-bottom:15px; }}
+        h1 {{ color:white; margin-bottom:20px; font-size:36px; }}
+        p {{ color:#cbd5e1; font-size:18px; line-height:1.8; }}
+        .msg {{ margin-top:15px; color:#fbbf24; font-weight:bold; }}
+        </style>
+        </head>
+        <body>
+        <div class="card">
+            <img src="https://recuperar-conta-app-uza0.onrender.com/static/LOGO/AERON.png" class="logo" alt="AERON">
+            <div class="icon">⚠️</div>
+            <h1>Acesso Restrito</h1>
+            <p>Os administradores não possuem permissão para abrir novos tickets de suporte.</p>
+            <p class="msg">Utiliza o Painel de Controlo para gerir os pedidos existentes.</p>
+        </div>
+        </body>
+        </html>
+        """, 403
+
+    if request.method == "POST":
+
+        title = request.form.get("title")
+        priority = request.form.get("priority")
+        message = request.form.get("message")
+
+        ticket = Ticket(
+            user_id=user_id,
+            title=title,
+            priority=priority,
+            status="open"
+        )
+
+        db.session.add(ticket)
+        db.session.commit()
+
+        msg = TicketMessage(
+            ticket_id=ticket.id,
+            sender="user",
+            message=message
+        )
+
+        db.session.add(msg)
+        db.session.commit()
+
+        return redirect(f"/suporte/sucesso/{ticket.id}")
+
+    return f"""
+    <html>
+    <body style="background:#0f172a;color:white;font-family:Arial;">
+    <div style="max-width:600px;margin:auto;margin-top:60px;">
+        <h2>🆘 Criar Ticket</h2>
+        <form method="POST">
+            <input name="title" placeholder="Assunto do Ticket" required style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;">
+            <select name="priority" style="width:100%;padding:10px;margin-bottom:10px;border-radius:8px;">
+                <option value="urgent">🔴 Urgente</option>
+                <option value="high">🟠 Alta</option>
+                <option value="normal" selected>🟡 Normal</option>
+                <option value="low">🟢 Baixa</option>
+            </select>
+            <textarea name="message" required placeholder="Descreve o problema..." style="width:100%;height:120px;padding:10px;border-radius:8px;"></textarea>
+            <button style="width:100%;margin-top:10px;padding:12px; background:#22c55e;color:black;border:none;border-radius:8px;font-weight:bold;">
+                🎫 Enviar Ticket
+            </button>
+        </form>
+        <a href="/suporte?user_id={user_id}" style="display:block;margin-top:15px;text-align:center;color:white;">Voltar</a>
+    </div>
+    </body>
+    </html>
+    """
+
+@app.route("/suporte/sucesso/<int:ticket_id>")
+def ticket_success(ticket_id):
+
+    return f"""
+    <html>
+    <body style="background:#0f172a;color:white;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;">
+
+        <div style="text-align:center;background:#111827;padding:30px;border-radius:12px;width:420px;">
+
+            <h2>✔ Ticket enviado com sucesso!</h2>
+
+            <p>Deseja ver as atualizações do seu ticket?</p>
+
+            <a href="/ticket/{ticket_id}"
+               style="display:block;margin-top:15px;padding:10px;background:#22c55e;color:black;border-radius:8px;text-decoration:none;">
+               🔎 Abrir Ticket
+            </a>
+
+            <a href="/suporte?user_id=1"
+               style="display:block;margin-top:10px;color:white;">
+               ← Voltar
+            </a>
+
+        </div>
+
+    </body>
+    </html>
+    """
 #================= START =================
 if __name__ == "__main__":
     with app.app_context():
